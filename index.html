@@ -3,10 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#8f4e36" />
+    <meta name="theme-color" content="#f7f1e7" />
+    <script>
+      // Pick the colour theme before first paint so dark mode does not flash light.
+      try {
+        var saved = (localStorage.getItem('family-stories:snapshot:v1') || '').match(/"theme":\s*"(system|light|dark)"/);
+        var theme = saved ? saved[1] : 'system';
+        var dark = theme === 'dark' || (theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+      } catch (error) {}
+    </script>
     <meta name="description" content="Истории близких — семейная книга голосовых воспоминаний" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/icons/pwa-192x192.svg" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <title>Истории близких</title>
   </head>
   <body>

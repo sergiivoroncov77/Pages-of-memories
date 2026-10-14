@@ -1,0 +1,349 @@
+/*
+ * Modern layer: dark theme, Material 3-style navigation and a denser,
+ * content-first mobile layout. Loaded last so it refines the earlier sheets.
+ */
+
+/* ---------- Dark theme ---------- */
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #171513;
+  --bg-deep: #100f0d;
+  --surface: #211e1b;
+  --surface-strong: #2a2622;
+  --surface-warm: #34271f;
+  --surface-sage: #232a20;
+  --ink: #f3ece3;
+  --ink-soft: #d8cdc1;
+  --muted: #a99c8f;
+  --line: #36302a;
+  --line-strong: #4b433b;
+  --primary: #b85f42;
+  --primary-dark: #eea688;
+  --primary-soft: #4a2c20;
+  --sage: #9bb585;
+  --sage-dark: #bad0a6;
+  --dark: #26302a;
+  --dark-soft: #36433a;
+  --danger: #c4544b;
+  --danger-soft: #4a2523;
+  --warning: #e0a85c;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+:root[data-theme='dark'] .is-high-contrast {
+  --bg: #000;
+  --surface: #141414;
+  --surface-strong: #1c1c1c;
+  --ink: #fff;
+  --ink-soft: #f1ebe4;
+  --muted: #d3c9be;
+  --line: #8a7f74;
+  --line-strong: #b3a698;
+}
+
+:root[data-theme='dark'] body {
+  background:
+    radial-gradient(circle at 12% 4%, rgba(184, 95, 66, 0.12), transparent 28rem),
+    var(--bg);
+}
+
+:root[data-theme='dark'] :focus-visible {
+  outline-color: #7cc4e4;
+}
+
+:root[data-theme='dark'] .eyebrow,
+:root[data-theme='dark'] .text-link,
+:root[data-theme='dark'] .text-button {
+  color: var(--primary-dark);
+}
+
+:root[data-theme='dark'] .button--primary {
+  box-shadow: none;
+}
+
+:root[data-theme='dark'] .button--primary:hover:not(:disabled) {
+  background: #c96c4d;
+}
+
+:root[data-theme='dark'] .card--dark {
+  border-color: var(--line);
+  background: linear-gradient(160deg, #2c3830, var(--dark));
+}
+
+:root[data-theme='dark'] .card--warm {
+  background: var(--surface-warm);
+}
+
+:root[data-theme='dark'] .home-invite__icon,
+:root[data-theme='dark'] .invite-summary__icon,
+:root[data-theme='dark'] .storage-card__icon {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+:root[data-theme='dark'] .question-row__status--draft {
+  background: #3d2f1b;
+  color: #f0c98a;
+}
+
+:root[data-theme='dark'] .field-message--error,
+:root[data-theme='dark'] .form-error,
+:root[data-theme='dark'] .storage-warning {
+  border-color: #7a3b35;
+  background: #2e1b19;
+  color: #f4b7ae;
+}
+
+:root[data-theme='dark'] input,
+:root[data-theme='dark'] textarea,
+:root[data-theme='dark'] select {
+  background-color: var(--surface-strong);
+  color: var(--ink);
+}
+
+:root[data-theme='dark'] .search-field input,
+:root[data-theme='dark'] .book-person-filter select {
+  background-color: transparent;
+}
+
+:root[data-theme='dark'] ::placeholder {
+  color: var(--muted);
+}
+
+:root[data-theme='dark'] img:not(.asset-preview--image, .moment-card__image) {
+  filter: brightness(0.92);
+}
+
+/* ---------- Segmented control (theme picker) ---------- */
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin: 4px 0 18px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--bg-deep);
+}
+
+.segmented button {
+  display: inline-flex;
+  min-height: 44px;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.segmented button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.segmented button.is-active {
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-sm);
+  color: var(--ink);
+}
+
+/* ---------- Touch feedback ---------- */
+
+.button:active:not(:disabled),
+.icon-button:active:not(:disabled),
+.segmented button:active {
+  transform: scale(0.97);
+}
+
+.moment-card,
+.home-moment-card,
+.person-card {
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.moment-card:active,
+.home-moment-card:active,
+.person-card:active {
+  transform: scale(0.985);
+}
+
+/* ---------- Mobile: edge-to-edge, compact chrome, content first ---------- */
+
+@media (max-width: 899px) {
+  :root {
+    --mobile-nav-height: 80px;
+  }
+
+  body {
+    font-size: 16px;
+  }
+
+  h1 {
+    font-size: clamp(1.75rem, 8vw, 2.3rem);
+  }
+
+  h2 {
+    font-size: clamp(1.25rem, 5.4vw, 1.55rem);
+  }
+
+  /* Top app bar: smaller, follows the notch / status bar. */
+  .mobile-topbar {
+    min-height: calc(56px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 16px 0;
+  }
+
+  .mobile-topbar .brand__mark {
+    width: 36px;
+    height: 36px;
+    flex-basis: 36px;
+    border-radius: 11px;
+    font-size: 0.85rem;
+  }
+
+  .mobile-topbar .brand strong {
+    font-size: 1.05rem;
+  }
+
+  .mobile-topbar .brand small {
+    font-size: 0.75rem;
+  }
+
+  .app-main {
+    padding-top: calc(72px + env(safe-area-inset-top));
+    padding-inline: 16px;
+  }
+
+  /* Material 3 navigation bar: pill indicator behind the icon only. */
+  .mobile-nav {
+    padding: 10px 4px calc(12px + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--surface) 90%, transparent);
+    backdrop-filter: blur(20px) saturate(1.4);
+    box-shadow: none;
+  }
+
+  .mobile-nav a,
+  .mobile-nav a.is-active {
+    gap: 4px;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .mobile-nav a svg {
+    box-sizing: content-box;
+    width: 24px;
+    height: 24px;
+    padding: 4px 20px;
+    border-radius: var(--radius-pill);
+    transition: background 200ms ease;
+  }
+
+  .mobile-nav a.is-active {
+    color: var(--ink);
+    font-weight: 750;
+  }
+
+  .mobile-nav a.is-active svg {
+    background: var(--primary-soft);
+    color: var(--primary-dark);
+  }
+
+  /* Headers take less of the first screen. */
+  .page-header {
+    margin-bottom: 1.2rem;
+  }
+
+  .home-greeting {
+    margin-bottom: 14px;
+  }
+
+  .home-greeting p:not(.eyebrow) {
+    margin-bottom: 12px;
+    font-size: 0.98rem;
+  }
+
+  /* Stats become a compact single-line chip row. */
+  .stats-row {
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .stats-row > div {
+    min-height: 0;
+    gap: 2px;
+    padding: 10px 12px;
+    border-radius: 16px;
+  }
+
+  /* The bottom bar already links to the book. */
+  .home-greeting > .button {
+    display: none;
+  }
+
+  .stats-row > div svg {
+    display: none;
+  }
+
+  .stats-row strong {
+    margin: 0;
+    font-size: 1.3rem;
+  }
+
+  .stats-row span {
+    font-size: 0.8rem;
+  }
+
+  /* The book hero repeats the stats: keep it short on phones. */
+  .book-hero__copy p {
+    display: none;
+  }
+
+  .book-hero__stats dd {
+    font-size: 1.6rem;
+  }
+
+  .card {
+    border-radius: 22px;
+  }
+
+  .button--large {
+    min-height: 54px;
+  }
+}
+
+/* ---------- Desktop polish ---------- */
+
+@media (min-width: 900px) {
+  .sidebar nav a {
+    transition: background 160ms ease, color 160ms ease;
+  }
+
+  .moment-card:hover,
+  .home-moment-card:hover,
+  .person-card:hover {
+    box-shadow: var(--shadow-md);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button:active:not(:disabled),
+  .icon-button:active:not(:disabled),
+  .segmented button:active,
+  .moment-card:active,
+  .home-moment-card:active,
+  .person-card:active {
+    transform: none;
+  }
+}

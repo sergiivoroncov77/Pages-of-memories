@@ -7,36 +7,30 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons/*.svg', 'demo/*.svg'],
+      includeAssets: ['favicon.svg', 'icons/*.svg', 'icons/*.png', 'demo/*.svg'],
       manifest: {
         name: 'Истории близких',
         short_name: 'Истории',
         description: 'Голосовые воспоминания семьи, собранные в одну книгу',
         lang: 'ru',
+        id: '/',
         start_url: '/',
+        scope: '/',
         display: 'standalone',
         orientation: 'portrait',
         background_color: '#f7f1e7',
-        theme_color: '#8f4e36',
+        theme_color: '#f7f1e7',
         categories: ['lifestyle', 'education'],
         icons: [
-          {
-            src: '/icons/pwa-192x192.svg',
-            sizes: '192x192',
-            type: 'image/svg+xml',
-            purpose: 'any'
-          },
-          {
-            src: '/icons/pwa-512x512.svg',
-            sizes: '512x512',
-            type: 'image/svg+xml',
-            purpose: 'any maskable'
-          }
+          { src: '/icons/pwa-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icons/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icons/maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/icons/pwa-512x512.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }
         ]
       },
       workbox: {
         navigateFallback: 'index.html',
-        globPatterns: ['**/*.{js,css,html,svg,woff2}']
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2}']
       }
     })
   ]

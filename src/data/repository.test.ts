@@ -223,6 +223,22 @@ describe('snapshot repository', () => {
     expect(() => parseSnapshotImport(JSON.stringify(snapshot))).toThrow('фотография');
   });
 
+  it('keeps a saved theme, defaults older snapshots to the system theme and rejects unknown themes on import', () => {
+    const stored = structuredClone(seedSnapshot);
+    stored.settings.theme = 'dark';
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+    expect(loadSnapshot().settings.theme).toBe('dark');
+
+    const legacy = JSON.parse(JSON.stringify(seedSnapshot));
+    delete legacy.settings.theme;
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(legacy));
+    expect(loadSnapshot().settings.theme).toBe('system');
+    expect(parseSnapshotImport(JSON.stringify(legacy)).settings.theme).toBe('system');
+
+    legacy.settings.theme = 'sepia';
+    expect(() => parseSnapshotImport(JSON.stringify(legacy))).toThrow('settings.theme');
+  });
+
   it('accepts embedded raster media and preserves the original malformed storage for recovery', () => {
     const snapshot = structuredClone(seedSnapshot);
     snapshot.memories[0].photoUrl = 'data:image/png;base64,aGVsbG8=';

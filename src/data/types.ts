@@ -142,11 +142,14 @@ export interface MediaAsset {
   createdAt: string;
 }
 
+export type ThemePreference = 'system' | 'light' | 'dark';
+
 export interface AppSettings {
   cloudBackup: boolean;
   allowTranscriptSharing: boolean;
   weeklyReminder: boolean;
   highContrast: boolean;
+  theme: ThemePreference;
 }
 
 export interface AppSnapshot {

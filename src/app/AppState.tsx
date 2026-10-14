@@ -258,7 +258,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       asset ? addMediaAssetToSnapshot(snapshotRef.current, asset) : snapshotRef.current,
       perspective
     );
-    return importSnapshot(next);
+    // Large media is only kept when it was actually written. Unlike an import,
+    // this must not discard original data that is still waiting for recovery.
+    if (originalDataRef.current !== undefined) {
+      return { ok: false, error: { kind: 'unavailable', message: 'Сначала восстановите сохранённую книгу в настройках, затем добавьте материал.' } };
+    }
+    const result = persistSnapshot(next);
+    if (!result.ok) return result;
+    snapshotRef.current = next;
+    persistenceErrorRef.current = null;
+    setPersistenceError(null);
+    setSnapshot(next);
+    return result;
   };
 
   const addReflection = (input: Parameters<typeof createReflection>[0]) => {

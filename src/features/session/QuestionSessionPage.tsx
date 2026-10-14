@@ -146,7 +146,7 @@ function QuestionSession() {
             <div className="question-intro__person">
               <Avatar person={person} size="large" />
               <div>
-                <span>Вопрос для</span>
+                <span>Рассказчик</span>
                 <strong>{person.name}</strong>
               </div>
             </div>

@@ -1,12 +1,18 @@
-import { Bell, Download, Eye, FileJson, HardDrive, RotateCcw, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { Bell, Download, Eye, FileJson, HardDrive, Monitor, Moon, RotateCcw, ShieldCheck, Sun, Trash2, Upload } from 'lucide-react';
 import { useRef, useState, type ChangeEvent } from 'react';
 import { useAppState } from '../../app/AppState';
 import { Card } from '../../components/Card';
 import { PageHeader } from '../../components/PageHeader';
 import { Toggle } from '../../components/Toggle';
 import { parseSnapshotImport } from '../../data/repository';
-import type { AppSnapshot } from '../../data/types';
+import type { AppSnapshot, ThemePreference } from '../../data/types';
 import { estimateStorageBytes, MAX_STORAGE_BYTES } from '../../lib/storage';
+
+const themeOptions: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
+  { value: 'system', label: 'Авто', icon: Monitor },
+  { value: 'light', label: 'Светлая', icon: Sun },
+  { value: 'dark', label: 'Тёмная', icon: Moon }
+];
 
 export function SettingsPage() {
   const { snapshot, settings, updateSettings, resetDemo, exportBackup, importSnapshot, persistenceError } = useAppState();
@@ -120,8 +126,15 @@ export function SettingsPage() {
           <span className="settings-section__icon settings-section__icon--sage"><Bell size={23} aria-hidden="true" /></span>
           <div>
             <h2>Удобство чтения</h2>
-            <p>Настройте контраст под себя. Автоматические напоминания пока недоступны.</p>
+            <p>Выберите тему и контраст. Автоматические напоминания пока недоступны.</p>
           </div>
+        </div>
+        <div className="segmented" role="radiogroup" aria-label="Тема оформления">
+          {themeOptions.map(({ value, label, icon: Icon }) => (
+            <button key={value} type="button" role="radio" aria-checked={settings.theme === value} className={settings.theme === value ? 'is-active' : ''} onClick={() => updateSettings({ theme: value })}>
+              <Icon size={18} aria-hidden="true" /><span>{label}</span>
+            </button>
+          ))}
         </div>
         <div className="settings-toggles">
           <Toggle checked={settings.highContrast} onChange={(highContrast) => updateSettings({ highContrast })} label="Повышенный контраст" description="Усиливает границы, текст и элементы управления." />

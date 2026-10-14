@@ -27,7 +27,7 @@ export function HomePage() {
     </div>
     {question && person ? <Card tone="dark" className="next-question" padded={false}>
       <div className="next-question__top"><span className="badge badge--light"><Sparkles size={16} aria-hidden="true" /> С чего начать сегодня</span><span className="next-question__category">{question.category}</span></div>
-      <div className="next-question__main"><Avatar person={person} size="large" /><div><p>Вопрос для {person.name}</p><h2>{question.text}</h2></div></div><p className="next-question__hint">{question.hint}</p>
+      <div className="next-question__main"><Avatar person={person} size="large" /><div><p>{person.name} · {person.relation}</p><h2>{question.text}</h2></div></div><p className="next-question__hint">{question.hint}</p>
       <div className="next-question__actions"><Link to={'/session/' + person.id + '/' + question.id} className="button button--primary button--large"><Mic2 size={22} aria-hidden="true" /> Начать рассказ</Link><Link to={'/people/' + person.id} className="button button--light button--large">Выбрать другой вопрос <ArrowRight size={20} aria-hidden="true" /></Link></div>
     </Card> : <Card tone="dark" className="next-question"><p className="eyebrow">История продолжается</p><h2>{moments.length ? 'У каждой истории есть продолжение' : 'Начните вашу семейную книгу'}</h2><p>Добавьте новый момент или дополните уже сохранённые истории.</p><Link to="/book" className="button button--light">Перейти к книге <ArrowRight size={18} aria-hidden="true" /></Link></Card>}
 

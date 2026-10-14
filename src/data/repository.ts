@@ -25,6 +25,7 @@ function cloneSeed(): AppSnapshot {
 type RecordValue = Record<string, unknown>;
 
 const PERSON_STATUSES = ['active', 'invited', 'paused'] as const;
+const THEME_PREFERENCES = ['system', 'light', 'dark'] as const;
 const QUESTION_STATUSES = ['next', 'planned', 'answered', 'draft'] as const;
 const MEMORY_SOURCES = ['app', 'link', 'import'] as const;
 const DRAFT_STATUSES = ['draft', 'ready'] as const;
@@ -333,7 +334,10 @@ function normalizeSettings(value: unknown, fallback: AppSettings): AppSettings {
         ? record.allowTranscriptSharing
         : fallback.allowTranscriptSharing,
     weeklyReminder: typeof record.weeklyReminder === 'boolean' ? record.weeklyReminder : fallback.weeklyReminder,
-    highContrast: typeof record.highContrast === 'boolean' ? record.highContrast : fallback.highContrast
+    highContrast: typeof record.highContrast === 'boolean' ? record.highContrast : fallback.highContrast,
+    theme: typeof record.theme === 'string' && (THEME_PREFERENCES as readonly string[]).includes(record.theme)
+      ? (record.theme as AppSettings['theme'])
+      : fallback.theme
   };
 }
 
@@ -641,7 +645,7 @@ export function parseSnapshotImport(json: string): AppSnapshot {
   if (!isRecord(value) || value.version !== 1) throw new Error('Формат резервной копии не поддерживается: нужна версия 1.');
   validateFields(value.project, { id: 'id', title: 'id', subtitle: 'text', createdAt: 'date', inviteCode: 'text' }, 'project');
   const projectId = value.project.id;
-  validateFields(value.settings, { cloudBackup: 'boolean', allowTranscriptSharing: 'boolean', weeklyReminder: 'boolean', highContrast: 'boolean' }, 'settings');
+  validateFields(value.settings, { cloudBackup: 'boolean', allowTranscriptSharing: 'boolean', weeklyReminder: 'boolean', highContrast: 'boolean', theme: optional(THEME_PREFERENCES) }, 'settings');
   const modernKeys = ['books', 'chapters', 'moments', 'perspectives', 'reflections', 'mediaAssets'];
   const hasModern = modernKeys.some((key) => key in value);
   const collections: Record<string, RecordValue[]> = {};

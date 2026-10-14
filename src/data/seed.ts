@@ -433,7 +433,8 @@ export const seedSnapshot: AppSnapshot = {
     cloudBackup: false,
     allowTranscriptSharing: true,
     weeklyReminder: true,
-    highContrast: false
+    highContrast: false,
+    theme: 'system'
   }
 };
 
