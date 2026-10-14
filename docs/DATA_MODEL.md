@@ -28,7 +28,7 @@
 
 ### MediaAsset
 
-Метаданные локального фото, видео, аудио или документа. В прототипе `url` может быть data URL, поэтому небольшой файл переживает перезагрузку браузера вместе со snapshot.
+Метаданные локального фото, видео, аудио или документа. Байты файла хранятся в IndexedDB (`family-stories-media`, ключ — `MediaAsset.id`), а `url` равен `idb:<id>`. Демо-материалы используют пути `/demo/…`. В резервной копии `url` — base64 data URL; при восстановлении и при загрузке старых snapshot такие файлы переносятся в IndexedDB. `MemoryDraft.audioMediaAssetId` хранит запись ответа до публикации; при публикации она становится аудио-взглядом момента интервью.
 
 ### FamilyProject
 
@@ -89,6 +89,6 @@ Question      1 ── 0..1 MemoryDraft
 - `uploadAudio`, `getAudioUrl`;
 - `createExport`, `getExportStatus`.
 
-Для local-first сценария уже добавлены чистые мутации `createMoment`, `createPerspective`, `createReflection` и `createMediaAsset`. Следующий production-шаг — вынести бинарные assets из localStorage в IndexedDB или объектное хранилище, оставив эту модель ссылок неизменной.
+Для local-first сценария уже добавлены чистые мутации `createMoment`, `createPerspective`, `createReflection` и `createMediaAsset`. Бинарные assets уже вынесены в IndexedDB; следующий шаг — объектное хранилище на backend с той же моделью ссылок.
 
 Компоненты уже не работают с localStorage напрямую, поэтому API можно подключить через замену провайдера данных.

@@ -11,7 +11,7 @@ describe('local media validation', () => {
 
   it('rejects empty, oversized, executable and mismatched files', () => {
     expect(validateMediaFile({ type: 'image/png', size: 0 })).toContain('пустой');
-    expect(validateMediaFile({ type: 'image/png', size: MAX_MEDIA_FILE_BYTES + 1 })).toContain('до 1 МБ');
+    expect(validateMediaFile({ type: 'image/png', size: MAX_MEDIA_FILE_BYTES + 1 })).toContain('до 50 МБ');
     for (const type of ['text/html', 'application/javascript', 'image/svg+xml', '']) {
       expect(validateMediaFile({ type, size: 100 })).toContain('не поддерживается');
     }

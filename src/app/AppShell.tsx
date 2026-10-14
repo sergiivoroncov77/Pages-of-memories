@@ -102,7 +102,7 @@ export function AppShell() {
                 <RotateCcw size={17} aria-hidden="true" />
                 <span>Повторить</span>
               </button>
-              <button type="button" className="button button--primary button--small" onClick={exportBackup}>
+              <button type="button" className="button button--primary button--small" onClick={() => { void exportBackup(); }}>
                 <Download size={17} aria-hidden="true" />
                 <span>Скачать копию</span>
               </button>

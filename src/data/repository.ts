@@ -1,3 +1,4 @@
+import { storedMediaUrl } from '../lib/mediaStore';
 import { STORAGE_KEY, writeStorage } from '../lib/storage';
 import { seedSnapshot } from './seed';
 import { ensureMemoryMoments } from './mutations';
@@ -178,6 +179,7 @@ function normalizeDraft(value: unknown, fallback?: MemoryDraft): MemoryDraft | n
     tags: stringArray(value.tags, fallback?.tags ?? []),
     photoUrl: stringValue(value.photoUrl, fallback?.photoUrl ?? ''),
     photoAlt: stringValue(value.photoAlt, fallback?.photoAlt ?? ''),
+    audioMediaAssetId: optionalString(value.audioMediaAssetId, fallback?.audioMediaAssetId),
     createdAt,
     status: enumValue(value.status, DRAFT_STATUSES, fallback?.status ?? 'draft')
   };
@@ -571,7 +573,10 @@ function normalizeSnapshot(value: unknown): AppSnapshot | null {
     people,
     questions,
     memories,
-    drafts,
+    drafts: drafts.map((draft) => ({ ...draft,
+      audioMediaAssetId: draft.audioMediaAssetId && mediaAssets.some((asset) => asset.id === draft.audioMediaAssetId && asset.type === 'audio')
+        ? draft.audioMediaAssetId : undefined
+    })),
     books: normalizedBooks,
     chapters,
     moments: normalizedMoments,
@@ -594,7 +599,7 @@ const entityFields: Record<string, FieldSchema> = {
   memories: { id: 'id', personId: 'id', questionId: 'id', title: 'id', questionText: 'id', recordedAt: 'date',
     durationSeconds: 'number', transcript: 'text', tags: 'strings', photoUrl: 'text', photoAlt: 'text', source: MEMORY_SOURCES, favorite: 'boolean' },
   drafts: { id: 'id', personId: 'id', questionId: 'id', transcript: 'text', durationSeconds: 'number', tags: optional('strings'),
-    photoUrl: optional('text'), photoAlt: optional('text'), createdAt: 'date', status: DRAFT_STATUSES },
+    photoUrl: optional('text'), photoAlt: optional('text'), audioMediaAssetId: optional('id'), createdAt: 'date', status: DRAFT_STATUSES },
   books: { id: 'id', projectId: 'id', title: 'id', subtitle: 'text', description: 'text', createdAt: 'date', updatedAt: 'date', coverMediaAssetId: optional('id') },
   chapters: { id: 'id', bookId: 'id', title: 'id', description: 'text', order: 'number', createdAt: 'date', updatedAt: 'date' },
   moments: { id: 'id', sourceMemoryId: optional('id'), bookId: 'id', chapterId: 'id', title: 'id', summary: 'text',
@@ -624,8 +629,10 @@ function validateFields(record: unknown, schema: FieldSchema, label: string): as
   }
 }
 
-function isSafeBackupMediaUrl(url: unknown, type: unknown): boolean {
+function isSafeBackupMediaUrl(url: unknown, type: unknown, assetId?: unknown): boolean {
   if (typeof url !== 'string') return false;
+  // Device-local blob reference; only valid for the asset that owns it.
+  if (typeof assetId === 'string' && url === storedMediaUrl(assetId)) return type === 'photo' || type === 'audio' || type === 'video';
   if (type === 'photo' && /^\/demo\/photo-(porch|kitchen|walk)\.svg$/.test(url)) return true;
   if (type === 'audio' && /^\/demo\/(summer|baikal)-memory\.mp3$/.test(url)) return true;
   const match = /^data:([a-z0-9.+/-]+);base64,([A-Za-z0-9+/]+={0,2})$/.exec(url);
@@ -682,6 +689,9 @@ export function parseSnapshotImport(json: string): AppSnapshot {
     reference(item.projectId === projectId, 'книги с семьёй');
     if (item.coverMediaAssetId !== undefined) reference(assets.get(item.coverMediaAssetId)?.type === 'photo', 'обложки с фотографией');
   });
+  collections.drafts.forEach((item) => {
+    if (item.audioMediaAssetId !== undefined) reference(assets.get(item.audioMediaAssetId)?.type === 'audio', 'черновика с аудиозаписью');
+  });
   collections.chapters.forEach((item) => reference(books.has(item.bookId), 'главы с книгой'));
   const linkedMemoryIds = new Set<unknown>();
   collections.moments.forEach((item) => {
@@ -716,7 +726,7 @@ export function parseSnapshotImport(json: string): AppSnapshot {
     }
   });
   collections.mediaAssets.forEach((item) => {
-    if (!isSafeBackupMediaUrl(item.url, item.type)) {
+    if (!isSafeBackupMediaUrl(item.url, item.type, item.id)) {
       throw new Error('В резервной копии есть неподдерживаемый файл или внешняя ссылка. Восстановление отменено.');
     }
   });

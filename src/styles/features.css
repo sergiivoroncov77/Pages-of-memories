@@ -2350,3 +2350,60 @@
     top: 25px;
   }
 }
+
+/* Real recording: problem states, live meter fallbacks and the saved take. */
+.recording-screen__wave span {
+  transition: height 80ms linear;
+}
+
+.recording-screen--waiting .recording-screen__wave span {
+  opacity: 0.2;
+}
+
+.record-orb:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.recording-screen__error {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.recording-screen__cancel {
+  margin: 18px auto 0;
+  color: inherit;
+  opacity: 0.8;
+}
+
+.recording-problem {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+
+.recording-problem h2,
+.recording-problem p {
+  margin: 0;
+}
+
+.recording-problem__actions,
+.recorded-answer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.recorded-answer {
+  display: grid;
+  gap: 16px;
+}
+
+.recorded-answer__player {
+  width: 100%;
+}

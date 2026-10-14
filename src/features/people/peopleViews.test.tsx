@@ -91,7 +91,7 @@ describe('people views', () => {
     expect(html).toContain('1 из 2 вопросов с ответом');
     expect(html).toContain('Есть сохранённый ответ и новый черновик');
     expect(html).toMatch(/href="\/session\/test-person\/question-1"[^>]*>Продолжить/);
-    expect(html).toMatch(/href="\/session\/test-person\/question-2"[^>]*>Ответить текстом/);
+    expect(html).toMatch(/href="\/session\/test-person\/question-2"[^>]*>Ответить</);
   });
 
   it('keeps people with real contributions out of the waiting group regardless of seed status', () => {

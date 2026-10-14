@@ -1,6 +1,19 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { loadSnapshotResult, persistSnapshot, resetSnapshot } from '../data/repository';
+import { createId } from '../lib/id';
+import type { MediaUploadWithBlob } from '../lib/mediaFiles';
+import {
+  applyMediaMigration,
+  inlineStoredMedia,
+  mediaStore,
+  mediaStoreErrorMessage,
+  migrateSnapshotMedia,
+  moveInlineMediaToStore,
+  pruneMediaStore,
+  requestPersistentStorage,
+  storedMediaUrl
+} from '../lib/mediaStore';
 import type { StorageError, StorageWriteResult } from '../lib/storage';
 import {
   addMediaAssetToSnapshot,
@@ -8,12 +21,14 @@ import {
   addMomentToSnapshot,
   addPerspectiveToSnapshot,
   addReflectionToSnapshot,
+  attachMemoryAudio,
   createMediaAsset,
   createMemoryDraft,
   createMoment,
   createPerspective,
   createReflection,
   publishMemoryToSnapshot,
+  removeUnusedMediaAsset,
   saveDraftToSnapshot,
   toggleMomentFavorite,
   toggleMemoryFavorite,
@@ -51,9 +66,11 @@ interface AppStateValue {
   recoveryWarning: string | null;
   downloadOriginalData: (() => void) | null;
   retryPersistence: () => StorageWriteResult;
-  exportBackup: () => void;
+  exportBackup: () => Promise<void>;
   registerDraftFlush: (flush: () => void) => () => void;
   importSnapshot: (snapshot: AppSnapshot) => StorageWriteResult;
+  /** Moves embedded backup media into the device blob store before replacing the book. */
+  restoreBackup: (snapshot: AppSnapshot) => Promise<StorageWriteResult>;
   getPerson: (id: string) => Person | undefined;
   getQuestion: (id: string) => Question | undefined;
   getMemory: (id: string) => Memory | undefined;
@@ -73,14 +90,16 @@ interface AppStateValue {
   addPerspective: (input: Parameters<typeof createPerspective>[0]) => Perspective;
   addPerspectiveWithMedia: (
     input: Parameters<typeof createPerspective>[0],
-    media?: Parameters<typeof createMediaAsset>[0]
-  ) => StorageWriteResult;
+    media?: MediaUploadWithBlob
+  ) => Promise<StorageWriteResult>;
+  storeMedia: (media: MediaUploadWithBlob) => Promise<{ ok: true; asset: MediaAsset } | { ok: false; error: StorageError }>;
+  discardMedia: (assetId: string) => void;
   addReflection: (input: Parameters<typeof createReflection>[0]) => Reflection;
   addMediaAsset: (input: Parameters<typeof createMediaAsset>[0]) => MediaAsset;
   toggleFavorite: (memoryId: string) => void;
   toggleMomentFavorite: (momentId: string) => void;
   updateSettings: (patch: Partial<AppSettings>) => void;
-  resetDemo: () => StorageWriteResult;
+  resetDemo: () => Promise<StorageWriteResult>;
 }
 
 const AppStateContext = createContext<AppStateValue | null>(null);
@@ -123,9 +142,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const retryPersistence = useCallback(() => persist(snapshotRef.current), [persist]);
 
-  const exportBackup = useCallback(() => {
+  const exportBackup = useCallback(async () => {
     pendingDraftFlushes.current.forEach((flush) => flush());
-    const blob = new Blob([JSON.stringify(snapshotRef.current, null, 2)], { type: 'application/json;charset=utf-8' });
+    // Device-local media is embedded so the backup restores on another device.
+    const current = snapshotRef.current;
+    const { assets } = await inlineStoredMedia(current.mediaAssets, mediaStore());
+    const blob = new Blob([JSON.stringify({ ...current, mediaAssets: assets }, null, 2)], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -159,6 +181,39 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setSnapshot(next);
     return result;
   }, []);
+
+  const restoreBackup = useCallback(async (next: AppSnapshot): Promise<StorageWriteResult> => {
+    const store = mediaStore();
+    const hadPendingRecovery = originalDataRef.current !== undefined;
+    let migrated: AppSnapshot;
+    try {
+      migrated = (await migrateSnapshotMedia(next, store)).snapshot;
+    } catch (error) {
+      return { ok: false, error: { kind: 'unavailable', message: mediaStoreErrorMessage(error) } };
+    }
+    if (migrated.mediaAssets.some((asset) => asset.url.startsWith('data:'))) {
+      return { ok: false, error: { kind: 'quota', message: mediaStoreErrorMessage(new DOMException('Full', 'QuotaExceededError')) } };
+    }
+    const result = importSnapshot(migrated);
+    if (result.ok) requestPersistentStorage();
+    // Unrecovered original data may still reference device media; keep it until then.
+    if (result.ok && !hadPendingRecovery) void pruneMediaStore(migrated, store).catch(() => undefined);
+    return result;
+  }, [importSnapshot]);
+
+  // Older snapshots kept uploads inline as data: URLs inside localStorage.
+  useEffect(() => {
+    if (originalDataRef.current !== undefined) return;
+    const original = snapshotRef.current.mediaAssets;
+    if (!original.some((asset) => asset.url.startsWith('data:'))) return;
+    let active = true;
+    void moveInlineMediaToStore(original, mediaStore()).then(({ migrated }) => {
+      if (!active || migrated.size === 0 || originalDataRef.current !== undefined) return;
+      commitSnapshot((current) => applyMediaMigration(current, original, migrated));
+      requestPersistentStorage();
+    });
+    return () => { active = false; };
+  }, [commitSnapshot]);
 
   useEffect(() => {
     const warnOnClose = (event: BeforeUnloadEvent) => {
@@ -227,7 +282,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const addMemory = (input: NewMemoryInput) => {
     const result = publishMemoryToSnapshot(snapshotRef.current, input);
-    commitSnapshot((current) => addMemoryToSnapshot(current, result.memory));
+    commitSnapshot((current) => {
+      const published = addMemoryToSnapshot(current, result.memory);
+      return input.audioMediaAssetId ? attachMemoryAudio(published, result.memory, input.audioMediaAssetId) : published;
+    });
 
     return result.memory;
   };
@@ -248,28 +306,68 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return perspective;
   };
 
-  const addPerspectiveWithMedia = (
+  const recoveryPendingError = (): StorageError => ({
+    kind: 'unavailable',
+    message: 'Сначала восстановите сохранённую книгу в настройках, затем добавьте материал.'
+  });
+
+  /** Write the bytes first; the snapshot only ever references media that exists on the device. */
+  const putMediaBlob = async (media: MediaUploadWithBlob): Promise<{ ok: true; asset: MediaAsset } | { ok: false; error: StorageError }> => {
+    const { blob, ...metadata } = media;
+    const id = createId('media');
+    try {
+      await mediaStore().put(id, blob);
+    } catch (error) {
+      return { ok: false, error: { kind: 'quota', message: mediaStoreErrorMessage(error) } };
+    }
+    requestPersistentStorage();
+    return { ok: true, asset: createMediaAsset({ ...metadata, url: storedMediaUrl(id), sizeBytes: blob.size }, id) };
+  };
+
+  const addPerspectiveWithMedia = async (
     input: Parameters<typeof createPerspective>[0],
-    media?: Parameters<typeof createMediaAsset>[0]
-  ): StorageWriteResult => {
-    const asset = media ? createMediaAsset(media) : undefined;
+    media?: MediaUploadWithBlob
+  ): Promise<StorageWriteResult> => {
+    // Unlike an import, this must not discard original data that is still waiting for recovery.
+    if (originalDataRef.current !== undefined) return { ok: false, error: recoveryPendingError() };
+    let asset: MediaAsset | undefined;
+    if (media) {
+      const stored = await putMediaBlob(media);
+      if (!stored.ok) return stored;
+      asset = stored.asset;
+    }
     const perspective = createPerspective({ ...input, mediaAssetId: asset?.id ?? input.mediaAssetId });
     const next = addPerspectiveToSnapshot(
       asset ? addMediaAssetToSnapshot(snapshotRef.current, asset) : snapshotRef.current,
       perspective
     );
-    // Large media is only kept when it was actually written. Unlike an import,
-    // this must not discard original data that is still waiting for recovery.
-    if (originalDataRef.current !== undefined) {
-      return { ok: false, error: { kind: 'unavailable', message: 'Сначала восстановите сохранённую книгу в настройках, затем добавьте материал.' } };
+    const result: StorageWriteResult = originalDataRef.current !== undefined
+      ? { ok: false, error: recoveryPendingError() }
+      : persistSnapshot(next);
+    if (!result.ok) {
+      if (asset) void mediaStore().delete(asset.id).catch(() => undefined);
+      return result;
     }
-    const result = persistSnapshot(next);
-    if (!result.ok) return result;
     snapshotRef.current = next;
     persistenceErrorRef.current = null;
     setPersistenceError(null);
     setSnapshot(next);
     return result;
+  };
+
+  const storeMedia = async (media: MediaUploadWithBlob): Promise<{ ok: true; asset: MediaAsset } | { ok: false; error: StorageError }> => {
+    if (originalDataRef.current !== undefined) return { ok: false, error: recoveryPendingError() };
+    const stored = await putMediaBlob(media);
+    if (!stored.ok) return stored;
+    commitSnapshot((current) => addMediaAssetToSnapshot(current, stored.asset));
+    return stored;
+  };
+
+  const discardMedia = (assetId: string) => {
+    commitSnapshot((current) => removeUnusedMediaAsset(current, assetId));
+    if (!snapshotRef.current.mediaAssets.some((asset) => asset.id === assetId)) {
+      void mediaStore().delete(assetId).catch(() => undefined);
+    }
   };
 
   const addReflection = (input: Parameters<typeof createReflection>[0]) => {
@@ -299,7 +397,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }));
   };
 
-  const resetDemo = () => importSnapshot(resetSnapshot());
+  const resetDemo = () => restoreBackup(resetSnapshot());
 
   return (
     <AppStateContext.Provider
@@ -324,6 +422,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         exportBackup,
         registerDraftFlush,
         importSnapshot,
+        restoreBackup,
         getPerson,
         getQuestion,
         getMemory,
@@ -342,6 +441,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         updateMoment,
         addPerspective,
         addPerspectiveWithMedia,
+        storeMedia,
+        discardMedia,
         addReflection,
         addMediaAsset,
         toggleFavorite,

@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
+import { MediaImage } from '../../components/MediaImage';
 import { PageHeader } from '../../components/PageHeader';
 import { formatDate, pluralize, truncate } from '../../lib/format';
 import { MomentDetailsForm, type MomentDetails } from '../moments/MomentDetailsForm';
@@ -112,7 +113,7 @@ export function BookPage() {
               const image = perspectives.map((item) => mediaForPerspective(item.id)).find((asset) => asset?.type === 'photo');
               return <article className={'moment-card ' + (image ? 'moment-card--illustrated' : '')} key={moment.id}>
                 <Link to={'/moments/' + moment.id} className="moment-card__main">
-                  {image ? <img className="moment-card__image" src={image.url} alt="" loading="lazy" /> : null}
+                  {image ? <MediaImage className="moment-card__image" asset={image} /> : null}
                   <div className="moment-card__body"><div className="moment-card__topline"><span><CalendarDays size={15} aria-hidden="true" /> {moment.occurredAt ? formatDate(moment.occurredAt) : 'Дата не указана'}</span></div>
                     <h3>{moment.title}</h3><p>{truncate(moment.summary || primary?.content || 'Добавьте первый рассказ на эту страницу.', 150)}</p>
                     <div className="moment-card__footer"><span className="moment-card__author">{author?.name ?? 'Пока без рассказчика'}</span><span className="avatar-stack" aria-label={participants.map((person) => person?.name).join(', ')}>{participants.slice(0, 3).map((person) => person ? <span key={person.id} aria-hidden="true" style={{ background: person.avatarColor }}>{person.initials}</span> : null)}</span></div>

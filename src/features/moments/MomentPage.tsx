@@ -8,8 +8,8 @@ import { EmptyState } from '../../components/EmptyState';
 import { PageHeader } from '../../components/PageHeader';
 import type { MediaAsset, Moment, Person, Perspective, PerspectiveType } from '../../data/types';
 import { formatDate, formatDuration, pluralize } from '../../lib/format';
-import { readMediaFile, validateMediaFile, type MediaUpload } from '../../lib/mediaFiles';
-import { estimateStorageBytes, MAX_STORAGE_BYTES } from '../../lib/storage';
+import { prepareMediaFile, validateMediaFile, type MediaUploadWithBlob } from '../../lib/mediaFiles';
+import { useMediaUrl } from '../../lib/useMediaUrl';
 import { MomentDetailsForm } from './MomentDetailsForm';
 
 type MomentTab = 'story' | 'perspectives' | 'materials';
@@ -32,7 +32,7 @@ export function MomentPage() {
 }
 
 function MomentContent({ moment }: { moment: Moment }) {
-  const { snapshot, chapters, books, perspectivesForMoment, reflectionsForMoment, mediaForPerspective, getPerson, people, addPerspectiveWithMedia, addReflection, toggleMomentFavorite, updateMoment } = useAppState();
+  const { chapters, books, perspectivesForMoment, reflectionsForMoment, mediaForPerspective, getPerson, people, addPerspectiveWithMedia, addReflection, toggleMomentFavorite, updateMoment } = useAppState();
   const chapter = chapters.find((item) => item.id === moment.chapterId)!;
   const book = books.find((item) => item.id === moment.bookId)!;
   const perspectives = perspectivesForMoment(moment.id);
@@ -92,17 +92,12 @@ function MomentContent({ moment }: { moment: Moment }) {
     if (selectedFile) {
       const fileError = validateMediaFile(selectedFile, type);
       if (fileError) { setError(fileError); return; }
-      // Estimate base64 and UTF-16 overhead before reading a large file.
-      if (estimateStorageBytes(JSON.stringify(snapshot)) + Math.ceil(selectedFile.size / 3) * 8 + 8192 > MAX_STORAGE_BYTES) {
-        setError('В локальной книге недостаточно места для этого файла. Выберите меньший файл. Резервную копию можно скачать в настройках.');
-        return;
-      }
     }
     setIsSaving(true);
     try {
-      const media: MediaUpload | undefined = selectedFile ? await readMediaFile(selectedFile) : undefined;
+      const media: MediaUploadWithBlob | undefined = selectedFile ? prepareMediaFile(selectedFile) : undefined;
       if (media) media.alt = caption.trim() || content.trim() || selectedFile!.name;
-      const result = addPerspectiveWithMedia({ momentId: moment.id, type, content: content.trim() || caption.trim() || selectedFile?.name || '', authorId: authorId || undefined, caption: caption.trim() || undefined, isPrimary: perspectives.length === 0 }, media);
+      const result = await addPerspectiveWithMedia({ momentId: moment.id, type, content: content.trim() || caption.trim() || selectedFile?.name || '', authorId: authorId || undefined, caption: caption.trim() || undefined, isPrimary: perspectives.length === 0 }, media);
       if (!result.ok) { setError(result.error.message); return; }
       setContent('');
       setCaption('');
@@ -137,7 +132,7 @@ function MomentContent({ moment }: { moment: Moment }) {
       <form className="inline-form" onSubmit={submitPerspective} aria-busy={isSaving}>
         <div className="form-row"><label className="field"><span>Кто рассказывает</span><select value={authorId} onChange={(event) => setAuthorId(event.target.value)} disabled={isSaving}><option value="">Без указания автора</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
           <label className="field"><span>Формат</span><select value={type} disabled={isSaving} onChange={(event) => { setType(event.target.value as PerspectiveType); setSelectedFile(null); setError(''); if (fileInput.current) fileInput.current.value = ''; }}>{Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
-        {type !== 'text' ? <label className="field file-field"><span>Файл с устройства</span><input ref={fileInput} key={type} type="file" accept={acceptTypes[type]} disabled={isSaving} onChange={(event) => { const file = event.target.files?.[0] ?? null; setSelectedFile(file); setError(file ? validateMediaFile(file, type) ?? '' : ''); }} aria-describedby="media-size-note" /><small id="media-size-note">До 1 МБ на файл. Материал хранится только в этом браузере.</small>{selectedFile ? <small>{selectedFile.name} · {Math.ceil(selectedFile.size / 1024)} КБ</small> : null}</label> : null}
+        {type !== 'text' ? <label className="field file-field"><span>Файл с устройства</span><input ref={fileInput} key={type} type="file" accept={acceptTypes[type]} disabled={isSaving} onChange={(event) => { const file = event.target.files?.[0] ?? null; setSelectedFile(file); setError(file ? validateMediaFile(file, type) ?? '' : ''); }} aria-describedby="media-size-note" /><small id="media-size-note">До 50 МБ на файл. Материал хранится только на этом устройстве — для переноса скачайте резервную копию.</small>{selectedFile ? <small>{selectedFile.name} · {Math.ceil(selectedFile.size / 1024)} КБ</small> : null}</label> : null}
         <label className="field"><span>{type === 'text' ? 'Как вы это помните?' : 'Что стоит знать об этом материале?'}</span><textarea autoFocus value={content} onChange={(event) => setContent(event.target.value)} rows={5} maxLength={30000} required={type === 'text'} disabled={isSaving} placeholder="Можно начать с одной детали…" /></label>
         {type !== 'text' ? <label className="field"><span>Подпись к материалу <small>необязательно</small></span><input value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={500} disabled={isSaving} placeholder="Например, семья за столом летом 1980 года" /></label> : null}
         {error ? <p className="field-message field-message--error" role="alert">{error}</p> : null}
@@ -175,10 +170,12 @@ function PerspectiveCard({ perspective, author, asset, compact = false, primary 
 
 function AssetPreview({ asset }: { asset: MediaAsset }) {
   const [failed, setFailed] = useState(false);
-  if (failed) return <p className="field-message" role="status">Не удалось открыть материал «{asset.fileName ?? 'Файл'}». Проверьте его формат или восстановите файл из резервной копии.</p>;
-  if (asset.type === 'photo') return <img className="asset-preview asset-preview--image" src={asset.url} alt={asset.alt ?? asset.fileName ?? 'Фотография из книги'} loading="lazy" onError={() => setFailed(true)} />;
+  const media = useMediaUrl(asset);
+  if (media.status === 'loading') return <p className="field-message" role="status">Загружаем материал…</p>;
+  if (failed || media.status === 'missing') return <p className="field-message" role="status">Не удалось открыть материал «{asset.fileName ?? 'Файл'}». Проверьте его формат или восстановите файл из резервной копии.</p>;
+  if (asset.type === 'photo') return <img className="asset-preview asset-preview--image" src={media.url} alt={asset.alt ?? asset.fileName ?? 'Фотография из книги'} loading="lazy" onError={() => setFailed(true)} />;
   if (asset.type === 'audio' && asset.url.startsWith('/demo/')) return <div className="demo-media-note"><FileAudio size={21} aria-hidden="true" /><span>Демонстрационный материал. Настоящая аудиозапись не прикреплена.</span></div>;
-  if (asset.type === 'video') return <video className="asset-preview" src={asset.url} controls preload="metadata" aria-label={asset.fileName ?? 'Видео момента'} onError={() => setFailed(true)} />;
-  if (asset.type === 'audio') return <div className="asset-preview asset-preview--audio"><FileAudio size={21} aria-hidden="true" /><audio src={asset.url} controls preload="metadata" aria-label={asset.fileName ?? 'Аудиозапись момента'} onError={() => setFailed(true)} /></div>;
+  if (asset.type === 'video') return <video className="asset-preview" src={media.url} controls preload="metadata" aria-label={asset.fileName ?? 'Видео момента'} onError={() => setFailed(true)} />;
+  if (asset.type === 'audio') return <div className="asset-preview asset-preview--audio"><FileAudio size={21} aria-hidden="true" /><audio src={media.url} controls preload="metadata" aria-label={asset.fileName ?? 'Аудиозапись момента'} onError={() => setFailed(true)} /></div>;
   return <p className="demo-media-note">Просмотр этого типа материала пока недоступен.</p>;
 }

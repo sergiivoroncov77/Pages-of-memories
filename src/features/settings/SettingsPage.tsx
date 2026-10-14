@@ -6,7 +6,11 @@ import { PageHeader } from '../../components/PageHeader';
 import { Toggle } from '../../components/Toggle';
 import { parseSnapshotImport } from '../../data/repository';
 import type { AppSnapshot, ThemePreference } from '../../data/types';
+import { formatFileSize } from '../../lib/format';
+import { isStoredMedia, storedMediaUrl } from '../../lib/mediaStore';
 import { estimateStorageBytes, MAX_STORAGE_BYTES } from '../../lib/storage';
+
+const MAX_BACKUP_FILE_BYTES = 500 * 1024 * 1024;
 
 const themeOptions: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
   { value: 'system', label: 'Авто', icon: Monitor },
@@ -15,15 +19,17 @@ const themeOptions: { value: ThemePreference; label: string; icon: typeof Sun }[
 ];
 
 export function SettingsPage() {
-  const { snapshot, settings, updateSettings, resetDemo, exportBackup, importSnapshot, persistenceError } = useAppState();
+  const { snapshot, settings, updateSettings, resetDemo, exportBackup, restoreBackup, persistenceError } = useAppState();
   const [pendingImport, setPendingImport] = useState<{ name: string; snapshot: AppSnapshot } | null>(null);
   const [importError, setImportError] = useState('');
   const [notice, setNotice] = useState('');
   const [resetStatus, setResetStatus] = useState<{ error: boolean; message: string } | null>(null);
   const [isReading, setIsReading] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   const fileReadVersion = useRef(0);
   const storageSize = estimateStorageBytes(JSON.stringify(snapshot));
   const storageKb = Math.max(1, Math.round(storageSize / 1024));
+  const deviceMediaBytes = snapshot.mediaAssets.filter(isStoredMedia).reduce((total, asset) => total + (asset.sizeBytes ?? 0), 0);
   const book = snapshot.books[0];
 
   const prepareImport = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -36,9 +42,11 @@ export function SettingsPage() {
     setNotice('');
     setIsReading(true);
     try {
-      if (file.size > MAX_STORAGE_BYTES * 2) throw new Error('Файл слишком большой для локальной книги. Выберите резервную копию до 8 МБ.');
+      if (file.size > MAX_BACKUP_FILE_BYTES) throw new Error('Файл слишком большой. Выберите резервную копию до 500 МБ.');
       const parsed = parseSnapshotImport(await file.text());
-      if (estimateStorageBytes(JSON.stringify(parsed)) > MAX_STORAGE_BYTES) {
+      // Embedded media moves to the device media store; only metadata counts toward localStorage.
+      const metadataOnly = { ...parsed, mediaAssets: parsed.mediaAssets.map((asset) => asset.url.startsWith('data:') ? { ...asset, url: storedMediaUrl(asset.id) } : asset) };
+      if (estimateStorageBytes(JSON.stringify(metadataOnly)) > MAX_STORAGE_BYTES) {
         throw new Error('Эта копия превышает лимит локального хранилища 4 МБ. Текущая книга не изменена.');
       }
       if (version === fileReadVersion.current) setPendingImport({ name: file.name, snapshot: parsed });
@@ -62,6 +70,7 @@ export function SettingsPage() {
         <div>
           <p className="eyebrow">Локальная книга</p>
           <h2>{storageKb} КБ из 4 МБ</h2>
+          {deviceMediaBytes > 0 ? <p>Фото, аудио и видео на устройстве: {formatFileSize(deviceMediaBytes)}.</p> : null}
           <p>{book?.title ?? 'Книга'} · {snapshot.chapters.length} глав · {snapshot.moments.length} моментов · {snapshot.mediaAssets.length} материалов.</p>
           {persistenceError ? <p className="field-message field-message--error">Есть изменения, которые ещё не записаны в браузер. Резервная копия включает их.</p> : null}
         </div>
@@ -76,7 +85,7 @@ export function SettingsPage() {
           </div>
         </div>
         <div className="settings-actions">
-          <button type="button" className="button button--primary button--large" onClick={exportBackup}>
+          <button type="button" className="button button--primary button--large" onClick={() => { void exportBackup(); }}>
             <Download size={21} aria-hidden="true" /><span>Скачать копию JSON</span>
           </button>
           <label className="field">
@@ -94,8 +103,10 @@ export function SettingsPage() {
             <p>{pendingImport.name}: {pendingImport.snapshot.moments.length} моментов, {pendingImport.snapshot.drafts.length} черновиков и {pendingImport.snapshot.mediaAssets.length} материалов.</p>
             <p>Это заменит текущую книгу «{snapshot.project.title}». Сначала скачайте её копию, если хотите сохранить обе версии.</p>
             <div className="settings-actions">
-              <button type="button" className="button button--primary button--normal" onClick={() => {
-                const result = importSnapshot(pendingImport.snapshot);
+              <button type="button" className="button button--primary button--normal" disabled={isRestoring} onClick={async () => {
+                setIsRestoring(true);
+                const result = await restoreBackup(pendingImport.snapshot);
+                setIsRestoring(false);
                 if (!result.ok) {
                   setImportError(`${result.error.message} Текущая книга не изменена.`);
                   return;
@@ -103,7 +114,7 @@ export function SettingsPage() {
                 setPendingImport(null);
                 setImportError('');
                 setNotice('Книга восстановлена и сохранена в этом браузере.');
-              }}>Заменить книгу этой копией</button>
+              }}>{isRestoring ? 'Восстанавливаем…' : 'Заменить книгу этой копией'}</button>
               <button type="button" className="button button--secondary button--normal" onClick={() => setPendingImport(null)}>Отмена</button>
             </div>
           </div>
@@ -118,7 +129,7 @@ export function SettingsPage() {
             <p>Истории доступны людям, которые пользуются этим профилем браузера. Облачная синхронизация и семейные аккаунты пока не подключены.</p>
           </div>
         </div>
-        <p>Добавляйте небольшие файлы до 1 МБ. Фотографии и записи большого размера сохраняйте отдельно вместе с резервной копией. Демо-запись ответа не использует микрофон; настоящий аудиофайл можно добавить в момент книги.</p>
+        <p>Голосовые ответы, фото и видео до 50 МБ хранятся только на этом устройстве. Резервная копия JSON включает их — скачивайте её, чтобы не потерять записи при очистке браузера.</p>
       </Card>
 
       <Card className="settings-section">
@@ -149,9 +160,11 @@ export function SettingsPage() {
             <p>Созданные истории, материалы и черновики будут заменены демонстрационными. Сначала скачайте копию.</p>
           </div>
         </div>
-        <button type="button" className="button button--danger button--normal" onClick={() => {
+        <button type="button" className="button button--danger button--normal" disabled={isRestoring} onClick={async () => {
           if (!window.confirm('Заменить все истории, материалы и черновики демо-данными? Сохраните резервную копию перед сбросом.')) return;
-          const result = resetDemo();
+          setIsRestoring(true);
+          const result = await resetDemo();
+          setIsRestoring(false);
           if (!result.ok) {
             setResetStatus({ error: true, message: `${result.error.message} Текущая книга не изменена.` });
             return;

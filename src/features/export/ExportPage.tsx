@@ -8,6 +8,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { Toggle } from '../../components/Toggle';
 import { buildBookHtml } from '../../lib/bookExport';
 import { formatDate, pluralize, truncate } from '../../lib/format';
+import { inlineStoredMedia, mediaStore } from '../../lib/mediaStore';
 
 export function ExportPage() {
   const { books, chaptersForBook, momentsForChapter, perspectives, reflections, mediaAssets, people } = useAppState();
@@ -21,6 +22,7 @@ export function ExportPage() {
   const [withReflections, setWithReflections] = useState(true);
   const [generated, setGenerated] = useState(false);
   const [error, setError] = useState('');
+  const [isBuilding, setIsBuilding] = useState(false);
 
   if (!book) {
     return (
@@ -45,15 +47,23 @@ export function ExportPage() {
     setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
   };
 
-  const generateBook = (event: FormEvent<HTMLFormElement>) => {
+  const generateBook = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isBuilding) return;
     resetFeedback();
+    setIsBuilding(true);
     let url: string | undefined;
     let anchor: HTMLAnchorElement | undefined;
     try {
+      // Only media used by the selected moments is read from the device and embedded.
+      const selectedIds = new Set(selectedMoments.map((moment) => moment.id));
+      const usedAssetIds = new Set(perspectives.filter((item) => selectedIds.has(item.momentId)).map((item) => item.mediaAssetId));
+      const portableAssets = withMedia
+        ? (await inlineStoredMedia(mediaAssets.filter((asset) => usedAssetIds.has(asset.id)), mediaStore())).assets
+        : mediaAssets;
       const html = buildBookHtml({
         title, dedication, chapters, moments: selectedMoments, perspectives,
-        reflections, people, mediaAssets, withMedia, withReflections
+        reflections, people, mediaAssets: portableAssets, withMedia, withReflections
       });
       url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
       anchor = document.createElement('a');
@@ -65,6 +75,7 @@ export function ExportPage() {
     } catch (cause) {
       setError(cause instanceof Error && cause.message ? cause.message : 'Не удалось собрать книгу. Повторите попытку.');
     } finally {
+      setIsBuilding(false);
       anchor?.remove();
       if (url) {
         const downloadUrl = url;
@@ -146,7 +157,7 @@ export function ExportPage() {
                 checked={withMedia}
                 onChange={(checked) => { resetFeedback(); setWithMedia(checked); }}
                 label="Включить фото, аудио и видео"
-                description="Загруженные с устройства файлы и демо-иллюстрации встраиваются в книгу. Демо-аудио содержит только текст."
+                description="Голосовые записи, файлы с устройства и демо-иллюстрации встраиваются в книгу. Демо-аудио содержит только текст."
               />
               <Toggle
                 checked={withReflections}
@@ -166,8 +177,8 @@ export function ExportPage() {
                 <p>Откройте файл в браузере. Через меню «Печать» его можно распечатать или сохранить в PDF.</p>
               </div>
             </div>
-            <button type="submit" className="button button--primary button--large" disabled={selectedMoments.length === 0}>
-              <Download size={22} aria-hidden="true" /><span>Скачать HTML-книгу</span>
+            <button type="submit" className="button button--primary button--large" disabled={selectedMoments.length === 0 || isBuilding}>
+              <Download size={22} aria-hidden="true" /><span>{isBuilding ? 'Собираем книгу…' : 'Скачать HTML-книгу'}</span>
             </button>
             {selectedMoments.length === 0 ? <p>Выберите хотя бы один момент для книги.</p> : null}
             {generated ? <div className="export-success" role="status"><Check size={20} aria-hidden="true" /> Книга подготовлена. Проверьте загрузки браузера.</div> : null}

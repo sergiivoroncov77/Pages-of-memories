@@ -6,18 +6,25 @@ import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { PageHeader } from '../../components/PageHeader';
-import { formatDate } from '../../lib/format';
+import { StoredAudio } from '../../components/StoredAudio';
+import { formatDate, formatDuration } from '../../lib/format';
+import { isStoredMedia } from '../../lib/mediaStore';
 
 export function MemoryPage() {
   const { memoryId } = useParams();
   const navigate = useNavigate();
-  const { getMemory, getPerson, getQuestion, moments, toggleFavorite, saveDraft } = useAppState();
+  const { getMemory, getPerson, getQuestion, moments, perspectives, mediaAssets, toggleFavorite, saveDraft } = useAppState();
   const [shareStatus, setShareStatus] = useState('');
   const memory = memoryId ? getMemory(memoryId) : undefined;
   if (!memory) return <div className="page"><EmptyState title="Воспоминание не найдено" description="Проверьте ссылку или найдите рассказ в книге." action={<Link to="/book" className="button button--secondary">Открыть книгу</Link>} /></div>;
   const person = getPerson(memory.personId);
   const question = getQuestion(memory.questionId);
   const moment = moments.find((item) => item.sourceMemoryId === memory.id);
+  const recordings = moment
+    ? perspectives
+      .filter((item) => item.momentId === moment.id && item.type === 'audio' && item.authorId === memory.personId)
+      .flatMap((item) => mediaAssets.filter((asset) => asset.id === item.mediaAssetId && isStoredMedia(asset)))
+    : [];
 
   const copyText = async () => {
     try {
@@ -45,6 +52,7 @@ export function MemoryPage() {
       <blockquote className="memory-question">{memory.questionText}</blockquote>
       {memory.photoUrl ? <img className="memory-answer__photo" src={memory.photoUrl} alt={memory.photoAlt || 'Фотография к воспоминанию'} /> : null}
       <div className="card-heading"><div><p className="eyebrow">Сохранённый текст</p><h2>Воспоминание</h2></div><span className="badge badge--soft"><Check size={15} aria-hidden="true" /> В книге</span></div>
+      {recordings.map((asset) => <div className="memory-answer__audio" key={asset.id}><p className="eyebrow">Голос рассказчика{asset.durationSeconds ? ' · ' + formatDuration(asset.durationSeconds) : ''}</p><StoredAudio asset={asset} label={'Голос: ' + (person?.name ?? 'рассказчик')} /></div>)}
       <p className="memory-answer__text">{memory.transcript}</p>
       <div className="tag-list" aria-label="Темы воспоминания">{memory.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div>
     </Card>
@@ -55,7 +63,7 @@ export function MemoryPage() {
       <button type="button" className="button button--ghost" onClick={() => void share()}><Share2 size={18} aria-hidden="true" /> Поделиться текстом</button>
     </div>
     {shareStatus ? <p className="field-message" role="status">{shareStatus}</p> : null}
-    <p className="demo-media-note"><Mic2 size={20} aria-hidden="true" /><span>Этот ответ создан в демонстрационном интервью. Аудиозапись не создавалась. Настоящий аудиофайл можно прикрепить в материалах момента.</span></p>
+    {recordings.length === 0 ? <p className="demo-media-note"><Mic2 size={20} aria-hidden="true" /><span>Аудиозаписи у этого ответа нет. Записать голос можно в интервью, а готовый файл — прикрепить в материалах момента.</span></p> : null}
     <p className="muted-copy">Тема: {question?.category ?? 'Семейная история'}. Рассказ хранится в этом браузере; резервную копию можно скачать в настройках.</p>
   </div>;
 }

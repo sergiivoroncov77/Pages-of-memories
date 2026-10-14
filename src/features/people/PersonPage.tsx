@@ -4,6 +4,7 @@ import { useAppState } from '../../app/AppState';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
+import { MediaImage } from '../../components/MediaImage';
 import { MemoryCard } from '../../components/MemoryCard';
 import { PageHeader } from '../../components/PageHeader';
 import { ProgressBar } from '../../components/ProgressBar';
@@ -122,7 +123,7 @@ export function PersonPage() {
               return (
                 <article className={`moment-card ${photo ? 'moment-card--illustrated' : ''}`} key={moment.id}>
                   <Link to={`/moments/${moment.id}`} className="moment-card__main">
-                    {photo ? <img className="moment-card__image" src={photo.url} alt="" loading="lazy" /> : null}
+                    {photo ? <MediaImage className="moment-card__image" asset={photo} /> : null}
                     <div className="moment-card__body">
                       <div className="moment-card__topline">
                         <span><CalendarDays size={15} aria-hidden="true" /> {moment.occurredAt ? formatDate(moment.occurredAt) : 'Дата не указана'}</span>
@@ -176,7 +177,7 @@ export function PersonPage() {
                     <p>{memory && hasDraft ? 'Есть сохранённый ответ и новый черновик' : statusCopy[status]}</p>
                   </div>
                   <Link className="question-row__action" to={hasDraft || !memory ? `/session/${person.id}/${question.id}` : `/memories/${memory.id}`}>
-                    {hasDraft ? 'Продолжить' : memory ? 'Читать ответ' : 'Ответить текстом'}
+                    {hasDraft ? 'Продолжить' : memory ? 'Читать ответ' : 'Ответить'}
                   </Link>
                 </article>
               );

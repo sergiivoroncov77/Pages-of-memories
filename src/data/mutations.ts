@@ -88,7 +88,20 @@ export function publishMemoryToSnapshot(snapshot: AppSnapshot, input: NewMemoryI
     favorite: existing?.favorite ?? false
   };
 
-  return { memory, snapshot: addMemoryToSnapshot(snapshot, memory) };
+  const published = addMemoryToSnapshot(snapshot, memory);
+  return { memory, snapshot: input.audioMediaAssetId ? attachMemoryAudio(published, memory, input.audioMediaAssetId) : published };
+}
+
+/** Link a recorded answer to the interview's moment as the narrator's audio perspective. */
+export function attachMemoryAudio(snapshot: AppSnapshot, memory: Memory, mediaAssetId: string, createdAt = new Date().toISOString()): AppSnapshot {
+  const moment = memoryMoment(snapshot, memory);
+  const asset = snapshot.mediaAssets.find((item) => item.id === mediaAssetId);
+  if (!moment || asset?.type !== 'audio' || snapshot.perspectives.some((item) => item.mediaAssetId === mediaAssetId)) return snapshot;
+  const perspective: Perspective = {
+    id: createId('perspective'), momentId: moment.id, authorId: memory.personId, type: 'audio',
+    content: '', caption: 'Голосовая запись ответа', mediaAssetId, createdAt, isPrimary: false
+  };
+  return { ...snapshot, perspectives: [...snapshot.perspectives, perspective] };
 }
 
 export function addMemoryToSnapshot(snapshot: AppSnapshot, memory: Memory): AppSnapshot {
@@ -412,6 +425,17 @@ export function addMediaAssetToSnapshot(snapshot: AppSnapshot, asset: MediaAsset
     : [{ ...asset }, ...snapshot.mediaAssets];
 
   return { ...snapshot, mediaAssets };
+}
+
+/** Drop an asset nothing in the book uses (e.g. a re-recorded draft answer). */
+export function removeUnusedMediaAsset(snapshot: AppSnapshot, assetId: string): AppSnapshot {
+  if (snapshot.perspectives.some((item) => item.mediaAssetId === assetId)
+    || snapshot.books.some((book) => book.coverMediaAssetId === assetId)) return snapshot;
+  return {
+    ...snapshot,
+    mediaAssets: snapshot.mediaAssets.filter((asset) => asset.id !== assetId),
+    drafts: snapshot.drafts.map((draft) => draft.audioMediaAssetId === assetId ? { ...draft, audioMediaAssetId: undefined } : draft)
+  };
 }
 
 export function setMomentFavorite(snapshot: AppSnapshot, momentId: string, favorite: boolean): AppSnapshot {

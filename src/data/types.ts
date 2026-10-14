@@ -60,6 +60,8 @@ export interface MemoryDraft {
   tags: string[];
   photoUrl: string;
   photoAlt: string;
+  /** Voice recording kept on this device until the answer is published. */
+  audioMediaAssetId?: string;
   createdAt: string;
   status: 'draft' | 'ready';
 }
@@ -176,4 +178,6 @@ export interface NewMemoryInput {
   tags: string[];
   photoUrl?: string;
   photoAlt?: string;
+  /** Published as an audio perspective of the interview's moment. */
+  audioMediaAssetId?: string;
 }
