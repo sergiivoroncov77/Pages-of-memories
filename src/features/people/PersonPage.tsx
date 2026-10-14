@@ -1,4 +1,4 @@
-import { CheckCircle2, Clock3, Mic2, Send, Sparkles } from 'lucide-react';
+import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, FileText, Link2, Sparkles } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { Avatar } from '../../components/Avatar';
@@ -8,10 +8,10 @@ import { MemoryCard } from '../../components/MemoryCard';
 import { PageHeader } from '../../components/PageHeader';
 import { ProgressBar } from '../../components/ProgressBar';
 import type { QuestionStatus } from '../../data/types';
-import { formatDate, pluralize } from '../../lib/format';
+import { formatDate, pluralize, truncate } from '../../lib/format';
 
 const statusCopy: Record<QuestionStatus, string> = {
-  answered: 'Есть воспоминание',
+  answered: 'Ответ сохранён',
   next: 'Следующий вопрос',
   planned: 'Можно спросить позже',
   draft: 'Есть черновик'
@@ -19,7 +19,7 @@ const statusCopy: Record<QuestionStatus, string> = {
 
 export function PersonPage() {
   const { personId } = useParams();
-  const { getPerson, questionsForPerson, memoriesForPerson, memories } = useAppState();
+  const { getPerson, questionsForPerson, memoriesForPerson, moments, perspectives, chapters, mediaAssets, drafts } = useAppState();
   const person = personId ? getPerson(personId) : undefined;
 
   if (!person) {
@@ -40,7 +40,23 @@ export function PersonPage() {
 
   const questions = questionsForPerson(person.id);
   const personMemories = memoriesForPerson(person.id);
-  const minutes = Math.round(personMemories.reduce((sum, memory) => sum + memory.durationSeconds, 0) / 60);
+  const answeredIds = new Set(personMemories.map((memory) => memory.questionId));
+  const answeredCount = questions.filter((question) => answeredIds.has(question.id)).length;
+  const personDrafts = drafts.filter((draft) => draft.personId === person.id);
+  const draftIds = new Set(personDrafts.map((draft) => draft.questionId));
+  const momentIds = new Set(moments.map((moment) => moment.id));
+  const personPerspectives = perspectives
+    .filter((perspective) => perspective.authorId === person.id && momentIds.has(perspective.momentId))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const personMoments = moments
+    .map((moment) => ({ moment, contributions: personPerspectives.filter((perspective) => perspective.momentId === moment.id) }))
+    .filter(({ contributions }) => contributions.length > 0)
+    .sort((a, b) => b.contributions[0].createdAt.localeCompare(a.contributions[0].createdAt));
+  const lastSavedAt = [
+    ...personMemories.map((memory) => memory.recordedAt),
+    ...personPerspectives.map((perspective) => perspective.createdAt),
+    ...personDrafts.map((draft) => draft.createdAt)
+  ].filter((value) => !Number.isNaN(new Date(value).getTime())).sort((a, b) => b.localeCompare(a))[0];
 
   return (
     <div className="page">
@@ -50,24 +66,24 @@ export function PersonPage() {
         backTo="/people"
         action={
           <Link to={`/invite/${person.id}`} className="button button--secondary button--small">
-            <Send size={17} aria-hidden="true" />
-            <span>Пригласить</span>
+            <Link2 size={17} aria-hidden="true" />
+            <span>О приглашениях</span>
           </Link>
         }
       />
 
       <Card tone="warm" className="profile-card">
-        <Avatar person={person} size="hero" showStatus />
+        <Avatar person={person} size="hero" />
         <div className="profile-card__copy">
-          <p>{person.bio}</p>
+          <p>{person.bio || 'История этого человека складывается из разговоров, фотографий и воспоминаний близких.'}</p>
           <div className="profile-card__facts">
             <span>
-              <Mic2 size={17} aria-hidden="true" />
-              {personMemories.length} {pluralize(personMemories.length, 'воспоминание', 'воспоминания', 'воспоминаний')}
+              <BookOpen size={17} aria-hidden="true" />
+              {personMoments.length} {pluralize(personMoments.length, 'момент', 'момента', 'моментов')} в книге
             </span>
             <span>
-              <Clock3 size={17} aria-hidden="true" />
-              {minutes} {pluralize(minutes, 'минута', 'минуты', 'минут')} голоса
+              <FileText size={17} aria-hidden="true" />
+              {personMemories.length} {pluralize(personMemories.length, 'ответ', 'ответа', 'ответов')} на вопросы
             </span>
           </div>
         </div>
@@ -76,15 +92,62 @@ export function PersonPage() {
       <Card className="progress-card">
         <div className="progress-card__heading">
           <div>
-            <p className="eyebrow">Общий прогресс</p>
-            <h2>
-              {person.answeredCount} из {person.totalQuestions} тем начато
-            </h2>
+            <p className="eyebrow">Разговор продолжается</p>
+            <h2>{questions.length > 0 ? `${answeredCount} из ${questions.length} вопросов с ответом` : 'Можно начать с любой истории'}</h2>
           </div>
-          <span className="progress-card__date">Активность: {formatDate(person.lastActiveAt)}</span>
+          {lastSavedAt ? <span className="progress-card__date">Последнее сохранение: {formatDate(lastSavedAt)}</span> : null}
         </div>
-        <ProgressBar value={person.answeredCount} max={person.totalQuestions} />
+        <ProgressBar value={answeredCount} max={questions.length} />
       </Card>
+
+      <section className="section">
+        <div className="section__heading">
+          <div>
+            <p className="eyebrow">Рассказы, фотографии и материалы</p>
+            <h2>Моменты в книге</h2>
+          </div>
+          {personMoments.length > 0 ? <Link to={`/book?person=${encodeURIComponent(person.id)}`} className="text-link">Показать в книге</Link> : null}
+        </div>
+        {personMoments.length > 0 ? (
+          <div className="moment-grid">
+            {personMoments.map(({ moment, contributions }) => {
+              const chapter = chapters.find((item) => item.id === moment.chapterId);
+              const photoIds = new Set(contributions.map((perspective) => perspective.mediaAssetId));
+              const photo = mediaAssets.find((asset) => photoIds.has(asset.id) && asset.type === 'photo');
+              const excerpt = contributions.find((perspective) => perspective.content.trim())?.content
+                || contributions.find((perspective) => perspective.caption?.trim())?.caption
+                || moment.summary
+                || 'Откройте момент, чтобы посмотреть сохранённые материалы.';
+
+              return (
+                <article className={`moment-card ${photo ? 'moment-card--illustrated' : ''}`} key={moment.id}>
+                  <Link to={`/moments/${moment.id}`} className="moment-card__main">
+                    {photo ? <img className="moment-card__image" src={photo.url} alt="" loading="lazy" /> : null}
+                    <div className="moment-card__body">
+                      <div className="moment-card__topline">
+                        <span><CalendarDays size={15} aria-hidden="true" /> {moment.occurredAt ? formatDate(moment.occurredAt) : 'Дата не указана'}</span>
+                      </div>
+                      <h3>{moment.title}</h3>
+                      <p>{truncate(excerpt, 150)}</p>
+                      <div className="moment-card__footer"><span className="moment-card__author">{chapter?.title ?? 'Семейная книга'}</span></div>
+                      <span className="moment-card__views">
+                        {contributions.length} {pluralize(contributions.length, 'материал', 'материала', 'материалов')} автора
+                        <ArrowRight size={16} aria-hidden="true" />
+                      </span>
+                    </div>
+                  </Link>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState
+            title="Первые страницы ещё впереди"
+            description="Сохраните ответ на вопрос или добавьте рассказ и материалы от имени этого человека к моменту книги."
+            action={<Link to="/book" className="button button--secondary button--normal">Открыть книгу</Link>}
+          />
+        )}
+      </section>
 
       <section className="section">
         <div className="section__heading">
@@ -92,54 +155,54 @@ export function PersonPage() {
             <p className="eyebrow">Вопросы для разговора</p>
             <h2>О чём спросить</h2>
           </div>
-          <span className="section__note">{questions.length} вопросов</span>
+          <span className="section__note">{questions.length} {pluralize(questions.length, 'вопрос', 'вопроса', 'вопросов')}</span>
         </div>
 
-        <div className="question-list">
-          {questions.map((question) => {
-            const memory = memories.find((item) => item.questionId === question.id);
-            const answered = question.status === 'answered' && memory;
+        {questions.length > 0 ? (
+          <div className="question-list">
+            {questions.map((question) => {
+              const memory = personMemories.find((item) => item.questionId === question.id);
+              const hasDraft = draftIds.has(question.id);
+              const status: QuestionStatus = hasDraft ? 'draft' : memory ? 'answered' : question.status === 'next' ? 'next' : 'planned';
 
-            return (
-              <article className="question-row" key={question.id}>
-                <span className={`question-row__status question-row__status--${question.status}`}>
-                  {answered ? <CheckCircle2 size={20} /> : question.status === 'next' ? <Sparkles size={20} /> : <Clock3 size={20} />}
-                </span>
-                <div className="question-row__copy">
-                  <span className="question-row__category">{question.category}</span>
-                  <h3>{question.text}</h3>
-                  <p>{statusCopy[question.status]}</p>
-                </div>
-                <Link
-                  className="question-row__action"
-                  to={answered ? `/memories/${memory.id}` : `/session/${person.id}/${question.id}`}
-                >
-                  {answered ? 'Слушать' : 'Ответить'}
-                </Link>
-              </article>
-            );
-          })}
-        </div>
+              return (
+                <article className="question-row" key={question.id}>
+                  <span className={`question-row__status question-row__status--${status}`} aria-hidden="true">
+                    {status === 'answered' ? <CheckCircle2 size={20} /> : status === 'next' ? <Sparkles size={20} /> : <Clock3 size={20} />}
+                  </span>
+                  <div className="question-row__copy">
+                    <span className="question-row__category">{question.category}</span>
+                    <h3>{question.text}</h3>
+                    <p>{memory && hasDraft ? 'Есть сохранённый ответ и новый черновик' : statusCopy[status]}</p>
+                  </div>
+                  <Link className="question-row__action" to={hasDraft || !memory ? `/session/${person.id}/${question.id}` : `/memories/${memory.id}`}>
+                    {hasDraft ? 'Продолжить' : memory ? 'Читать ответ' : 'Ответить текстом'}
+                  </Link>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="muted-copy">Вопросов для этого рассказчика пока нет. Его историю можно добавить прямо в книгу.</p>
+        )}
       </section>
 
-      {personMemories.length > 0 ? (
-        <section className="section">
-          <div className="section__heading">
-            <div>
-              <p className="eyebrow">Записи этого человека</p>
-              <h2>Воспоминания</h2>
-            </div>
-            <Link to={`/book?person=${person.id}`} className="text-link">
-              В книге
-            </Link>
+      <section className="section">
+        <div className="section__heading">
+          <div>
+            <p className="eyebrow">Сохранённые ответы на вопросы</p>
+            <h2>Интервью</h2>
           </div>
+          <span className="section__note">{personMemories.length} {pluralize(personMemories.length, 'ответ', 'ответа', 'ответов')}</span>
+        </div>
+        {personMemories.length > 0 ? (
           <div className="memory-grid">
-            {personMemories.map((memory) => (
-              <MemoryCard key={memory.id} memory={memory} person={person} />
-            ))}
+            {personMemories.map((memory) => <MemoryCard key={memory.id} memory={memory} person={person} />)}
           </div>
-        </section>
-      ) : null}
+        ) : (
+          <p className="muted-copy">Сохранённые ответы появятся здесь. Начните с одного из вопросов выше или добавьте материал к моменту книги.</p>
+        )}
+      </section>
     </div>
   );
 }

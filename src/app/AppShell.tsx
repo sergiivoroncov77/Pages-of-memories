@@ -1,6 +1,6 @@
-import { BookOpen, Home, Settings, ShieldCheck, Users } from 'lucide-react';
-import { useEffect } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { AlertTriangle, BookOpen, Download, Home, RotateCcw, Settings, ShieldCheck, Users } from 'lucide-react';
+import { useEffect, useRef } from 'react';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAppState } from './AppState';
 
 const navigation = [
@@ -11,15 +11,18 @@ const navigation = [
 ];
 
 export function AppShell() {
-  const { settings, project } = useAppState();
+  const { settings, project, persistenceError, retryPersistence, exportBackup, recoveryWarning, downloadOriginalData } = useAppState();
   const location = useLocation();
+  const mainRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
+    mainRef.current?.focus({ preventScroll: true });
   }, [location.pathname]);
 
   return (
     <div className={`app-shell ${settings.highContrast ? 'is-high-contrast' : ''}`}>
+      <a className="skip-link" href="#main-content">Перейти к содержимому</a>
       <aside className="sidebar">
         <NavLink to="/" className="brand">
           <span className="brand__mark">ИБ</span>
@@ -57,7 +60,43 @@ export function AppShell() {
         </NavLink>
       </header>
 
-      <main className="app-main">
+      <main className="app-main" id="main-content" ref={mainRef} tabIndex={-1}>
+        {recoveryWarning ? (
+          <div className="storage-warning" role="alert">
+            <AlertTriangle size={24} aria-hidden="true" />
+            <div className="storage-warning__copy">
+              <strong>Не удалось открыть сохранённую книгу</strong>
+              <p>{recoveryWarning}</p>
+            </div>
+            <div className="storage-warning__actions">
+              {downloadOriginalData ? (
+                <button type="button" className="button button--secondary button--small" onClick={downloadOriginalData}>
+                  <Download size={17} aria-hidden="true" /><span>Скачать исходные данные</span>
+                </button>
+              ) : null}
+              <Link to="/settings" className="button button--primary button--small">Восстановление</Link>
+            </div>
+          </div>
+        ) : null}
+        {persistenceError ? (
+          <div className="storage-warning" role="alert">
+            <AlertTriangle size={24} aria-hidden="true" />
+            <div className="storage-warning__copy">
+              <strong>Изменения пока не сохранены в браузере</strong>
+              <p>{persistenceError.message} Они доступны в этой вкладке.</p>
+            </div>
+            <div className="storage-warning__actions">
+              <button type="button" className="button button--secondary button--small" onClick={retryPersistence}>
+                <RotateCcw size={17} aria-hidden="true" />
+                <span>Повторить</span>
+              </button>
+              <button type="button" className="button button--primary button--small" onClick={exportBackup}>
+                <Download size={17} aria-hidden="true" />
+                <span>Скачать копию</span>
+              </button>
+            </div>
+          </div>
+        ) : null}
         <Outlet />
       </main>
 

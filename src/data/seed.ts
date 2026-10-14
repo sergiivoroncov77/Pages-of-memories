@@ -59,7 +59,7 @@ export const seedSnapshot: AppSnapshot = {
       relation: 'Дедушка',
       initials: 'ДН',
       avatarColor: '#8b6f45',
-      bio: 'Приглашение отправлено. Первый вопрос ждёт своего ответа.',
+      bio: 'Первый рассказ ещё впереди. Начните с вопроса о доме детства.',
       answeredCount: 0,
       totalQuestions: 4,
       lastActiveAt: '2026-10-01T12:00:00+03:00',
@@ -214,6 +214,220 @@ export const seedSnapshot: AppSnapshot = {
       favorite: true
     }
   ],
+  books: [
+    {
+      id: 'book_family_demo',
+      projectId: 'project_family_demo',
+      title: 'Наша семейная книга',
+      subtitle: 'Истории, которые хочется перечитывать',
+      description: 'Собрание воспоминаний семьи — с голосами, фотографиями и взглядами тех, кто был рядом.',
+      createdAt: '2026-08-14T10:00:00+03:00',
+      updatedAt: '2026-09-28T20:15:00+03:00',
+      coverMediaAssetId: 'asset_porch'
+    }
+  ],
+  chapters: [
+    {
+      id: 'chapter_childhood',
+      bookId: 'book_family_demo',
+      title: 'Откуда всё начинается',
+      description: 'Детство, первые дома и люди, которые нас вырастили.',
+      order: 1,
+      createdAt: '2026-08-14T10:00:00+03:00',
+      updatedAt: '2026-09-22T18:30:00+03:00'
+    },
+    {
+      id: 'chapter_paths',
+      bookId: 'book_family_demo',
+      title: 'Дороги и выборы',
+      description: 'Поездки, работа и решения, изменившие семейную историю.',
+      order: 2,
+      createdAt: '2026-08-14T10:00:00+03:00',
+      updatedAt: '2026-09-28T20:15:00+03:00'
+    }
+  ],
+  moments: [
+    {
+      id: 'moment_summer',
+      bookId: 'book_family_demo',
+      chapterId: 'chapter_childhood',
+      title: 'Лето у бабушки в Костромской области',
+      summary: 'Сенокос, хлеб с молоком и первое ощущение большой дружной семьи.',
+      occurredAt: '1950-07-15',
+      tags: ['детство', 'лето', 'семья'],
+      primaryPerspectiveId: 'perspective_summer_text',
+      createdAt: '2026-09-22T18:30:00+03:00',
+      updatedAt: '2026-09-22T18:30:00+03:00',
+      favorite: true
+    },
+    {
+      id: 'moment_baikal',
+      bookId: 'book_family_demo',
+      chapterId: 'chapter_paths',
+      title: 'Первая зима на Байкале',
+      summary: 'Тишина прозрачного льда и поездка, научившая внимательнее смотреть на природу.',
+      occurredAt: '1996-01-20',
+      tags: ['путешествия', 'зима', 'Байкал'],
+      primaryPerspectiveId: 'perspective_baikal_text',
+      createdAt: '2026-09-28T20:15:00+03:00',
+      updatedAt: '2026-09-28T20:15:00+03:00',
+      favorite: false
+    },
+    {
+      id: 'moment_table',
+      bookId: 'book_family_demo',
+      chapterId: 'chapter_childhood',
+      title: 'Сначала накорми, потом расспрашивай',
+      summary: 'Семейное правило, которое оказалось уроком заботы и гостеприимства.',
+      occurredAt: '1980-05-01',
+      tags: ['семья', 'традиции', 'дом'],
+      primaryPerspectiveId: 'perspective_table_text',
+      createdAt: '2026-08-30T16:10:00+03:00',
+      updatedAt: '2026-08-30T16:10:00+03:00',
+      favorite: true
+    }
+  ],
+  perspectives: [
+    {
+      id: 'perspective_summer_text',
+      momentId: 'moment_summer',
+      authorId: 'person_anna',
+      type: 'text',
+      content:
+        'Мне было, наверное, семь лет. Мы приехали к бабушке перед самым сенокосом. Дом стоял на краю села, а за ним сразу начинался луг. Утром я проснулась от солнца и запаха скошенной травы. К вечеру все сели за большой стол во дворе, и я впервые почувствовала, что у нас очень большая и дружная семья.',
+      createdAt: '2026-09-22T18:30:00+03:00',
+      isPrimary: true
+    },
+    {
+      id: 'perspective_summer_audio',
+      momentId: 'moment_summer',
+      authorId: 'person_anna',
+      type: 'audio',
+      content: 'Оригинальная голосовая запись рассказа о лете у бабушки.',
+      mediaAssetId: 'asset_summer_audio',
+      createdAt: '2026-09-22T18:30:00+03:00',
+      isPrimary: false
+    },
+    {
+      id: 'perspective_summer_photo',
+      momentId: 'moment_summer',
+      authorId: 'person_mikhail',
+      type: 'photo',
+      content: 'Фотография дома, у которого начинался луг.',
+      mediaAssetId: 'asset_porch',
+      caption: 'Дом и лето',
+      createdAt: '2026-09-23T09:00:00+03:00',
+      isPrimary: false
+    },
+    {
+      id: 'perspective_baikal_text',
+      momentId: 'moment_baikal',
+      authorId: 'person_mikhail',
+      type: 'text',
+      content:
+        'Я много видел фотографий Байкала, поэтому думал, что уже знаю, как это выглядит. Но когда мы вышли на лёд ранним утром, всё оказалось другим. Лёд гудел и трещал, будто под ногами живёт что-то огромное. Тогда я понял, что природа не является декорацией к нашей жизни.',
+      createdAt: '2026-09-28T20:15:00+03:00',
+      isPrimary: true
+    },
+    {
+      id: 'perspective_baikal_audio',
+      momentId: 'moment_baikal',
+      authorId: 'person_mikhail',
+      type: 'audio',
+      content: 'Голосовой фрагмент воспоминания о первой зиме на Байкале.',
+      mediaAssetId: 'asset_baikal_audio',
+      createdAt: '2026-09-28T20:15:00+03:00',
+      isPrimary: false
+    },
+    {
+      id: 'perspective_table_text',
+      momentId: 'moment_table',
+      authorId: 'person_anna',
+      type: 'text',
+      content:
+        'Мама часто говорила: «Сначала накорми, потом расспрашивай». Только потом я поняла, что она учила не начинать разговор с упрёка. Если человек пришёл уставший или расстроенный, сначала нужно дать ему почувствовать, что ему здесь рады.',
+      createdAt: '2026-08-30T16:10:00+03:00',
+      isPrimary: true
+    },
+    {
+      id: 'perspective_table_photo',
+      momentId: 'moment_table',
+      authorId: 'person_olga',
+      type: 'photo',
+      content: 'Семейный стол, за которым это правило помнят до сих пор.',
+      mediaAssetId: 'asset_kitchen',
+      caption: 'Семья за столом',
+      createdAt: '2026-08-31T11:00:00+03:00',
+      isPrimary: false
+    }
+  ],
+  reflections: [
+    {
+      id: 'reflection_summer_anna',
+      momentId: 'moment_summer',
+      authorId: 'person_olga',
+      text: 'Теперь я понимаю, почему ты всегда так любила запах скошенной травы.',
+      createdAt: '2026-09-24T10:20:00+03:00'
+    },
+    {
+      id: 'reflection_baikal_anna',
+      momentId: 'moment_baikal',
+      authorId: 'person_anna',
+      text: 'Спасибо, что сохранил этот звук и не только фотографию поездки.',
+      createdAt: '2026-09-29T08:45:00+03:00'
+    },
+    {
+      id: 'reflection_table_olga',
+      momentId: 'moment_table',
+      authorId: 'person_olga',
+      text: 'Это правило работает и сейчас — сначала чай, потом серьёзные разговоры.',
+      createdAt: '2026-08-31T12:10:00+03:00'
+    }
+  ],
+  mediaAssets: [
+    {
+      id: 'asset_porch',
+      type: 'photo',
+      url: '/demo/photo-porch.svg',
+      mimeType: 'image/svg+xml',
+      fileName: 'family-porch.svg',
+      alt: 'Демонстрационная иллюстрация старого дома и луга',
+      width: 1200,
+      height: 800,
+      createdAt: '2026-09-23T09:00:00+03:00'
+    },
+    {
+      id: 'asset_kitchen',
+      type: 'photo',
+      url: '/demo/photo-kitchen.svg',
+      mimeType: 'image/svg+xml',
+      fileName: 'family-kitchen.svg',
+      alt: 'Демонстрационная иллюстрация семейного стола',
+      width: 1200,
+      height: 800,
+      createdAt: '2026-08-31T11:00:00+03:00'
+    },
+    {
+      id: 'asset_summer_audio',
+      type: 'audio',
+      url: '/demo/summer-memory.mp3',
+      mimeType: 'audio/mpeg',
+      fileName: 'summer-memory.mp3',
+      sizeBytes: 4250000,
+      durationSeconds: 258,
+      createdAt: '2026-09-22T18:30:00+03:00'
+    },
+    {
+      id: 'asset_baikal_audio',
+      type: 'audio',
+      url: '/demo/baikal-memory.mp3',
+      mimeType: 'audio/mpeg',
+      fileName: 'baikal-memory.mp3',
+      sizeBytes: 5100000,
+      durationSeconds: 312,
+      createdAt: '2026-09-28T20:15:00+03:00'
+    }
+  ],
   drafts: [],
   settings: {
     cloudBackup: false,
@@ -222,3 +436,4 @@ export const seedSnapshot: AppSnapshot = {
     highContrast: false
   }
 };
+

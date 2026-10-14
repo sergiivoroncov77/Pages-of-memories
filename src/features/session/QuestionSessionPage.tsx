@@ -9,6 +9,8 @@ import { EmptyState } from '../../components/EmptyState';
 import { PageHeader } from '../../components/PageHeader';
 import { PHOTO_OPTIONS, TAG_OPTIONS } from '../../data/demo';
 import { formatDuration } from '../../lib/format';
+import type { MemoryDraftInput } from '../../data/mutations';
+import { createDraftAutosave } from './draftAutosave';
 
 type SessionPhase = 'intro' | 'recording' | 'paused' | 'draft';
 
@@ -17,13 +19,18 @@ function getDemoTranscript(questionText: string): string {
 
 Здесь появится текст, полученный из голосовой записи. Рассказчик сможет проверить имена, даты и детали, исправить ошибки распознавания и только затем добавить воспоминание в семейную книгу.
 
-Оригинальная запись остаётся главной. Текст нужен для поиска, удобного чтения и подготовки будущего печатного издания.`;
+В этой демонстрации микрофон не используется и аудиофайл не создаётся. Вы можете заменить этот пример собственной историей.`;
 }
 
 export function QuestionSessionPage() {
   const { personId, questionId } = useParams();
+  return <QuestionSession key={`${personId}:${questionId}`} />;
+}
+
+function QuestionSession() {
+  const { personId, questionId } = useParams();
   const navigate = useNavigate();
-  const { getPerson, getQuestion, drafts, memories, saveDraft, addMemory } = useAppState();
+  const { getPerson, getQuestion, drafts, memories, saveDraft, addMemory, persistenceError, registerDraftFlush } = useAppState();
   const person = personId ? getPerson(personId) : undefined;
   const question = questionId ? getQuestion(questionId) : undefined;
   const existingDraft = useMemo(
@@ -38,8 +45,22 @@ export function QuestionSessionPage() {
   const [phase, setPhase] = useState<SessionPhase>('intro');
   const [elapsed, setElapsed] = useState(existingDraft?.durationSeconds ?? existingMemory?.durationSeconds ?? 0);
   const [transcript, setTranscript] = useState(existingDraft?.transcript ?? existingMemory?.transcript ?? '');
-  const [tags, setTags] = useState<string[]>(existingMemory?.tags ?? []);
-  const [photoUrl, setPhotoUrl] = useState(existingMemory?.photoUrl ?? '');
+  const [tags, setTags] = useState<string[]>(existingDraft?.tags ?? existingMemory?.tags ?? []);
+  const [photoUrl, setPhotoUrl] = useState(existingDraft?.photoUrl ?? existingMemory?.photoUrl ?? '');
+  const [draftPending, setDraftPending] = useState(false);
+  const autosave = useMemo(() => createDraftAutosave(saveDraft, setDraftPending), [saveDraft]);
+
+  useEffect(() => {
+    const unregister = registerDraftFlush(autosave.flush);
+    window.addEventListener('pagehide', autosave.flush);
+    window.addEventListener('beforeunload', autosave.flush);
+    return () => {
+      autosave.flush();
+      unregister();
+      window.removeEventListener('pagehide', autosave.flush);
+      window.removeEventListener('beforeunload', autosave.flush);
+    };
+  }, [autosave, registerDraftFlush]);
 
   useEffect(() => {
     if (phase !== 'recording') return;
@@ -63,29 +84,52 @@ export function QuestionSessionPage() {
     );
   }
 
+  const draftInput = (patch: Partial<MemoryDraftInput> = {}): MemoryDraftInput => {
+    const nextPhotoUrl = patch.photoUrl ?? photoUrl;
+    return {
+      personId: person.id,
+      questionId: question.id,
+      transcript,
+      durationSeconds: elapsed,
+      tags,
+      photoUrl: nextPhotoUrl,
+      photoAlt: PHOTO_OPTIONS.find((photo) => photo.url === nextPhotoUrl)?.alt ??
+        (nextPhotoUrl ? existingDraft?.photoAlt ?? existingMemory?.photoAlt ?? 'Семейная фотография' : ''),
+      ...patch
+    };
+  };
+
   const beginDraft = () => {
+    const nextTranscript = transcript || getDemoTranscript(question.text);
+    const nextTags = tags.length ? tags : [question.category.toLowerCase()];
     setPhase('draft');
-    setTranscript(existingDraft?.transcript || existingMemory?.transcript || getDemoTranscript(question.text));
-    setElapsed(Math.max(elapsed, existingDraft?.durationSeconds ?? existingMemory?.durationSeconds ?? 12));
-    if (tags.length === 0) setTags([question.category.toLowerCase()]);
+    setTranscript(nextTranscript);
+    setTags(nextTags);
+    autosave.schedule(draftInput({ transcript: nextTranscript, tags: nextTags }));
   };
 
   const saveMemory = () => {
+    if (!transcript.trim()) return;
+    autosave.cancel();
     const selectedPhoto = PHOTO_OPTIONS.find((photo) => photo.url === photoUrl);
     const memory = addMemory({
       personId: person.id,
       questionId: question.id,
-      transcript: transcript.trim() || getDemoTranscript(question.text),
-      durationSeconds: Math.max(elapsed, 5),
+      transcript: transcript.trim(),
+      durationSeconds: elapsed,
       tags,
-      photoUrl: selectedPhoto?.url,
-      photoAlt: selectedPhoto?.alt
+      photoUrl,
+      photoAlt:
+        selectedPhoto?.alt ??
+        (photoUrl ? existingDraft?.photoAlt ?? existingMemory?.photoAlt ?? 'Семейная фотография' : '')
     });
     navigate(`/memories/${memory.id}`);
   };
 
   const toggleTag = (tag: string) => {
-    setTags((current) => (current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]));
+    const nextTags = tags.includes(tag) ? tags.filter((item) => item !== tag) : [...tags, tag];
+    setTags(nextTags);
+    autosave.schedule(draftInput({ tags: nextTags }));
   };
 
   return (
@@ -145,7 +189,13 @@ export function QuestionSessionPage() {
               }
             }}
           >
-            {existingDraft ? 'Открыть черновик ответа' : 'Начать запись'}
+            {existingDraft ? 'Открыть черновик ответа' : 'Попробовать демо-запись'}
+          </Button>
+          <Button variant="secondary" size="large" fullWidth onClick={() => {
+            setPhase('draft');
+            if (!existingDraft && !existingMemory) setElapsed(0);
+          }}>
+            {existingMemory ? 'Редактировать текст ответа' : 'Написать ответ текстом'}
           </Button>
         </>
       ) : null}
@@ -154,17 +204,17 @@ export function QuestionSessionPage() {
         <Card tone="dark" className={`recording-screen recording-screen--${phase}`} padded={false}>
           <span className="recording-screen__label">
             <i />
-            {phase === 'recording' ? 'Идёт запись' : 'Запись на паузе'}
+            {phase === 'recording' ? 'Демо-запись · микрофон выключен' : 'Демонстрация на паузе'}
           </span>
-          <button type="button" className="record-orb" onClick={() => setPhase(phase === 'recording' ? 'paused' : 'recording')}>
-            {phase === 'recording' ? <Pause size={38} fill="currentColor" /> : <Play size={38} fill="currentColor" />}
+          <button type="button" className="record-orb" aria-label={phase === 'recording' ? 'Приостановить демонстрацию' : 'Продолжить демонстрацию'} onClick={() => setPhase(phase === 'recording' ? 'paused' : 'recording')}>
+            {phase === 'recording' ? <Pause size={38} fill="currentColor" aria-hidden="true" /> : <Play size={38} fill="currentColor" aria-hidden="true" />}
           </button>
           <strong className="recording-screen__timer">{formatDuration(elapsed)}</strong>
           <h2>{question.text}</h2>
           <p>
             {phase === 'recording'
-              ? 'Говорите спокойно. Если нужна пауза, коснитесь большой кнопки.'
-              : 'Можно собраться с мыслями. Запись продолжится с этого места.'}
+              ? 'Это пример работы таймера. Звук не записывается. Завершите демонстрацию, чтобы открыть пример текста.'
+              : 'Таймер остановлен. Можно продолжить демонстрацию или перейти к тексту.'}
           </p>
           <div className="recording-screen__wave" aria-hidden="true">
             {Array.from({ length: 24 }).map((_, index) => (
@@ -196,25 +246,22 @@ export function QuestionSessionPage() {
                 <Check size={22} aria-hidden="true" />
               </span>
               <div>
-                <p className="eyebrow">Запись завершена</p>
+                <p className="eyebrow">Текст ответа</p>
                 <h2>Проверьте черновик ответа</h2>
-                <p>Расшифровка вспомогательная. Оригинальный голос сохранится отдельно.</p>
+                <p>Сохраняется текст. Аудиозаписи в этой сессии нет.</p>
               </div>
-            </div>
-            <div className="draft-audio">
-              <button type="button" className="draft-audio__play" aria-label="Воспроизвести запись">
-                <Play size={22} fill="currentColor" />
-              </button>
-              <div className="draft-audio__line">
-                <span />
-              </div>
-              <strong>{formatDuration(Math.max(elapsed, 5))}</strong>
             </div>
             <label className="field">
-              <span>Расшифровка</span>
-              <textarea value={transcript} onChange={(event) => setTranscript(event.target.value)} rows={10} />
-              <small>Можно исправить имена, даты и любые неточности распознавания.</small>
+              <span>Ваша история</span>
+              <textarea value={transcript} onChange={(event) => {
+                setTranscript(event.target.value);
+                autosave.schedule(draftInput({ transcript: event.target.value }));
+              }} rows={10} />
+              <small>Напишите ответ своими словами. Текст, темы и фотография сохраняются в черновик автоматически.</small>
             </label>
+            <p className={`draft-save-status ${persistenceError ? 'field-message--error' : ''}`} role="status">
+              {draftPending ? 'Сохраняем черновик…' : persistenceError ? 'Не удалось сохранить в браузере. Скачайте резервную копию вверху страницы.' : existingDraft ? 'Черновик сохранён в этом браузере' : 'Начните писать — черновик сохранится автоматически'}
+            </p>
           </Card>
 
           <Card className="draft-options">
@@ -226,7 +273,10 @@ export function QuestionSessionPage() {
               </div>
             </div>
             <div className="photo-options">
-              <button type="button" className={!photoUrl ? 'is-selected' : ''} onClick={() => setPhotoUrl('')}>
+              <button type="button" className={!photoUrl ? 'is-selected' : ''} aria-pressed={!photoUrl} onClick={() => {
+                setPhotoUrl('');
+                autosave.schedule(draftInput({ photoUrl: '' }));
+              }}>
                 <span>Без фото</span>
               </button>
               {PHOTO_OPTIONS.map((photo) => (
@@ -234,7 +284,11 @@ export function QuestionSessionPage() {
                   type="button"
                   key={photo.url}
                   className={photoUrl === photo.url ? 'is-selected' : ''}
-                  onClick={() => setPhotoUrl(photo.url)}
+                  aria-pressed={photoUrl === photo.url}
+                  onClick={() => {
+                    setPhotoUrl(photo.url);
+                    autosave.schedule(draftInput({ photoUrl: photo.url }));
+                  }}
                 >
                   <img src={photo.url} alt={photo.alt} />
                   <span>{photo.label}</span>
@@ -257,6 +311,7 @@ export function QuestionSessionPage() {
                   type="button"
                   key={tag}
                   className={tags.includes(tag) ? 'is-selected' : ''}
+                  aria-pressed={tags.includes(tag)}
                   onClick={() => toggleTag(tag)}
                 >
                   #{tag}
@@ -271,18 +326,14 @@ export function QuestionSessionPage() {
               size="large"
               icon={<Save size={22} />}
               onClick={() => {
-                saveDraft({
-                  personId: person.id,
-                  questionId: question.id,
-                  transcript,
-                  durationSeconds: Math.max(elapsed, 5)
-                });
+                autosave.schedule(draftInput());
+                autosave.flush();
                 navigate(`/people/${person.id}`);
               }}
             >
               Оставить черновиком
             </Button>
-            <Button size="large" icon={<Check size={22} />} onClick={saveMemory}>
+            <Button size="large" icon={<Check size={22} />} onClick={saveMemory} disabled={!transcript.trim()}>
               Добавить в книгу
             </Button>
           </div>
@@ -291,12 +342,13 @@ export function QuestionSessionPage() {
             type="button"
             className="text-button"
             onClick={() => {
+              autosave.flush();
               setElapsed(0);
               setPhase('recording');
             }}
           >
             <RotateCcw size={17} aria-hidden="true" />
-            Записать заново
+            Вернуться к демо-записи
           </button>
         </>
       ) : null}

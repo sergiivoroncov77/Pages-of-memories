@@ -1,182 +1,130 @@
-import { BookOpen, CalendarRange, Grid2X2, Search, SlidersHorizontal, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { ArrowRight, BookOpen, CalendarDays, Heart, Plus, Search, Users, X } from 'lucide-react';
+import { useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
+import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
-import { MemoryCard } from '../../components/MemoryCard';
 import { PageHeader } from '../../components/PageHeader';
-
-const monthFormatter = new Intl.DateTimeFormat('ru-RU', { month: 'long', year: 'numeric' });
+import { formatDate, pluralize, truncate } from '../../lib/format';
+import { MomentDetailsForm, type MomentDetails } from '../moments/MomentDetailsForm';
 
 export function BookPage() {
-  const { memories, people, getPerson } = useAppState();
-  const [searchParams] = useSearchParams();
-  const [query, setQuery] = useState('');
-  const [personId, setPersonId] = useState(searchParams.get('person') ?? 'all');
-  const [tag, setTag] = useState('all');
-  const [view, setView] = useState<'grid' | 'timeline'>('grid');
+  const { books, people, chaptersForBook, momentsForChapter, perspectivesForMoment, mediaForPerspective, getPerson, addMoment, toggleMomentFavorite } = useAppState();
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const [showCreate, setShowCreate] = useState(false);
+  const book = books[0];
+  const chapters = book ? chaptersForBook(book.id) : [];
+  const allMoments = chapters.flatMap((chapter) => momentsForChapter(chapter.id));
+  const query = params.get('q') ?? '';
+  const personId = params.get('person') ?? '';
+  const activeChapterId = params.get('chapter') ?? '';
+  const favoritesOnly = params.get('favorites') === '1';
+  const voiceCount = new Set(allMoments.flatMap((moment) => perspectivesForMoment(moment.id).map((item) => item.authorId).filter(Boolean))).size;
+  const hasFilters = Boolean(query || personId || activeChapterId || favoritesOnly);
 
-  const allTags = useMemo(
-    () => Array.from(new Set(memories.flatMap((memory) => memory.tags))).sort((a, b) => a.localeCompare(b, 'ru')),
-    [memories]
-  );
+  const setFilter = (key: string, value: string) => setParams((current) => {
+    const next = new URLSearchParams(current);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    return next;
+  }, { replace: true });
 
-  const filtered = useMemo(() => {
+  const filteredMoments = allMoments.filter((moment) => {
+    if (activeChapterId && moment.chapterId !== activeChapterId) return false;
+    if (favoritesOnly && !moment.favorite) return false;
+    const perspectives = perspectivesForMoment(moment.id);
+    if (personId && !perspectives.some((item) => item.authorId === personId)) return false;
     const normalized = query.trim().toLocaleLowerCase('ru');
-    return [...memories]
-      .filter((memory) => personId === 'all' || memory.personId === personId)
-      .filter((memory) => tag === 'all' || memory.tags.includes(tag))
-      .filter((memory) => {
-        if (!normalized) return true;
-        const searchable = [memory.title, memory.transcript, memory.questionText, ...memory.tags].join(' ').toLowerCase();
-        return searchable.includes(normalized);
-      })
-      .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
-  }, [memories, personId, query, tag]);
+    if (!normalized) return true;
+    const authors = perspectives.map((item) => getPerson(item.authorId ?? '')?.name ?? '');
+    const content = [moment.title, moment.summary, ...moment.tags, ...authors, ...perspectives.map((item) => item.content + ' ' + (item.caption ?? ''))];
+    return content.join(' ').toLocaleLowerCase('ru').includes(normalized);
+  });
 
-  const timeline = useMemo(() => {
-    const groups = new Map<string, typeof filtered>();
-    filtered.forEach((memory) => {
-      const key = monthFormatter.format(new Date(memory.recordedAt));
-      groups.set(key, [...(groups.get(key) ?? []), memory]);
-    });
-    return Array.from(groups.entries());
-  }, [filtered]);
-
-  const resetFilters = () => {
-    setQuery('');
-    setPersonId('all');
-    setTag('all');
+  const submitMoment = (details: MomentDetails) => {
+    if (!book) return;
+    const moment = addMoment({ ...details, bookId: book.id, tags: [] });
+    navigate('/moments/' + moment.id);
   };
 
-  return (
+  if (!book) return (
     <div className="page">
-      <PageHeader
-        eyebrow="Семейный архив"
-        title="Книга воспоминаний"
-        description="Все голосовые истории в одном месте. Найдите нужную по человеку, теме или словам из расшифровки."
-        action={
-          <Link to="/export" className="button button--primary button--small">
-            <BookOpen size={18} aria-hidden="true" />
-            <span>Собрать книгу</span>
-          </Link>
-        }
+      <EmptyState title="Книги пока нет" description="Восстановите книгу из резервной копии или загрузите демонстрационный пример в настройках." action={<Link to="/settings" className="button button--primary">Открыть настройки</Link>} />
+    </div>
+  );
+
+  return (
+    <div className="page page--book-new">
+      <PageHeader eyebrow="Ваша книга воспоминаний" title={book.title} description={book.description}
+        action={<div className="page-action-group">
+          <Link to="/export" className="button button--ghost button--small"><BookOpen size={18} aria-hidden="true" /> Собрать книгу</Link>
+          <button type="button" className="button button--primary button--small" onClick={() => setShowCreate((value) => !value)} disabled={!chapters.length} aria-expanded={showCreate} aria-controls="create-moment"><Plus size={18} aria-hidden="true" /> Добавить момент</button>
+        </div>}
       />
 
-      <div className="book-controls">
-        <label className="search-field">
-          <Search size={21} aria-hidden="true" />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Найти воспоминание"
-            aria-label="Поиск по воспоминаниям"
-          />
-          {query ? (
-            <button type="button" onClick={() => setQuery('')} aria-label="Очистить поиск">
-              <X size={19} />
-            </button>
-          ) : null}
-        </label>
+      <Card tone="dark" className="book-hero" padded={false}>
+        <div className="book-hero__copy">
+          <span className="badge badge--light"><BookOpen size={16} aria-hidden="true" /> История продолжается</span>
+          <h2>{book.subtitle || 'Сохраните то, что хочется помнить'}</h2>
+          <p>Один момент, разные голоса. Собирайте рассказы и фотографии близких на одной странице.</p>
+        </div>
+        <dl className="book-hero__stats" aria-label="Содержание книги">
+          <div><dd>{chapters.length}</dd><dt>{pluralize(chapters.length, 'глава', 'главы', 'глав')}</dt></div>
+          <div><dd>{allMoments.length}</dd><dt>{pluralize(allMoments.length, 'момент', 'момента', 'моментов')}</dt></div>
+          <div><dd>{voiceCount}</dd><dt>{pluralize(voiceCount, 'рассказчик', 'рассказчика', 'рассказчиков')}</dt></div>
+        </dl>
+      </Card>
 
-        <div className="view-switch" aria-label="Вид списка">
-          <button
-            type="button"
-            className={view === 'grid' ? 'is-active' : ''}
-            onClick={() => setView('grid')}
-            aria-label="Карточки"
-          >
-            <Grid2X2 size={19} />
-          </button>
-          <button
-            type="button"
-            className={view === 'timeline' ? 'is-active' : ''}
-            onClick={() => setView('timeline')}
-            aria-label="Таймлайн"
-          >
-            <CalendarRange size={19} />
-          </button>
-        </div>
-      </div>
+      {showCreate ? <Card className="create-moment-card" id="create-moment">
+        <div className="card-heading"><div><p className="eyebrow">Новая страница</p><h2>Создать момент</h2><p>Начните с названия. Рассказы и материалы можно добавить следом.</p></div>
+          <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setShowCreate(false)}><X size={20} /></button></div>
+        <MomentDetailsForm chapters={chapters} initial={{ title: '', summary: '', chapterId: chapters.find((item) => item.id === activeChapterId)?.id ?? chapters[0]?.id ?? '' }} submitLabel="Создать и открыть" onSubmit={submitMoment} onCancel={() => setShowCreate(false)} />
+      </Card> : null}
 
-      <div className="filters">
-        <div className="filters__heading">
-          <span>
-            <SlidersHorizontal size={18} aria-hidden="true" />
-            Фильтры
-          </span>
-          {(personId !== 'all' || tag !== 'all' || query) && (
-            <button type="button" className="text-button" onClick={resetFilters}>
-              Сбросить
-            </button>
-          )}
+      <section className="book-toolbar" aria-label="Поиск и фильтры книги">
+        <div className="book-search-row">
+          <label className="search-field"><Search size={20} aria-hidden="true" /><input type="search" value={query} onChange={(event) => setFilter('q', event.target.value)} placeholder="Найти историю, человека или слово" aria-label="Поиск по книге" />
+            {query ? <button type="button" onClick={() => setFilter('q', '')} aria-label="Очистить поиск"><X size={18} /></button> : null}
+          </label>
+          <label className="book-person-filter"><span className="visually-hidden">Рассказчик</span><Users size={18} aria-hidden="true" /><select value={personId} onChange={(event) => setFilter('person', event.target.value)} aria-label="Рассказчик"><option value="">Все рассказчики</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
+          <button type="button" className={'favorite-filter ' + (favoritesOnly ? 'is-active' : '')} aria-pressed={favoritesOnly} onClick={() => setFilter('favorites', favoritesOnly ? '' : '1')}><Heart size={18} fill={favoritesOnly ? 'currentColor' : 'none'} aria-hidden="true" /> Избранное</button>
         </div>
-        <div className="filter-scroll">
-          <button type="button" className={personId === 'all' ? 'is-active' : ''} onClick={() => setPersonId('all')}>
-            Все близкие
-          </button>
-          {people.map((person) => (
-            <button
-              type="button"
-              key={person.id}
-              className={personId === person.id ? 'is-active' : ''}
-              onClick={() => setPersonId(person.id)}
-            >
-              {person.name}
-            </button>
-          ))}
+        <div className="chapter-filter" aria-label="Фильтр по главе">
+          <button type="button" aria-pressed={!activeChapterId} className={!activeChapterId ? 'is-active' : ''} onClick={() => setFilter('chapter', '')}>Все главы</button>
+          {chapters.map((chapter) => <button type="button" key={chapter.id} aria-pressed={activeChapterId === chapter.id} className={activeChapterId === chapter.id ? 'is-active' : ''} onClick={() => setFilter('chapter', chapter.id)}>{chapter.title}</button>)}
         </div>
-        <div className="filter-scroll filter-scroll--tags">
-          <button type="button" className={tag === 'all' ? 'is-active' : ''} onClick={() => setTag('all')}>
-            Все темы
-          </button>
-          {allTags.map((item) => (
-            <button type="button" key={item} className={tag === item ? 'is-active' : ''} onClick={() => setTag(item)}>
-              #{item}
-            </button>
-          ))}
-        </div>
-      </div>
+        {hasFilters ? <div className="book-results"><span role="status">Найдено: {filteredMoments.length} {pluralize(filteredMoments.length, 'момент', 'момента', 'моментов')}</span><button type="button" className="text-button" onClick={() => setParams({})}>Сбросить фильтры</button></div> : null}
+      </section>
 
-      <div className="results-summary">
-        <strong>{filtered.length}</strong>
-        <span>из {memories.length} воспоминаний</span>
-      </div>
-
-      {filtered.length === 0 ? (
-        <EmptyState
-          title="Ничего не найдено"
-          description="Попробуйте изменить запрос или убрать часть фильтров."
-          action={
-            <button type="button" className="button button--secondary button--normal" onClick={resetFilters}>
-              <span>Сбросить фильтры</span>
-            </button>
-          }
-        />
-      ) : view === 'grid' ? (
-        <div className="memory-grid">
-          {filtered.map((memory) => (
-            <MemoryCard key={memory.id} memory={memory} person={getPerson(memory.personId)} />
-          ))}
-        </div>
-      ) : (
-        <div className="timeline">
-          {timeline.map(([month, items]) => (
-            <section className="timeline__group" key={month}>
-              <div className="timeline__label">
-                <span />
-                <h2>{month}</h2>
-              </div>
-              <div className="timeline__items">
-                {items.map((memory) => (
-                  <MemoryCard key={memory.id} memory={memory} person={getPerson(memory.personId)} compact />
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      )}
+      {filteredMoments.length === 0 ? <EmptyState title={hasFilters ? 'Таких историй пока не нашли' : 'Начните с одного воспоминания'} description={hasFilters ? 'Попробуйте другое слово или сбросьте фильтры.' : 'Добавьте момент, о котором вам хочется рассказать близким.'}
+        action={hasFilters ? <button type="button" className="button button--secondary" onClick={() => setParams({})}>Показать всю книгу</button> : chapters.length ? <button type="button" className="button button--primary" onClick={() => setShowCreate(true)}>Добавить первый момент</button> : <Link to="/settings" className="button button--secondary">Восстановить книгу</Link>} /> : <div className="chapter-list">
+        {chapters.map((chapter) => {
+          const moments = filteredMoments.filter((moment) => moment.chapterId === chapter.id);
+          if (!moments.length) return null;
+          return <section className="chapter-section" key={chapter.id}>
+            <div className="chapter-section__heading"><div><p className="eyebrow">Глава {chapter.order}</p><h2>{chapter.title}</h2><p>{chapter.description}</p></div><span className="chapter-count">{moments.length} {pluralize(moments.length, 'момент', 'момента', 'моментов')}</span></div>
+            <div className="moment-grid">{moments.map((moment) => {
+              const perspectives = perspectivesForMoment(moment.id);
+              const primary = perspectives.find((item) => item.id === moment.primaryPerspectiveId) ?? perspectives[0];
+              const author = primary ? getPerson(primary.authorId ?? '') : undefined;
+              const participants = Array.from(new Set(perspectives.map((item) => item.authorId).filter((id): id is string => Boolean(id)))).map(getPerson).filter((person) => Boolean(person));
+              const image = perspectives.map((item) => mediaForPerspective(item.id)).find((asset) => asset?.type === 'photo');
+              return <article className={'moment-card ' + (image ? 'moment-card--illustrated' : '')} key={moment.id}>
+                <Link to={'/moments/' + moment.id} className="moment-card__main">
+                  {image ? <img className="moment-card__image" src={image.url} alt="" loading="lazy" /> : null}
+                  <div className="moment-card__body"><div className="moment-card__topline"><span><CalendarDays size={15} aria-hidden="true" /> {moment.occurredAt ? formatDate(moment.occurredAt) : 'Дата не указана'}</span></div>
+                    <h3>{moment.title}</h3><p>{truncate(moment.summary || primary?.content || 'Добавьте первый рассказ на эту страницу.', 150)}</p>
+                    <div className="moment-card__footer"><span className="moment-card__author">{author?.name ?? 'Пока без рассказчика'}</span><span className="avatar-stack" aria-label={participants.map((person) => person?.name).join(', ')}>{participants.slice(0, 3).map((person) => person ? <span key={person.id} aria-hidden="true" style={{ background: person.avatarColor }}>{person.initials}</span> : null)}</span></div>
+                    <span className="moment-card__views">{perspectives.length} {pluralize(perspectives.length, 'взгляд', 'взгляда', 'взглядов')} <ArrowRight size={16} aria-hidden="true" /></span>
+                  </div>
+                </Link>
+                <button type="button" className={'moment-card__favorite ' + (moment.favorite ? 'is-active' : '')} aria-label={moment.favorite ? 'Убрать из избранного: ' + moment.title : 'Добавить в избранное: ' + moment.title} aria-pressed={moment.favorite} onClick={() => toggleMomentFavorite(moment.id)}><Heart size={18} fill={moment.favorite ? 'currentColor' : 'none'} /></button>
+              </article>;
+            })}</div>
+          </section>;
+        })}
+      </div>}
     </div>
   );
 }
