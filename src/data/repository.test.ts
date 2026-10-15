@@ -248,4 +248,18 @@ describe('snapshot repository', () => {
     expect(loadSnapshotResult()).toMatchObject({ rawBackup: raw, warning: expect.stringContaining('повреждена') });
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe(raw);
   });
+
+  it('keeps a moment voice-over across reload and backup, and drops or rejects a broken one', () => {
+    const snapshot = structuredClone(seedSnapshot);
+    snapshot.mediaAssets.push({ id: 'media_voice', type: 'audio', url: 'data:audio/webm;base64,aGVsbG8=', mimeType: 'audio/webm', createdAt: '2026-10-10T10:00:00.000Z' });
+    snapshot.moments[0].narrationMediaAssetId = 'media_voice';
+    expect(parseSnapshotImport(JSON.stringify(snapshot)).moments.find((item) => item.id === snapshot.moments[0].id)?.narrationMediaAssetId).toBe('media_voice');
+    persistSnapshot(snapshot);
+    expect(loadSnapshot().moments.find((item) => item.id === snapshot.moments[0].id)?.narrationMediaAssetId).toBe('media_voice');
+
+    snapshot.moments[0].narrationMediaAssetId = 'asset_porch';
+    expect(() => parseSnapshotImport(JSON.stringify(snapshot))).toThrow('озвучки');
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    expect(loadSnapshot().moments.find((item) => item.id === snapshot.moments[0].id)?.narrationMediaAssetId).toBeUndefined();
+  });
 });

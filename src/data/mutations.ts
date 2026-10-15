@@ -430,11 +430,25 @@ export function addMediaAssetToSnapshot(snapshot: AppSnapshot, asset: MediaAsset
 /** Drop an asset nothing in the book uses (e.g. a re-recorded draft answer). */
 export function removeUnusedMediaAsset(snapshot: AppSnapshot, assetId: string): AppSnapshot {
   if (snapshot.perspectives.some((item) => item.mediaAssetId === assetId)
+    || snapshot.moments.some((moment) => moment.narrationMediaAssetId === assetId)
     || snapshot.books.some((book) => book.coverMediaAssetId === assetId)) return snapshot;
   return {
     ...snapshot,
     mediaAssets: snapshot.mediaAssets.filter((asset) => asset.id !== assetId),
     drafts: snapshot.drafts.map((draft) => draft.audioMediaAssetId === assetId ? { ...draft, audioMediaAssetId: undefined } : draft)
+  };
+}
+
+/** Attach (or with `undefined`, detach) the film voice-over of a moment. The previous asset is left for the caller to discard. */
+export function setMomentNarrationInSnapshot(snapshot: AppSnapshot, momentId: string, assetId: string | undefined): AppSnapshot {
+  if (!snapshot.moments.some((item) => item.id === momentId)) return snapshot;
+  if (assetId !== undefined && snapshot.mediaAssets.find((asset) => asset.id === assetId)?.type !== 'audio') {
+    throw new Error('Озвучка должна быть аудиозаписью.');
+  }
+  return {
+    ...snapshot,
+    moments: snapshot.moments.map((item) => item.id === momentId
+      ? { ...item, narrationMediaAssetId: assetId, updatedAt: new Date().toISOString() } : item)
   };
 }
 

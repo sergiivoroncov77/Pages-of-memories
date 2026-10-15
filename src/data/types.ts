@@ -99,6 +99,8 @@ export interface Moment {
   occurredAt?: string;
   tags: string[];
   primaryPerspectiveId?: string;
+  /** Voice-over recorded for the chapter film; plays over this moment's pages. */
+  narrationMediaAssetId?: string;
   createdAt: string;
   updatedAt: string;
   favorite: boolean;

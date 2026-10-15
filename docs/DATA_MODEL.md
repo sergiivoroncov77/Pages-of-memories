@@ -18,6 +18,8 @@
 
 Событие внутри главы. Хранит заголовок, краткое описание, дату события, теги, основной взгляд и избранность.
 
+`narrationMediaAssetId` — необязательная озвучка момента для фильма главы: аудио-`MediaAsset`, записанный в студии фильма. Это не взгляд участника, поэтому он хранится отдельно от `Perspective` и не показывается среди материалов. Нормализация и импорт отбрасывают или отклоняют ссылку на что-то, кроме аудио; пока ссылка есть, файл не удаляется из IndexedDB.
+
 ### Perspective
 
 Самостоятельный голос участника о моменте. Формат: `text`, `audio`, `photo` или `video`. Перспектива может ссылаться на `MediaAsset` и отдельно отмечаться как основной рассказ.
@@ -68,6 +70,7 @@ Book          1 ── N Chapter
 Chapter       1 ── N Moment
 Moment        1 ── N Perspective
 Moment        1 ── N Reflection
+Moment        N ── 0..1 MediaAsset (озвучка)
 Perspective   N ── 0..1 MediaAsset
 FamilyProject 1 ── N Person
 Person        1 ── N Question
@@ -89,6 +92,6 @@ Question      1 ── 0..1 MemoryDraft
 - `uploadAudio`, `getAudioUrl`;
 - `createExport`, `getExportStatus`.
 
-Для local-first сценария уже добавлены чистые мутации `createMoment`, `createPerspective`, `createReflection` и `createMediaAsset`. Бинарные assets уже вынесены в IndexedDB; следующий шаг — объектное хранилище на backend с той же моделью ссылок.
+Для local-first сценария уже добавлены чистые мутации `createMoment`, `createPerspective`, `createReflection`, `createMediaAsset` и `setMomentNarrationInSnapshot`. Бинарные assets уже вынесены в IndexedDB; следующий шаг — объектное хранилище на backend с той же моделью ссылок.
 
 Компоненты уже не работают с localStorage напрямую, поэтому API можно подключить через замену провайдера данных.

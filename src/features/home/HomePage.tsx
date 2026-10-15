@@ -2,13 +2,14 @@ import { ArrowRight, BookOpen, Mic2, Sparkles, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { Avatar } from '../../components/Avatar';
+import { Book3D } from '../../components/Book3D';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { PersonCard } from '../../components/PersonCard';
 import { formatDate, pluralize, truncate } from '../../lib/format';
 
 export function HomePage() {
-  const { project, people, books, chaptersForBook, momentsForChapter, perspectivesForMoment, nextQuestion, getPerson } = useAppState();
+  const { project, people, books, mediaAssets, chaptersForBook, momentsForChapter, perspectivesForMoment, nextQuestion, getPerson } = useAppState();
   const question = nextQuestion();
   const person = question ? getPerson(question.personId) : undefined;
   const book = books[0];
@@ -19,7 +20,7 @@ export function HomePage() {
   const invitePerson = people.find((item) => item.status === 'invited') ?? people[0];
 
   return <div className="page page--home">
-    <header className="home-greeting"><div><p className="eyebrow">Истории, которые остаются с нами</p><h1>{project.title}</h1><p>Сохраняйте голоса, детали и воспоминания близких. По одной истории за раз.</p></div><Link to="/book" className="button button--secondary button--small"><BookOpen size={18} aria-hidden="true" /> Открыть книгу</Link></header>
+    <header className="home-greeting"><div><p className="eyebrow">Истории, которые остаются с нами</p><h1>{project.title}</h1><p>Сохраняйте голоса, детали и воспоминания близких. По одной истории за раз.</p></div>{book ? <Book3D title={book.title} cover={mediaAssets.find((asset) => asset.id === book.coverMediaAssetId)} to="/read" size="small" label={'Читать книгу «' + book.title + '»'} /> : null}</header>
     <div className="stats-row" aria-label="Статистика проекта">
       <div><BookOpen size={21} aria-hidden="true" /><strong>{moments.length}</strong><span>{pluralize(moments.length, 'момент', 'момента', 'моментов')}</span></div>
       <div><BookOpen size={21} aria-hidden="true" /><strong>{bookChapters.length}</strong><span>{pluralize(bookChapters.length, 'глава', 'главы', 'глав')}</span></div>

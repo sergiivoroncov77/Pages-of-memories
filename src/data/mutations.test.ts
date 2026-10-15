@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addPerspectiveToSnapshot, createMemoryDraft, ensureMemoryMoments, publishMemoryToSnapshot,
-  saveDraftToSnapshot, toggleMemoryFavorite, toggleMomentFavorite, updateMomentInSnapshot } from './mutations';
+  removeUnusedMediaAsset, saveDraftToSnapshot, setMomentNarrationInSnapshot, toggleMemoryFavorite, toggleMomentFavorite,
+  updateMomentInSnapshot } from './mutations';
 import { loadSnapshot, persistSnapshot } from './repository';
 import { seedSnapshot } from './seed';
 
@@ -206,5 +207,24 @@ describe('draft and publish mutations', () => {
     });
     expect(new Set(updated.perspectives.map((item) => item.id)).size).toBe(updated.perspectives.length);
     expect(ensureMemoryMoments(updated)).toEqual(updated);
+  });
+});
+
+describe('moment narration', () => {
+  const narration = { id: 'media_narration', type: 'audio' as const, url: 'idb:media_narration', mimeType: 'audio/webm', createdAt: '2026-10-10T10:00:00.000Z' };
+
+  it('attaches an audio voice-over, keeps it in use and detaches it again', () => {
+    const base = { ...structuredClone(seedSnapshot), mediaAssets: [...seedSnapshot.mediaAssets, narration] };
+    const attached = setMomentNarrationInSnapshot(base, 'moment_summer', narration.id);
+    expect(attached.moments.find((item) => item.id === 'moment_summer')?.narrationMediaAssetId).toBe(narration.id);
+    expect(removeUnusedMediaAsset(attached, narration.id)).toBe(attached);
+
+    const detached = setMomentNarrationInSnapshot(attached, 'moment_summer', undefined);
+    expect(detached.moments.find((item) => item.id === 'moment_summer')?.narrationMediaAssetId).toBeUndefined();
+    expect(removeUnusedMediaAsset(detached, narration.id).mediaAssets.some((asset) => asset.id === narration.id)).toBe(false);
+  });
+
+  it('rejects a voice-over that is not an audio asset', () => {
+    expect(() => setMomentNarrationInSnapshot(structuredClone(seedSnapshot), 'moment_summer', 'asset_porch')).toThrow();
   });
 });

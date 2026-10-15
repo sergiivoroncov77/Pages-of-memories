@@ -257,6 +257,7 @@ function normalizeMoment(value: unknown, fallback?: Moment): Moment | null {
     occurredAt: isValidDate(value.occurredAt) ? value.occurredAt : undefined,
     tags: stringArray(value.tags, fallback?.tags ?? []),
     primaryPerspectiveId: optionalString(value.primaryPerspectiveId, fallback?.primaryPerspectiveId),
+    narrationMediaAssetId: optionalString(value.narrationMediaAssetId, fallback?.narrationMediaAssetId),
     createdAt,
     updatedAt,
     favorite: typeof value.favorite === 'boolean' ? value.favorite : fallback?.favorite ?? false
@@ -547,6 +548,9 @@ function normalizeSnapshot(value: unknown): AppSnapshot | null {
       ...moment,
       sourceMemoryId,
       occurredAt: legacyMemory?.recordedAt === moment.occurredAt ? undefined : moment.occurredAt,
+      narrationMediaAssetId: moment.narrationMediaAssetId
+        && mediaAssets.some((asset) => asset.id === moment.narrationMediaAssetId && asset.type === 'audio')
+        ? moment.narrationMediaAssetId : undefined,
       primaryPerspectiveId:
         moment.primaryPerspectiveId && perspectivesById.get(moment.primaryPerspectiveId)?.momentId === moment.id
           ? moment.primaryPerspectiveId
@@ -603,7 +607,8 @@ const entityFields: Record<string, FieldSchema> = {
   books: { id: 'id', projectId: 'id', title: 'id', subtitle: 'text', description: 'text', createdAt: 'date', updatedAt: 'date', coverMediaAssetId: optional('id') },
   chapters: { id: 'id', bookId: 'id', title: 'id', description: 'text', order: 'number', createdAt: 'date', updatedAt: 'date' },
   moments: { id: 'id', sourceMemoryId: optional('id'), bookId: 'id', chapterId: 'id', title: 'id', summary: 'text',
-    occurredAt: optional('date'), tags: 'strings', primaryPerspectiveId: optional('id'), createdAt: 'date', updatedAt: 'date', favorite: 'boolean' },
+    occurredAt: optional('date'), tags: 'strings', primaryPerspectiveId: optional('id'), narrationMediaAssetId: optional('id'),
+    createdAt: 'date', updatedAt: 'date', favorite: 'boolean' },
   perspectives: { id: 'id', sourceMemoryId: optional('id'), momentId: 'id', authorId: optional('id'), type: PERSPECTIVE_TYPES,
     content: 'text', mediaAssetId: optional('id'), caption: optional('text'), createdAt: 'date', isPrimary: 'boolean' },
   reflections: { id: 'id', momentId: 'id', authorId: optional('id'), text: 'id', createdAt: 'date' },
@@ -701,6 +706,7 @@ export function parseSnapshotImport(json: string): AppSnapshot {
       linkedMemoryIds.add(item.sourceMemoryId);
     }
     if (item.primaryPerspectiveId !== undefined) reference(perspectives.get(item.primaryPerspectiveId)?.momentId === item.id, 'основного рассказа с моментом');
+    if (item.narrationMediaAssetId !== undefined) reference(assets.get(item.narrationMediaAssetId)?.type === 'audio', 'озвучки момента с аудиозаписью');
   });
   [...collections.perspectives, ...collections.reflections].forEach((item) => {
     reference(moments.has(item.momentId), 'рассказа или отклика с моментом');

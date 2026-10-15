@@ -1,16 +1,18 @@
-import { ArrowRight, BookOpen, CalendarDays, Heart, Plus, Search, Users, X } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowRight, BookOpen, CalendarDays, Clapperboard, Heart, Plus, Search, Users, X } from 'lucide-react';
+import { useState, type CSSProperties } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
+import { Book3D } from '../../components/Book3D';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { MediaImage } from '../../components/MediaImage';
 import { PageHeader } from '../../components/PageHeader';
+import { chapterLabel, toRoman } from '../../lib/film/text';
 import { formatDate, pluralize, truncate } from '../../lib/format';
 import { MomentDetailsForm, type MomentDetails } from '../moments/MomentDetailsForm';
 
 export function BookPage() {
-  const { books, people, chaptersForBook, momentsForChapter, perspectivesForMoment, mediaForPerspective, getPerson, addMoment, toggleMomentFavorite } = useAppState();
+  const { books, people, mediaAssets, chaptersForBook, momentsForChapter, perspectivesForMoment, mediaForPerspective, getPerson, addMoment, toggleMomentFavorite } = useAppState();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [showCreate, setShowCreate] = useState(false);
@@ -64,18 +66,23 @@ export function BookPage() {
         </div>}
       />
 
-      <Card tone="dark" className="book-hero" padded={false}>
-        <div className="book-hero__copy">
-          <span className="badge badge--light"><BookOpen size={16} aria-hidden="true" /> История продолжается</span>
+      <section className="book-showcase" aria-label="Книга">
+        <Book3D title={book.title} cover={mediaAssets.find((asset) => asset.id === book.coverMediaAssetId)} to="/read" label={'Читать книгу «' + book.title + '» с перелистыванием страниц'} />
+        <div className="book-showcase__copy">
+          <span className="badge badge--soft"><BookOpen size={16} aria-hidden="true" /> История продолжается</span>
           <h2>{book.subtitle || 'Сохраните то, что хочется помнить'}</h2>
-          <p>Один момент, разные голоса. Собирайте рассказы и фотографии близких на одной странице.</p>
+          <p>Один момент, разные голоса. Листайте книгу как настоящую или соберите главу в фильм с голосами и фотографиями.</p>
+          <dl className="book-showcase__stats" aria-label="Содержание книги">
+            <div><dd>{chapters.length}</dd><dt>{pluralize(chapters.length, 'глава', 'главы', 'глав')}</dt></div>
+            <div><dd>{allMoments.length}</dd><dt>{pluralize(allMoments.length, 'момент', 'момента', 'моментов')}</dt></div>
+            <div><dd>{voiceCount}</dd><dt>{pluralize(voiceCount, 'рассказчик', 'рассказчика', 'рассказчиков')}</dt></div>
+          </dl>
+          <div className="book-showcase__actions">
+            <Link to="/read" className="button button--primary"><BookOpen size={18} aria-hidden="true" /> Читать книгу</Link>
+            {chapters[0] ? <Link to={'/chapters/' + chapters[0].id + '/film'} className="button button--secondary"><Clapperboard size={18} aria-hidden="true" /> Фильм главы</Link> : null}
+          </div>
         </div>
-        <dl className="book-hero__stats" aria-label="Содержание книги">
-          <div><dd>{chapters.length}</dd><dt>{pluralize(chapters.length, 'глава', 'главы', 'глав')}</dt></div>
-          <div><dd>{allMoments.length}</dd><dt>{pluralize(allMoments.length, 'момент', 'момента', 'моментов')}</dt></div>
-          <div><dd>{voiceCount}</dd><dt>{pluralize(voiceCount, 'рассказчик', 'рассказчика', 'рассказчиков')}</dt></div>
-        </dl>
-      </Card>
+      </section>
 
       {showCreate ? <Card className="create-moment-card" id="create-moment">
         <div className="card-heading"><div><p className="eyebrow">Новая страница</p><h2>Создать момент</h2><p>Начните с названия. Рассказы и материалы можно добавить следом.</p></div>
@@ -104,14 +111,18 @@ export function BookPage() {
           const moments = filteredMoments.filter((moment) => moment.chapterId === chapter.id);
           if (!moments.length) return null;
           return <section className="chapter-section" key={chapter.id}>
-            <div className="chapter-section__heading"><div><p className="eyebrow">Глава {chapter.order}</p><h2>{chapter.title}</h2><p>{chapter.description}</p></div><span className="chapter-count">{moments.length} {pluralize(moments.length, 'момент', 'момента', 'моментов')}</span></div>
-            <div className="moment-grid">{moments.map((moment) => {
+            <div className="chapter-section__heading"><span className="chapter-numeral" aria-hidden="true">{toRoman(chapter.order)}</span>
+              <div><p className="eyebrow">{chapterLabel(chapter.order)}</p><h2>{chapter.title}</h2><p>{chapter.description}</p></div>
+              <div className="chapter-actions"><span className="chapter-count">{moments.length} {pluralize(moments.length, 'момент', 'момента', 'моментов')}</span>
+                <Link to={'/read?chapter=' + chapter.id} className="button button--ghost button--small"><BookOpen size={17} aria-hidden="true" /> Листать</Link>
+                <Link to={'/chapters/' + chapter.id + '/film'} className="button button--secondary button--small"><Clapperboard size={17} aria-hidden="true" /> Фильм главы</Link></div></div>
+            <div className="moment-grid">{moments.map((moment, index) => {
               const perspectives = perspectivesForMoment(moment.id);
               const primary = perspectives.find((item) => item.id === moment.primaryPerspectiveId) ?? perspectives[0];
               const author = primary ? getPerson(primary.authorId ?? '') : undefined;
               const participants = Array.from(new Set(perspectives.map((item) => item.authorId).filter((id): id is string => Boolean(id)))).map(getPerson).filter((person) => Boolean(person));
               const image = perspectives.map((item) => mediaForPerspective(item.id)).find((asset) => asset?.type === 'photo');
-              return <article className={'moment-card ' + (image ? 'moment-card--illustrated' : '')} key={moment.id}>
+              return <article className={'moment-card ' + (image ? 'moment-card--illustrated ' : '') + (moment.favorite ? 'is-favorite' : '')} key={moment.id} style={{ '--i': index } as CSSProperties}>
                 <Link to={'/moments/' + moment.id} className="moment-card__main">
                   {image ? <MediaImage className="moment-card__image" asset={image} /> : null}
                   <div className="moment-card__body"><div className="moment-card__topline"><span><CalendarDays size={15} aria-hidden="true" /> {moment.occurredAt ? formatDate(moment.occurredAt) : 'Дата не указана'}</span></div>

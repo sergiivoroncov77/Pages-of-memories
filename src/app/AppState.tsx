@@ -30,6 +30,7 @@ import {
   publishMemoryToSnapshot,
   removeUnusedMediaAsset,
   saveDraftToSnapshot,
+  setMomentNarrationInSnapshot,
   toggleMomentFavorite,
   toggleMemoryFavorite,
   updateMomentInSnapshot
@@ -93,6 +94,8 @@ interface AppStateValue {
     media?: MediaUploadWithBlob
   ) => Promise<StorageWriteResult>;
   storeMedia: (media: MediaUploadWithBlob) => Promise<{ ok: true; asset: MediaAsset } | { ok: false; error: StorageError }>;
+  /** Replace a moment's film voice-over; `null` removes it. The previous recording is deleted from the device. */
+  setMomentNarration: (momentId: string, media: MediaUploadWithBlob | null) => Promise<StorageWriteResult>;
   discardMedia: (assetId: string) => void;
   addReflection: (input: Parameters<typeof createReflection>[0]) => Reflection;
   addMediaAsset: (input: Parameters<typeof createMediaAsset>[0]) => MediaAsset;
@@ -363,6 +366,31 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return stored;
   };
 
+  const setMomentNarration = async (momentId: string, media: MediaUploadWithBlob | null): Promise<StorageWriteResult> => {
+    if (originalDataRef.current !== undefined) return { ok: false, error: recoveryPendingError() };
+    const previous = snapshotRef.current.moments.find((item) => item.id === momentId)?.narrationMediaAssetId;
+    let asset: MediaAsset | undefined;
+    if (media) {
+      const stored = await putMediaBlob(media);
+      if (!stored.ok) return stored;
+      asset = stored.asset;
+    }
+    const withAsset = asset ? addMediaAssetToSnapshot(snapshotRef.current, asset) : snapshotRef.current;
+    let next = setMomentNarrationInSnapshot(withAsset, momentId, asset?.id);
+    if (previous) next = removeUnusedMediaAsset(next, previous);
+    const result: StorageWriteResult = originalDataRef.current !== undefined ? { ok: false, error: recoveryPendingError() } : persistSnapshot(next);
+    if (!result.ok) {
+      if (asset) void mediaStore().delete(asset.id).catch(() => undefined);
+      return result;
+    }
+    snapshotRef.current = next;
+    persistenceErrorRef.current = null;
+    setPersistenceError(null);
+    setSnapshot(next);
+    if (previous && !next.mediaAssets.some((item) => item.id === previous)) void mediaStore().delete(previous).catch(() => undefined);
+    return result;
+  };
+
   const discardMedia = (assetId: string) => {
     commitSnapshot((current) => removeUnusedMediaAsset(current, assetId));
     if (!snapshotRef.current.mediaAssets.some((asset) => asset.id === assetId)) {
@@ -442,6 +470,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         addPerspective,
         addPerspectiveWithMedia,
         storeMedia,
+        setMomentNarration,
         discardMedia,
         addReflection,
         addMediaAsset,
