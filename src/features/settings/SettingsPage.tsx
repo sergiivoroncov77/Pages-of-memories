@@ -1,4 +1,4 @@
-import { Bell, Download, Eye, FileJson, HardDrive, Monitor, Moon, RotateCcw, ShieldCheck, Sun, Trash2, Upload } from 'lucide-react';
+import { Bell, Download, Eye, FileJson, HardDrive, Monitor, Moon, RotateCcw, ShieldCheck, Sparkles, Sun, Trash2, Upload } from 'lucide-react';
 import { useRef, useState, type ChangeEvent } from 'react';
 import { useAppState } from '../../app/AppState';
 import { Card } from '../../components/Card';
@@ -19,7 +19,8 @@ const themeOptions: { value: ThemePreference; label: string; icon: typeof Sun }[
 ];
 
 export function SettingsPage() {
-  const { snapshot, settings, updateSettings, resetDemo, exportBackup, restoreBackup, persistenceError } = useAppState();
+  const { snapshot, settings, updateSettings, resetDemo, startFresh, exportBackup, restoreBackup, persistenceError, activeBook: book } = useAppState();
+  const [freshTitle, setFreshTitle] = useState('Наша семья');
   const [pendingImport, setPendingImport] = useState<{ name: string; snapshot: AppSnapshot } | null>(null);
   const [importError, setImportError] = useState('');
   const [notice, setNotice] = useState('');
@@ -30,7 +31,6 @@ export function SettingsPage() {
   const storageSize = estimateStorageBytes(JSON.stringify(snapshot));
   const storageKb = Math.max(1, Math.round(storageSize / 1024));
   const deviceMediaBytes = snapshot.mediaAssets.filter(isStoredMedia).reduce((total, asset) => total + (asset.sizeBytes ?? 0), 0);
-  const book = snapshot.books[0];
 
   const prepareImport = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -71,7 +71,7 @@ export function SettingsPage() {
           <p className="eyebrow">Локальная книга</p>
           <h2>{storageKb} КБ из 4 МБ</h2>
           {deviceMediaBytes > 0 ? <p>Фото, аудио и видео на устройстве: {formatFileSize(deviceMediaBytes)}.</p> : null}
-          <p>{book?.title ?? 'Книга'} · {snapshot.chapters.length} глав · {snapshot.moments.length} моментов · {snapshot.mediaAssets.length} материалов.</p>
+          <p>{snapshot.books.length > 1 ? `${snapshot.books.length} книги, открыта «${book?.title}»` : book?.title ?? 'Книг пока нет'} · {snapshot.chapters.length} глав · {snapshot.moments.length} моментов · {snapshot.mediaAssets.length} материалов.</p>
           {persistenceError ? <p className="field-message field-message--error">Есть изменения, которые ещё не записаны в браузер. Резервная копия включает их.</p> : null}
         </div>
       </Card>
@@ -126,7 +126,7 @@ export function SettingsPage() {
           <span className="settings-section__icon"><ShieldCheck size={23} aria-hidden="true" /></span>
           <div>
             <h2>Хранение и доступ</h2>
-            <p>Истории доступны людям, которые пользуются этим профилем браузера. Облачная синхронизация и семейные аккаунты пока не подключены.</p>
+            <p>Истории доступны людям, которые пользуются этим профилем браузера. Облачная синхронизация и семейные аккаунты пока не подключены — книгой можно поделиться файлом в разделе «Книга».</p>
           </div>
         </div>
         <p>Голосовые ответы, фото и видео до 50 МБ хранятся только на этом устройстве. Резервная копия JSON включает их — скачивайте её, чтобы не потерять записи при очистке браузера.</p>
@@ -154,7 +154,34 @@ export function SettingsPage() {
 
       <Card className="danger-zone">
         <div>
-          <Trash2 size={23} aria-hidden="true" />
+          <Sparkles size={23} aria-hidden="true" />
+          <div>
+            <h2>Начать с чистого листа</h2>
+            <p>Для настоящей семейной книги: демо-семья, её книга и ответы удалятся, останутся только настройки оформления. Если вы уже что-то добавили, сначала скачайте копию.</p>
+          </div>
+        </div>
+        <label className="field">
+          <span>Как назвать ваш семейный архив</span>
+          <input value={freshTitle} onChange={(event) => setFreshTitle(event.target.value)} maxLength={80} placeholder="Например, «Семья Ивановых»" />
+        </label>
+        <button type="button" className="button button--danger button--normal" disabled={isRestoring} onClick={async () => {
+          if (!window.confirm('Удалить все книги, близких, ответы и материалы на этом устройстве и начать заново? Это нельзя отменить.')) return;
+          setIsRestoring(true);
+          const result = await startFresh(freshTitle);
+          setIsRestoring(false);
+          setPendingImport(null);
+          setImportError('');
+          setResetStatus(result.ok
+            ? { error: false, message: 'Готово: архив пуст. Создайте первую книгу в разделе «Книга» и добавьте близких.' }
+            : { error: true, message: `${result.error.message} Данные не изменены.` });
+        }}>
+          <Trash2 size={19} aria-hidden="true" /><span>Очистить и начать</span>
+        </button>
+      </Card>
+
+      <Card className="danger-zone">
+        <div>
+          <RotateCcw size={23} aria-hidden="true" />
           <div>
             <h2>Вернуть демо-книгу</h2>
             <p>Созданные истории, материалы и черновики будут заменены демонстрационными. Сначала скачайте копию.</p>
@@ -178,7 +205,7 @@ export function SettingsPage() {
         {resetStatus ? <p role={resetStatus.error ? 'alert' : 'status'} className={`field-message ${resetStatus.error ? 'field-message--error' : ''}`}>{resetStatus.message}</p> : null}
       </Card>
 
-      <p className="settings-version"><Eye size={16} aria-hidden="true" />Прототип 0.1 · локальные данные</p>
+      <p className="settings-version"><Eye size={16} aria-hidden="true" />Тестовая версия 0.2 · данные на этом устройстве</p>
     </div>
   );
 }

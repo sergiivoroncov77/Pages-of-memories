@@ -1,6 +1,6 @@
-import { BookOpen, CalendarDays, Camera, Clapperboard, FileAudio, FileText, FileVideo, Heart, MessageCircle, Paperclip, Pencil, Plus, Send, UserRound, Users, X } from 'lucide-react';
+import { BookOpen, CalendarDays, Camera, Clapperboard, FileAudio, FileText, FileVideo, Heart, MessageCircle, Paperclip, Pencil, Plus, Send, Trash2, UserRound, Users, X } from 'lucide-react';
 import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
@@ -32,7 +32,8 @@ export function MomentPage() {
 }
 
 function MomentContent({ moment }: { moment: Moment }) {
-  const { chapters, books, perspectivesForMoment, reflectionsForMoment, mediaForPerspective, getPerson, people, addPerspectiveWithMedia, addReflection, toggleMomentFavorite, updateMoment } = useAppState();
+  const { chapters, books, perspectivesForMoment, reflectionsForMoment, mediaForPerspective, getPerson, people, addPerspectiveWithMedia, addReflection, toggleMomentFavorite, updateMoment, deleteMoment } = useAppState();
+  const navigate = useNavigate();
   const chapter = chapters.find((item) => item.id === moment.chapterId)!;
   const book = books.find((item) => item.id === moment.bookId)!;
   const perspectives = perspectivesForMoment(moment.id);
@@ -126,13 +127,19 @@ function MomentContent({ moment }: { moment: Moment }) {
       action={<div className="page-action-group"><Link to={'/read?moment=' + moment.id} className="button button--ghost button--small"><BookOpen size={17} aria-hidden="true" /> В книге</Link><Link to={'/chapters/' + chapter.id + '/film'} className="button button--ghost button--small"><Clapperboard size={17} aria-hidden="true" /> Фильм главы</Link><button type="button" className="button button--ghost button--small" aria-expanded={showEdit} onClick={() => { setShowEdit((value) => !value); setShowForm(false); }}><Pencil size={17} aria-hidden="true" /> Изменить</button><button type="button" className={'icon-button ' + (moment.favorite ? 'is-favorite' : '')} aria-label={moment.favorite ? 'Убрать из избранного' : 'Добавить в избранное'} aria-pressed={moment.favorite} onClick={() => toggleMomentFavorite(moment.id)}><Heart size={21} fill={moment.favorite ? 'currentColor' : 'none'} /></button></div>} />
     <div className="moment-meta-bar"><span><CalendarDays size={17} aria-hidden="true" /> {moment.occurredAt ? formatDate(moment.occurredAt) : 'Дата не указана'}</span><span><Users size={17} aria-hidden="true" /> {participants.length} {pluralize(participants.length, 'рассказчик', 'рассказчика', 'рассказчиков')}</span><span><MessageCircle size={17} aria-hidden="true" /> {reflections.length} {pluralize(reflections.length, 'отклик', 'отклика', 'откликов')}</span></div>
 
-    {showEdit ? <Card className="moment-edit-form"><div className="card-heading"><div><p className="eyebrow">Детали истории</p><h2>Изменить момент</h2></div><button type="button" className="icon-button" aria-label="Закрыть редактирование" onClick={() => setShowEdit(false)}><X size={20} /></button></div><MomentDetailsForm initial={moment} chapters={chapters.filter((item) => item.bookId === book.id)} submitLabel="Сохранить изменения" onCancel={() => setShowEdit(false)} onSubmit={(details) => { updateMoment(moment.id, details); setShowEdit(false); setNotice('Детали момента обновлены.'); }} /></Card> : null}
+    {showEdit ? <Card className="moment-edit-form"><div className="card-heading"><div><p className="eyebrow">Детали истории</p><h2>Изменить момент</h2></div><button type="button" className="icon-button" aria-label="Закрыть редактирование" onClick={() => setShowEdit(false)}><X size={20} /></button></div><MomentDetailsForm initial={moment} chapters={chapters.filter((item) => item.bookId === book.id)} submitLabel="Сохранить изменения" onCancel={() => setShowEdit(false)} onSubmit={(details) => { updateMoment(moment.id, details); setShowEdit(false); setNotice('Детали момента обновлены.'); }} />
+      <div className="moment-delete"><button type="button" className="button button--danger-ghost" onClick={() => {
+        const count = perspectives.length + reflections.length;
+        if (!window.confirm(`Удалить момент «${moment.title}»${count ? ` вместе со всеми рассказами и откликами (${count})` : ''}? Фото, голос и видео этого момента тоже удалятся. Это нельзя отменить.`)) return;
+        deleteMoment(moment.id);
+        navigate('/book');
+      }}><Trash2 size={17} aria-hidden="true" /> Удалить момент</button></div></Card> : null}
 
     {showForm ? <Card className="perspective-form-card" id="perspective-form"><div className="card-heading"><div><p className="eyebrow">Ещё один голос</p><h2>Добавить свой взгляд</h2><p>Расскажите своими словами или сохраните материал с устройства.</p></div><button type="button" className="icon-button" aria-label="Закрыть форму" disabled={isSaving} onClick={() => setShowForm(false)}><X size={20} /></button></div>
       <form className="inline-form" onSubmit={submitPerspective} aria-busy={isSaving}>
         <div className="form-row"><label className="field"><span>Кто рассказывает</span><select value={authorId} onChange={(event) => setAuthorId(event.target.value)} disabled={isSaving}><option value="">Без указания автора</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
           <label className="field"><span>Формат</span><select value={type} disabled={isSaving} onChange={(event) => { setType(event.target.value as PerspectiveType); setSelectedFile(null); setError(''); if (fileInput.current) fileInput.current.value = ''; }}>{Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
-        {type !== 'text' ? <label className="field file-field"><span>Файл с устройства</span><input ref={fileInput} key={type} type="file" accept={acceptTypes[type]} disabled={isSaving} onChange={(event) => { const file = event.target.files?.[0] ?? null; setSelectedFile(file); setError(file ? validateMediaFile(file, type) ?? '' : ''); }} aria-describedby="media-size-note" /><small id="media-size-note">До 50 МБ на файл. Материал хранится только на этом устройстве — для переноса скачайте резервную копию.</small>{selectedFile ? <small>{selectedFile.name} · {Math.ceil(selectedFile.size / 1024)} КБ</small> : null}</label> : null}
+        {type !== 'text' ? <label className="field file-field"><span>Файл с устройства</span><input ref={fileInput} key={type} type="file" accept={acceptTypes[type]} disabled={isSaving} onChange={(event) => { const file = event.target.files?.[0] ?? null; setSelectedFile(file); setError(file ? validateMediaFile(file, type) ?? '' : ''); }} aria-describedby="media-size-note" /><small id="media-size-note">До 50 МБ на файл. Материал хранится на этом устройстве; близким он уйдёт вместе с файлом книги («Книга» → «Поделиться»).</small>{selectedFile ? <small>{selectedFile.name} · {Math.ceil(selectedFile.size / 1024)} КБ</small> : null}</label> : null}
         <label className="field"><span>{type === 'text' ? 'Как вы это помните?' : 'Что стоит знать об этом материале?'}</span><textarea autoFocus value={content} onChange={(event) => setContent(event.target.value)} rows={5} maxLength={30000} required={type === 'text'} disabled={isSaving} placeholder="Можно начать с одной детали…" /></label>
         {type !== 'text' ? <label className="field"><span>Подпись к материалу <small>необязательно</small></span><input value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={500} disabled={isSaving} placeholder="Например, семья за столом летом 1980 года" /></label> : null}
         {error ? <p className="field-message field-message--error" role="alert">{error}</p> : null}

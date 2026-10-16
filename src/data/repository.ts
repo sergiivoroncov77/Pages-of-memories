@@ -87,10 +87,11 @@ function normalizePerson(value: unknown, fallback?: Person): Person | null {
   const relation = requiredString(value.relation, fallback?.relation);
   const initials = requiredString(value.initials, fallback?.initials);
   const avatarColor = requiredString(value.avatarColor, fallback?.avatarColor);
-  const bio = requiredString(value.bio, fallback?.bio);
+  // A short bio is optional: people added in the app often start without one.
+  const bio = stringValue(value.bio, fallback?.bio ?? '');
   const lastActiveAt = dateValue(value.lastActiveAt, fallback?.lastActiveAt);
 
-  if (!id || !projectId || !name || !relation || !initials || !avatarColor || !bio || !lastActiveAt) return null;
+  if (!id || !projectId || !name || !relation || !initials || !avatarColor || !lastActiveAt) return null;
 
   return {
     id,
@@ -340,7 +341,8 @@ function normalizeSettings(value: unknown, fallback: AppSettings): AppSettings {
     highContrast: typeof record.highContrast === 'boolean' ? record.highContrast : fallback.highContrast,
     theme: typeof record.theme === 'string' && (THEME_PREFERENCES as readonly string[]).includes(record.theme)
       ? (record.theme as AppSettings['theme'])
-      : fallback.theme
+      : fallback.theme,
+    activeBookId: typeof record.activeBookId === 'string' && record.activeBookId ? record.activeBookId : undefined
   };
 }
 
@@ -589,16 +591,28 @@ function normalizeSnapshot(value: unknown): AppSnapshot | null {
       authorId: reflection.authorId && peopleIds.has(reflection.authorId) ? reflection.authorId : undefined
     })),
     mediaAssets,
-    settings: normalizeSettings(value.settings, seed.settings)
+    settings: withActiveBook(normalizeSettings(value.settings, seed.settings), normalizedBooks)
   });
+}
+
+function withActiveBook(settings: AppSettings, books: Book[]): AppSettings {
+  const { activeBookId, ...rest } = settings;
+  return activeBookId && books.some((book) => book.id === activeBookId) ? { ...rest, activeBookId } : rest;
+}
+
+/** Normalise a snapshot assembled in memory (for example after merging a shared book). */
+export function normalizeSnapshotValue(value: AppSnapshot): AppSnapshot {
+  const normalized = normalizeSnapshot(structuredClone(value));
+  if (!normalized) throw new Error('Не удалось сохранить книгу: данные повреждены.');
+  return normalized;
 }
 
 type FieldRule = 'id' | 'text' | 'date' | 'number' | 'boolean' | 'strings' | readonly string[];
 type FieldSchema = Record<string, FieldRule | { optional: FieldRule }>;
 const optional = (rule: FieldRule) => ({ optional: rule });
-const entityFields: Record<string, FieldSchema> = {
+export const entityFields: Record<string, FieldSchema> = {
   people: { id: 'id', projectId: 'id', name: 'id', relation: 'id', birthYear: optional('number'), initials: 'id',
-    avatarColor: 'id', bio: 'id', answeredCount: 'number', totalQuestions: 'number', lastActiveAt: 'date', status: PERSON_STATUSES },
+    avatarColor: 'id', bio: 'text', answeredCount: 'number', totalQuestions: 'number', lastActiveAt: 'date', status: PERSON_STATUSES },
   questions: { id: 'id', personId: 'id', text: 'id', hint: 'id', prompts: 'strings', category: 'id', status: QUESTION_STATUSES, order: 'number' },
   memories: { id: 'id', personId: 'id', questionId: 'id', title: 'id', questionText: 'id', recordedAt: 'date',
     durationSeconds: 'number', transcript: 'text', tags: 'strings', photoUrl: 'text', photoAlt: 'text', source: MEMORY_SOURCES, favorite: 'boolean' },
@@ -616,7 +630,7 @@ const entityFields: Record<string, FieldSchema> = {
     sizeBytes: optional('number'), durationSeconds: optional('number'), width: optional('number'), height: optional('number'), createdAt: 'date' }
 };
 
-function validateFields(record: unknown, schema: FieldSchema, label: string): asserts record is RecordValue {
+export function validateFields(record: unknown, schema: FieldSchema, label: string): asserts record is RecordValue {
   if (!isRecord(record)) throw new Error(`Резервная копия повреждена: ${label} должен быть объектом.`);
   for (const [field, definition] of Object.entries(schema)) {
     const optionalField = typeof definition === 'object' && !Array.isArray(definition) && 'optional' in definition;
@@ -634,7 +648,7 @@ function validateFields(record: unknown, schema: FieldSchema, label: string): as
   }
 }
 
-function isSafeBackupMediaUrl(url: unknown, type: unknown, assetId?: unknown): boolean {
+export function isSafeBackupMediaUrl(url: unknown, type: unknown, assetId?: unknown): boolean {
   if (typeof url !== 'string') return false;
   // Device-local blob reference; only valid for the asset that owns it.
   if (typeof assetId === 'string' && url === storedMediaUrl(assetId)) return type === 'photo' || type === 'audio' || type === 'video';
@@ -657,7 +671,7 @@ export function parseSnapshotImport(json: string): AppSnapshot {
   if (!isRecord(value) || value.version !== 1) throw new Error('Формат резервной копии не поддерживается: нужна версия 1.');
   validateFields(value.project, { id: 'id', title: 'id', subtitle: 'text', createdAt: 'date', inviteCode: 'text' }, 'project');
   const projectId = value.project.id;
-  validateFields(value.settings, { cloudBackup: 'boolean', allowTranscriptSharing: 'boolean', weeklyReminder: 'boolean', highContrast: 'boolean', theme: optional(THEME_PREFERENCES) }, 'settings');
+  validateFields(value.settings, { cloudBackup: 'boolean', allowTranscriptSharing: 'boolean', weeklyReminder: 'boolean', highContrast: 'boolean', theme: optional(THEME_PREFERENCES), activeBookId: optional('id') }, 'settings');
   const modernKeys = ['books', 'chapters', 'moments', 'perspectives', 'reflections', 'mediaAssets'];
   const hasModern = modernKeys.some((key) => key in value);
   const collections: Record<string, RecordValue[]> = {};

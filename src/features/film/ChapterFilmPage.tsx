@@ -12,6 +12,7 @@ import { Toggle } from '../../components/Toggle';
 import type { Chapter } from '../../data/types';
 import { formatDuration, formatFileSize, pluralize } from '../../lib/format';
 import { canRecordFilm, FilmPlayer, type FilmLoadResult, type FilmRecording } from '../../lib/film/player';
+import { safeFileName } from '../../lib/fileName';
 import { chapterLabel } from '../../lib/film/text';
 import {
   buildFilmTimeline, chronologicalMoments, DEFAULT_FILM_OPTIONS, FILM_SIZES, filmMediaRequests, sceneIndexAt,
@@ -159,7 +160,7 @@ function ChapterFilm({ chapter }: { chapter: Chapter }) {
     }
   };
 
-  const fileName = (extension: string) => `${chapterLabel(chapter.order)} — ${chapter.title}`.replace(/[\\/:*?"<>|]+/g, ' ').trim() + '.' + extension;
+  const fileName = (extension: string) => safeFileName(`${chapterLabel(chapter.order)} ${chapter.title}`, 'film') + '.' + extension;
   const shareFile = exportState.status === 'done' ? new File([exportState.recording.blob], fileName(exportState.recording.extension), { type: exportState.recording.mimeType }) : null;
   const canShare = Boolean(shareFile && typeof navigator.canShare === 'function' && navigator.canShare({ files: [shareFile] }));
   const share = async () => {

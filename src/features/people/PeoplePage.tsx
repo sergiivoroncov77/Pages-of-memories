@@ -1,13 +1,18 @@
-import { BookOpen, Link2 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { BookOpen, Send, UserPlus, X } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { PageHeader } from '../../components/PageHeader';
 import { PersonCard } from '../../components/PersonCard';
+import { PersonForm } from './PersonForm';
 
 export function PeoplePage() {
-  const { people, project, memories, moments, perspectives } = useAppState();
+  const { people, memories, moments, perspectives, activeBook, createPerson } = useAppState();
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const adding = params.get('add') === '1';
+  const setAdding = (value: boolean) => setParams(value ? { add: '1' } : {}, { replace: true });
   const momentIds = new Set(moments.map((moment) => moment.id));
   const authors = new Set([
     ...memories.map((memory) => memory.personId),
@@ -22,19 +27,38 @@ export function PeoplePage() {
       <PageHeader
         eyebrow="Участники проекта"
         title="Близкие"
-        description="Выберите близкого человека, чтобы прочитать его истории или сохранить новый ответ. Всё хранится на этом устройстве."
-        action={invitePerson ? (
-          <Link to={`/invite/${invitePerson.id}`} className="button button--secondary button--small">
-            <Link2 size={18} aria-hidden="true" /> О приглашениях
-          </Link>
-        ) : undefined}
+        description="Те, чьи истории вы записываете и с кем делитесь книгой. Для каждого есть вопросы для разговора."
+        action={<div className="page-action-group">
+          <button type="button" className="button button--primary button--small" aria-expanded={adding} onClick={() => setAdding(!adding)}>
+            <UserPlus size={18} aria-hidden="true" /> Добавить близкого
+          </button>
+          {invitePerson && activeBook ? (
+            <Link to={`/invite/${invitePerson.id}`} className="button button--secondary button--small">
+              <Send size={18} aria-hidden="true" /> Пригласить
+            </Link>
+          ) : null}
+        </div>}
       />
 
-      {people.length === 0 ? (
+      {adding ? (
+        <Card className="person-form-card">
+          <div className="card-heading"><div><p className="eyebrow">Новый участник</p><h2>Добавить близкого</h2><p>Появятся восемь вопросов для первого разговора — их можно задать при встрече или по телефону.</p></div>
+            <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setAdding(false)}><X size={20} /></button></div>
+          <PersonForm submitLabel="Добавить" onCancel={() => setAdding(false)} onSubmit={(values) => {
+            const person = createPerson(values);
+            navigate(`/people/${person.id}`);
+          }} />
+        </Card>
+      ) : null}
+
+      {people.length === 0 && !adding ? (
         <EmptyState
           title="Рассказчиков пока нет"
-          description="Восстановите книгу из резервной копии или откройте демонстрационный проект в настройках."
-          action={<Link to="/settings" className="button button--secondary button--normal">Открыть настройки</Link>}
+          description="Добавьте бабушку, папу, сестру — всех, чьи истории хочется сохранить. Демо-семью можно вернуть в настройках."
+          action={<div className="page-action-group page-action-group--center">
+            <button type="button" className="button button--primary" onClick={() => setAdding(true)}><UserPlus size={18} aria-hidden="true" /> Добавить близкого</button>
+            <Link to="/settings" className="button button--ghost">Открыть настройки</Link>
+          </div>}
         />
       ) : null}
 
@@ -60,16 +84,18 @@ export function PeoplePage() {
         </section>
       ) : null}
 
-      <Card tone="warm" className="invite-summary">
-        <span className="invite-summary__icon">
-          <BookOpen size={28} aria-hidden="true" />
-        </span>
-        <div>
-          <h2>Проект «{project.title}»</h2>
-          <p>Приглашения по ссылке пока демонстрационные. Чтобы поделиться историями, соберите HTML-книгу и передайте готовый файл близким.</p>
-          <Link to="/export" className="text-link">Собрать книгу для близких</Link>
-        </div>
-      </Card>
+      {activeBook ? (
+        <Card tone="warm" className="invite-summary">
+          <span className="invite-summary__icon">
+            <BookOpen size={28} aria-hidden="true" />
+          </span>
+          <div>
+            <h2>Поделиться книгой «{activeBook.title}»</h2>
+            <p>Без регистрации: книга уходит одним файлом через Telegram, WhatsApp или почту. Близкий открывает его в своём приложении, дописывает воспоминания и присылает обратно — новое добавится к вашей книге.</p>
+            <Link to={invitePerson ? `/invite/${invitePerson.id}` : '/book'} className="text-link">Как пригласить близких</Link>
+          </div>
+        </Card>
+      ) : null}
     </div>
   );
 }

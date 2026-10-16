@@ -11,8 +11,7 @@ import { formatDate, pluralize, truncate } from '../../lib/format';
 import { inlineStoredMedia, mediaStore } from '../../lib/mediaStore';
 
 export function ExportPage() {
-  const { books, chaptersForBook, momentsForChapter, perspectives, reflections, mediaAssets, people } = useAppState();
-  const book = books[0];
+  const { activeBook: book, chaptersForBook, momentsForChapter, perspectives, reflections, mediaAssets, people } = useAppState();
   const chapters = book ? chaptersForBook(book.id) : [];
   const moments = chapters.flatMap((chapter) => momentsForChapter(chapter.id));
   const [selected, setSelected] = useState<string[]>(() => moments.map((moment) => moment.id));

@@ -154,6 +154,8 @@ export interface AppSettings {
   weeklyReminder: boolean;
   highContrast: boolean;
   theme: ThemePreference;
+  /** The book shown on the home, book, reader and export screens. */
+  activeBookId?: string;
 }
 
 export interface AppSnapshot {

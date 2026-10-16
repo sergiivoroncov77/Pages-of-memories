@@ -18,8 +18,12 @@ import {
 const PAGE_RATIO = 0.7;
 
 export function BookReaderPage() {
-  const { books, chaptersForBook, momentsForChapter, perspectivesForMoment, reflectionsForMoment, mediaAssets, people, snapshot } = useAppState();
-  const book = books[0];
+  const { books, activeBook, chapters, moments, chaptersForBook, momentsForChapter, perspectivesForMoment, reflectionsForMoment, mediaAssets, people, snapshot } = useAppState();
+  const [params] = useSearchParams();
+  // A link to a chapter or moment opens the book it belongs to, even if another book is active.
+  const linkedBookId = chapters.find((item) => item.id === params.get('chapter'))?.bookId
+    ?? moments.find((item) => item.id === params.get('moment'))?.bookId;
+  const book = books.find((item) => item.id === linkedBookId) ?? activeBook;
   const source = useMemo<ReaderSource | null>(() => book ? {
     book,
     chapters: chaptersForBook(book.id).map((chapter) => ({
@@ -35,9 +39,9 @@ export function BookReaderPage() {
   } : null, [snapshot, book]);
 
   if (!book || !source) {
-    return <div className="page"><EmptyState title="Книги пока нет" description="Восстановите книгу из резервной копии в настройках." action={<Link to="/settings" className="button button--primary">Открыть настройки</Link>} /></div>;
+    return <div className="page"><EmptyState title="Книги пока нет" description="Создайте книгу или откройте файл книги, который прислали близкие." action={<Link to="/book" className="button button--primary">К книгам</Link>} /></div>;
   }
-  return <Reader source={source} bookTitle={book.title} assets={mediaAssets} />;
+  return <Reader key={book.id} source={source} bookTitle={book.title} assets={mediaAssets} />;
 }
 
 function initialPage(pages: ReaderPage[], params: URLSearchParams): number {

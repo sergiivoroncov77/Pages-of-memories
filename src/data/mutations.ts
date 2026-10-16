@@ -158,7 +158,9 @@ function memoryMoment(snapshot: AppSnapshot, memory: Memory): Moment | undefined
 function syncMemoryToBook(snapshot: AppSnapshot, memory: Memory, previousMemory?: Memory): AppSnapshot {
   const existingMoment = memoryMoment(snapshot, memory);
   const books = [...snapshot.books];
+  // New interview answers land in the book the family is working on right now.
   let book = books.find((item) => item.id === existingMoment?.bookId)
+    ?? books.find((item) => item.id === snapshot.settings.activeBookId)
     ?? books.find((item) => item.projectId === snapshot.project.id);
   if (!book) {
     book = {

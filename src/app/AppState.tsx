@@ -15,6 +15,28 @@ import {
   storedMediaUrl
 } from '../lib/mediaStore';
 import type { StorageError, StorageWriteResult } from '../lib/storage';
+import { bookPackageFileName, bookPackageToHtml, buildBookPackage, mergeBookPackage, parseBookPackage, type MergeSummary } from '../data/bookPackage';
+import {
+  activeBookOf,
+  createBookInSnapshot,
+  createChapterInSnapshot,
+  createPersonInSnapshot,
+  deleteBookFromSnapshot,
+  deleteChapterFromSnapshot,
+  deleteMomentsFromSnapshot,
+  deletePersonFromSnapshot,
+  emptySnapshot,
+  moveChapterInSnapshot,
+  setActiveBookInSnapshot,
+  setBookCoverInSnapshot,
+  updateBookInSnapshot,
+  updateChapterInSnapshot,
+  updatePersonInSnapshot,
+  type BookInput,
+  type ChapterInput,
+  type DeletionResult,
+  type PersonInput
+} from '../data/library';
 import {
   addMediaAssetToSnapshot,
   addMemoryToSnapshot,
@@ -38,6 +60,8 @@ import {
 import type {
   AppSettings,
   AppSnapshot,
+  Book,
+  Chapter,
   MediaAsset,
   Memory,
   MemoryDraft,
@@ -103,6 +127,27 @@ interface AppStateValue {
   toggleMomentFavorite: (momentId: string) => void;
   updateSettings: (patch: Partial<AppSettings>) => void;
   resetDemo: () => Promise<StorageWriteResult>;
+  /** The book the home, book, reader and export screens show. */
+  activeBook: Book | undefined;
+  setActiveBook: (bookId: string) => void;
+  createBook: (input: BookInput, firstChapterTitle?: string) => Book;
+  updateBook: (bookId: string, patch: Partial<BookInput>) => void;
+  setBookCover: (bookId: string, assetId: string | undefined) => void;
+  deleteBook: (bookId: string) => void;
+  createChapter: (bookId: string, input: ChapterInput) => Chapter;
+  updateChapter: (chapterId: string, patch: Partial<ChapterInput>) => void;
+  moveChapter: (chapterId: string, direction: -1 | 1) => void;
+  deleteChapter: (chapterId: string) => void;
+  deleteMoment: (momentId: string) => void;
+  createPerson: (input: PersonInput) => Person;
+  updatePerson: (personId: string, patch: Partial<PersonInput>) => void;
+  deletePerson: (personId: string) => void;
+  /** Replace everything with an empty archive for real use. Display settings stay. */
+  startFresh: (title: string) => Promise<StorageWriteResult>;
+  /** One book with its media as a file to send to relatives. */
+  packBook: (bookId: string) => Promise<File>;
+  /** Add or update a book from a file a relative sent. */
+  importBookFile: (file: File) => Promise<{ ok: true; summary: MergeSummary } | { ok: false; error: string }>;
 }
 
 const AppStateContext = createContext<AppStateValue | null>(null);
@@ -427,6 +472,136 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const resetDemo = () => restoreBackup(resetSnapshot());
 
+  /** Apply a deletion, then remove device files nothing references any more. */
+  const commitDeletion = (remove: (current: AppSnapshot) => DeletionResult) => {
+    let removed: string[] = [];
+    commitSnapshot((current) => {
+      const result = remove(current);
+      removed = result.removedMediaIds;
+      return result.snapshot;
+    });
+    removed.forEach((id) => { void mediaStore().delete(id).catch(() => undefined); });
+  };
+
+  const setActiveBook = (bookId: string) => {
+    commitSnapshot((current) => setActiveBookInSnapshot(current, bookId));
+  };
+
+  const createBook = (input: BookInput, firstChapterTitle = '') => {
+    let book: Book | undefined;
+    commitSnapshot((current) => {
+      const result = createBookInSnapshot(current, input, firstChapterTitle);
+      book = result.book;
+      return result.snapshot;
+    });
+    return book!;
+  };
+
+  const updateBook = (bookId: string, patch: Partial<BookInput>) => {
+    commitSnapshot((current) => updateBookInSnapshot(current, bookId, patch));
+  };
+
+  const setBookCover = (bookId: string, assetId: string | undefined) => {
+    commitSnapshot((current) => setBookCoverInSnapshot(current, bookId, assetId));
+  };
+
+  const deleteBook = (bookId: string) => commitDeletion((current) => deleteBookFromSnapshot(current, bookId));
+
+  const createChapter = (bookId: string, input: ChapterInput) => {
+    let chapter: Chapter | undefined;
+    commitSnapshot((current) => {
+      const result = createChapterInSnapshot(current, bookId, input);
+      chapter = result.chapter;
+      return result.snapshot;
+    });
+    return chapter!;
+  };
+
+  const updateChapter = (chapterId: string, patch: Partial<ChapterInput>) => {
+    commitSnapshot((current) => updateChapterInSnapshot(current, chapterId, patch));
+  };
+
+  const moveChapter = (chapterId: string, direction: -1 | 1) => {
+    commitSnapshot((current) => moveChapterInSnapshot(current, chapterId, direction));
+  };
+
+  const deleteChapter = (chapterId: string) => commitDeletion((current) => deleteChapterFromSnapshot(current, chapterId));
+
+  const deleteMoment = (momentId: string) => commitDeletion((current) => deleteMomentsFromSnapshot(current, [momentId]));
+
+  const createPerson = (input: PersonInput) => {
+    let person: Person | undefined;
+    commitSnapshot((current) => {
+      const result = createPersonInSnapshot(current, input);
+      person = result.person;
+      return result.snapshot;
+    });
+    return person!;
+  };
+
+  const updatePerson = (personId: string, patch: Partial<PersonInput>) => {
+    commitSnapshot((current) => updatePersonInSnapshot(current, personId, patch));
+  };
+
+  const deletePerson = (personId: string) => commitDeletion((current) => deletePersonFromSnapshot(current, personId));
+
+  const startFresh = async (title: string): Promise<StorageWriteResult> => {
+    const result = importSnapshot(emptySnapshot(snapshotRef.current.settings, title));
+    if (result.ok) void pruneMediaStore(snapshotRef.current, mediaStore()).catch(() => undefined);
+    return result;
+  };
+
+  const packBook = async (bookId: string): Promise<File> => {
+    pendingDraftFlushes.current.forEach((flush) => flush());
+    const pkg = buildBookPackage(snapshotRef.current, bookId);
+    const { assets, missing } = await inlineStoredMedia(pkg.mediaAssets, mediaStore());
+    // A file lost on this device cannot travel; send the rest without it.
+    const lost = new Set(missing);
+    const portable = {
+      ...pkg,
+      mediaAssets: assets.filter((asset) => !lost.has(asset.id)),
+      perspectives: pkg.perspectives.map((item) => item.mediaAssetId && lost.has(item.mediaAssetId) ? { ...item, mediaAssetId: undefined } : item),
+      moments: pkg.moments.map((moment) => moment.narrationMediaAssetId && lost.has(moment.narrationMediaAssetId) ? { ...moment, narrationMediaAssetId: undefined } : moment),
+      book: pkg.book.coverMediaAssetId && lost.has(pkg.book.coverMediaAssetId) ? { ...pkg.book, coverMediaAssetId: undefined } : pkg.book
+    };
+    const appUrl = new URL(import.meta.env.BASE_URL, window.location.origin).href;
+    return new File([bookPackageToHtml(portable, appUrl)], bookPackageFileName(pkg.book), { type: 'text/html' });
+  };
+
+  const importBookFile = async (file: File): Promise<{ ok: true; summary: MergeSummary } | { ok: false; error: string }> => {
+    if (originalDataRef.current !== undefined) return { ok: false, error: recoveryPendingError().message };
+    let pkg;
+    try {
+      pkg = parseBookPackage(await file.text());
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'Не удалось прочитать файл книги.' };
+    }
+    const known = new Set(snapshotRef.current.mediaAssets.map((asset) => asset.id));
+    const fresh = pkg.mediaAssets.filter((asset) => !known.has(asset.id));
+    const { migrated, failed } = await moveInlineMediaToStore(fresh, mediaStore());
+    if (failed.length) {
+      migrated.forEach((_, id) => { void mediaStore().delete(id).catch(() => undefined); });
+      return { ok: false, error: mediaStoreErrorMessage(new DOMException('Full', 'QuotaExceededError')) };
+    }
+    try {
+      const { snapshot: merged, summary } = mergeBookPackage(snapshotRef.current, pkg, migrated);
+      const result = persistSnapshot(merged);
+      if (!result.ok) {
+        migrated.forEach((_, id) => { void mediaStore().delete(id).catch(() => undefined); });
+        return { ok: false, error: result.error.message };
+      }
+      snapshotRef.current = merged;
+      persistenceErrorRef.current = null;
+      setPersistenceError(null);
+      setSnapshot(merged);
+      requestPersistentStorage();
+      return { ok: true, summary };
+    } catch (error) {
+      migrated.forEach((_, id) => { void mediaStore().delete(id).catch(() => undefined); });
+      return { ok: false, error: error instanceof Error ? error.message : 'Не удалось добавить книгу.' };
+    }
+  };
+
   return (
     <AppStateContext.Provider
       value={{
@@ -477,7 +652,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         toggleFavorite,
         toggleMomentFavorite: toggleMomentFavoriteState,
         updateSettings,
-        resetDemo
+        resetDemo,
+        activeBook: activeBookOf(snapshot),
+        setActiveBook,
+        createBook,
+        updateBook,
+        setBookCover,
+        deleteBook,
+        createChapter,
+        updateChapter,
+        moveChapter,
+        deleteChapter,
+        deleteMoment,
+        createPerson,
+        updatePerson,
+        deletePerson,
+        startFresh,
+        packBook,
+        importBookFile
       }}
     >
       {children}

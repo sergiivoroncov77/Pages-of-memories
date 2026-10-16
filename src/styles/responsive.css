@@ -49,3 +49,15 @@
     padding-inline: 14px;
   }
 }
+
+@media (max-width: 340px) {
+  .moment-tabs button {
+    gap: 3px;
+    font-size: 0.76rem;
+  }
+
+  .moment-tabs button span {
+    min-width: 18px;
+    padding: 0 2px;
+  }
+}

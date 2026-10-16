@@ -1,5 +1,6 @@
-import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, FileText, Link2, Sparkles } from 'lucide-react';
-import { Link, useParams } from 'react-router-dom';
+import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, Clock3, FileText, Pencil, Send, Sparkles, X } from 'lucide-react';
+import { useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
@@ -10,6 +11,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { ProgressBar } from '../../components/ProgressBar';
 import type { QuestionStatus } from '../../data/types';
 import { formatDate, pluralize, truncate } from '../../lib/format';
+import { PersonForm } from './PersonForm';
 
 const statusCopy: Record<QuestionStatus, string> = {
   answered: 'Ответ сохранён',
@@ -20,7 +22,9 @@ const statusCopy: Record<QuestionStatus, string> = {
 
 export function PersonPage() {
   const { personId } = useParams();
-  const { getPerson, questionsForPerson, memoriesForPerson, moments, perspectives, chapters, mediaAssets, drafts } = useAppState();
+  const { getPerson, questionsForPerson, memoriesForPerson, moments, perspectives, chapters, mediaAssets, drafts, updatePerson, deletePerson } = useAppState();
+  const navigate = useNavigate();
+  const [editing, setEditing] = useState(false);
   const person = personId ? getPerson(personId) : undefined;
 
   if (!person) {
@@ -65,13 +69,31 @@ export function PersonPage() {
         eyebrow={person.relation}
         title={person.name}
         backTo="/people"
-        action={
+        action={<div className="page-action-group">
           <Link to={`/invite/${person.id}`} className="button button--secondary button--small">
-            <Link2 size={17} aria-hidden="true" />
-            <span>О приглашениях</span>
+            <Send size={17} aria-hidden="true" />
+            <span>Пригласить</span>
           </Link>
-        }
+          <button type="button" className="button button--ghost button--small" aria-expanded={editing} onClick={() => setEditing((value) => !value)}>
+            <Pencil size={17} aria-hidden="true" />
+            <span>Изменить</span>
+          </button>
+        </div>}
       />
+
+      {editing ? (
+        <Card className="person-form-card">
+          <div className="card-heading"><div><p className="eyebrow">Участник</p><h2>Изменить данные</h2></div>
+            <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setEditing(false)}><X size={20} /></button></div>
+          <PersonForm key={person.id} initial={person} submitLabel="Сохранить" onCancel={() => setEditing(false)}
+            onSubmit={(values) => { updatePerson(person.id, values); setEditing(false); }}
+            onDelete={() => {
+              if (!window.confirm(`Удалить «${person.name}» из близких? Вопросы, черновики и ответы интервью этого человека удалятся. Истории, уже добавленные в книгу, останутся — без подписи.`)) return;
+              deletePerson(person.id);
+              navigate('/people');
+            }} />
+        </Card>
+      ) : null}
 
       <Card tone="warm" className="profile-card">
         <Avatar person={person} size="hero" />
