@@ -10,6 +10,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { StoredAudio } from '../../components/StoredAudio';
 import { PHOTO_OPTIONS, TAG_OPTIONS } from '../../data/demo';
 import { formatDuration } from '../../lib/format';
+import { publicUrl } from '../../lib/publicUrl';
 import type { MemoryDraftInput } from '../../data/mutations';
 import { createDraftAutosave } from './draftAutosave';
 import { useAudioRecorder, type Recording } from './useAudioRecorder';
@@ -408,7 +409,7 @@ function QuestionSession() {
                     autosave.schedule(draftInput({ photoUrl: photo.url }));
                   }}
                 >
-                  <img src={photo.url} alt={photo.alt} />
+                  <img src={publicUrl(photo.url)} alt={photo.alt} />
                   <span>{photo.label}</span>
                 </button>
               ))}

@@ -1,5 +1,6 @@
 import type { MediaAsset } from '../../data/types';
 import { baseMimeType, isStoredMedia, mediaStore } from '../mediaStore';
+import { publicUrl } from '../publicUrl';
 import { MUSIC_LOOP_SECONDS, renderMusicLoop } from './music';
 import { createCanvas, FilmRenderer, type FilmAssets, type PreparedAudio, type PreparedPhoto } from './renderer';
 import { levelAt, musicEnvelope, type FilmAvailability, type FilmTimeline } from './timeline';
@@ -50,7 +51,7 @@ async function assetBlob(asset: MediaAsset): Promise<Blob> {
     if (!blob) throw new Error('Файл не найден на устройстве');
     return blob;
   }
-  const response = await fetch(asset.url);
+  const response = await fetch(publicUrl(asset.url));
   if (!response.ok) throw new Error('Файл недоступен');
   return response.blob();
 }

@@ -9,6 +9,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { StoredAudio } from '../../components/StoredAudio';
 import { formatDate, formatDuration } from '../../lib/format';
 import { isStoredMedia } from '../../lib/mediaStore';
+import { publicUrl } from '../../lib/publicUrl';
 
 export function MemoryPage() {
   const { memoryId } = useParams();
@@ -50,7 +51,7 @@ export function MemoryPage() {
     <Card className="memory-answer">
       <div className="memory-detail__meta">{person ? <Link to={'/people/' + person.id} className="memory-person"><Avatar person={person} size="small" /><span><strong>{person.name}</strong><small>{person.relation}</small></span></Link> : <span>Рассказчик не указан</span>}<time dateTime={memory.recordedAt}><CalendarDays size={17} aria-hidden="true" /> Добавлено {formatDate(memory.recordedAt)}</time></div>
       <blockquote className="memory-question">{memory.questionText}</blockquote>
-      {memory.photoUrl ? <img className="memory-answer__photo" src={memory.photoUrl} alt={memory.photoAlt || 'Фотография к воспоминанию'} /> : null}
+      {memory.photoUrl ? <img className="memory-answer__photo" src={publicUrl(memory.photoUrl)} alt={memory.photoAlt || 'Фотография к воспоминанию'} /> : null}
       <div className="card-heading"><div><p className="eyebrow">Сохранённый текст</p><h2>Воспоминание</h2></div><span className="badge badge--soft"><Check size={15} aria-hidden="true" /> В книге</span></div>
       {recordings.map((asset) => <div className="memory-answer__audio" key={asset.id}><p className="eyebrow">Голос рассказчика{asset.durationSeconds ? ' · ' + formatDuration(asset.durationSeconds) : ''}</p><StoredAudio asset={asset} label={'Голос: ' + (person?.name ?? 'рассказчик')} /></div>)}
       <p className="memory-answer__text">{memory.transcript}</p>

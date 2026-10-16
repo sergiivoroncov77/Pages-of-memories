@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { MediaAsset } from '../data/types';
 import { isStoredMedia, mediaStore } from './mediaStore';
+import { publicUrl } from './publicUrl';
 
 export type MediaUrlState =
   | { status: 'ready'; url: string }
@@ -34,6 +35,6 @@ export function useMediaUrl(asset: Pick<MediaAsset, 'id' | 'url'> | undefined): 
   }, [key, stored]);
 
   if (!asset) return { status: 'missing' };
-  if (!stored) return { status: 'ready', url: asset.url };
+  if (!stored) return { status: 'ready', url: publicUrl(asset.url) };
   return resolved?.key === key ? resolved.state : { status: 'loading' };
 }

@@ -2,6 +2,7 @@ import { FileText, Heart, Quote } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { Memory, Person } from '../data/types';
 import { formatDate, truncate } from '../lib/format';
+import { publicUrl } from '../lib/publicUrl';
 
 interface MemoryCardProps {
   memory: Memory;
@@ -14,7 +15,7 @@ export function MemoryCard({ memory, person, compact = false }: MemoryCardProps)
     <Link className={`memory-card ${compact ? 'memory-card--compact' : ''}`} to={`/memories/${memory.id}`}>
       <div className="memory-card__media">
         {memory.photoUrl ? (
-          <img src={memory.photoUrl} alt={memory.photoAlt} loading="lazy" />
+          <img src={publicUrl(memory.photoUrl)} alt={memory.photoAlt} loading="lazy" />
         ) : (
           <span className="memory-card__quote">
             <Quote size={34} aria-hidden="true" />

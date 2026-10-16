@@ -13,19 +13,20 @@ export default defineConfig({
         short_name: 'Истории',
         description: 'Голосовые воспоминания семьи, собранные в одну книгу',
         lang: 'ru',
-        id: '/',
-        start_url: '/',
-        scope: '/',
+        // Relative to the manifest, so the app installs from the site root or a sub-path (GitHub Pages).
+        id: './',
+        start_url: './',
+        scope: './',
         display: 'standalone',
         orientation: 'portrait',
         background_color: '#f7f1e7',
         theme_color: '#f7f1e7',
         categories: ['lifestyle', 'education'],
         icons: [
-          { src: '/icons/pwa-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: '/icons/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: '/icons/maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-          { src: '/icons/pwa-512x512.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }
+          { src: 'icons/pwa-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icons/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icons/maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icons/pwa-512x512.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }
         ]
       },
       workbox: {
