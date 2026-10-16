@@ -101,3 +101,4 @@ pnpm preview
 - [Продукт](docs/PRODUCT.md)
 - [Модель данных](docs/DATA_MODEL.md)
 - [План развития](docs/ROADMAP.md)
+- [Где хранить данные и медиа: исследование вариантов](docs/STORAGE_RESEARCH.md)
