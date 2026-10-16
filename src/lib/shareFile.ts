@@ -15,7 +15,7 @@ export function downloadFile(file: File): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/** The phone's share sheet (Telegram, WhatsApp, mail…) where available, otherwise a download. */
+/** The phone's share sheet (MAX, mail, Bluetooth…) where available, otherwise a download. */
 export async function shareOrDownload(file: File, meta: { title: string; text: string }): Promise<ShareOutcome> {
   if (canShareFile(file)) {
     try {

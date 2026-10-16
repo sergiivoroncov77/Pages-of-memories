@@ -53,7 +53,7 @@ export function ShareBookPanel({ book, personName, onClose }: { book: Book; pers
         <div>
           <p className="eyebrow">Без регистрации</p>
           <h2 id="share-book-title">{personName ? `Пригласить: ${personName}` : 'Поделиться книгой'}</h2>
-          <p>Книга уйдёт одним файлом — через Telegram, WhatsApp, почту или Bluetooth. Близкий откроет его в своём приложении, допишет воспоминания и пришлёт обратно, а новое добавится к вашей книге.</p>
+          <p>Книга уйдёт одним файлом — через MAX, почту, Bluetooth или другой мессенджер. Близкий откроет его в своём приложении, допишет воспоминания и пришлёт обратно, а новое добавится к вашей книге.</p>
         </div>
         {onClose ? <button type="button" className="icon-button" aria-label="Закрыть" onClick={onClose}><X size={20} /></button> : null}
       </div>
