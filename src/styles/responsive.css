@@ -1,0 +1,51 @@
+/*
+ * Small-screen fit. Loaded last: these rules only tighten layouts that would
+ * otherwise run out of room on 320–400px phones. Checked by an overflow audit
+ * at 320, 360, 375, 390, 412 and 430px, including very long names and titles.
+ */
+
+@media (max-width: 400px) {
+  /* Three equal tabs instead of a strip that hides "Материалы" off-screen. */
+  .moment-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+    overflow: visible;
+  }
+
+  .moment-tabs button {
+    justify-content: center;
+    min-width: 0;
+    padding-inline: 4px;
+    font-size: 0.82rem;
+  }
+
+  .moment-tabs button span {
+    min-width: 20px;
+    height: 20px;
+    padding: 0 3px;
+    font-size: 0.68rem;
+  }
+
+  /* Theme switch: icon above the label so "Светлая" and "Тёмная" fit. */
+  .segmented button {
+    min-height: 54px;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .stats-row > div {
+    padding: 12px 8px;
+  }
+
+  .stats-row span {
+    font-size: 0.7rem;
+  }
+
+  .button--small {
+    padding-inline: 14px;
+  }
+}

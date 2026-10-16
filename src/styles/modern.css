@@ -245,9 +245,16 @@
     box-sizing: content-box;
     width: 24px;
     height: 24px;
-    padding: 4px 20px;
+    padding: 4px clamp(10px, 4.5vw, 20px);
     border-radius: var(--radius-pill);
     transition: background 200ms ease;
+  }
+
+  .mobile-nav a span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .mobile-nav a.is-active {

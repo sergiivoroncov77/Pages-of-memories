@@ -1,7 +1,9 @@
 /* Shared refinements for the existing book design. */
 h1 { font-size: clamp(2rem, 4vw, 3rem); line-height: 1.13; letter-spacing: -.035em; overflow-wrap: anywhere; }
 h2 { font-size: clamp(1.45rem, 2.5vw, 1.95rem); line-height: 1.2; }
-p, h3, .field, .asset-card__body, .reflection-card { overflow-wrap: anywhere; }
+p, h2, h3, h4, small, dd, dt, li, figcaption, blockquote, .field, .asset-card__body, .reflection-card, .tag-list span, .memory-card__tags span, .moment-card__author { overflow-wrap: anywhere; }
+/* Labels on buttons and chips never break inside a word. */
+.button, .icon-button, .badge, .mobile-nav a { overflow-wrap: normal; }
 button, a, input, select, textarea { touch-action: manipulation; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
@@ -55,7 +57,7 @@ button:disabled { cursor: not-allowed; }
 .favorite-filter { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 50px; padding: 0 15px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink-soft); font-size: .9rem; font-weight: 650; }
 .favorite-filter.is-active { background: var(--primary-soft); color: var(--primary-dark); border-color: var(--primary); }
 .chapter-filter { flex-wrap: wrap; max-width: none; overflow: visible; gap: 8px; }
-.chapter-filter button { min-height: 44px; font-size: .85rem; color: var(--ink-soft); }
+.chapter-filter button { flex: 0 1 auto; max-width: 100%; min-height: 44px; font-size: .85rem; color: var(--ink-soft); }
 .book-results { display: flex; align-items: center; justify-content: space-between; gap: 16px; font-size: .9rem; color: var(--ink-soft); }
 .chapter-section__heading { align-items: center; }
 .chapter-count { font-size: .8rem; color: var(--ink-soft); }
@@ -166,7 +168,7 @@ button:disabled { cursor: not-allowed; }
   .page-header__top > div:first-child { flex-basis: 100%; }
   .page-header__action { width: 100%; }
   .home-greeting .button { margin-top: 4px; }
-  .page-action-group .button { flex: 1; }
+  .page-action-group .button { flex: 1 1 auto; }
   .page-header, .home-greeting { margin-bottom: 24px; }
   .stats-row { gap: 8px; }
   .stats-row > div { display: flex; align-items: flex-start; gap: 3px; padding: 14px 12px; }

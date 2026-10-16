@@ -216,6 +216,7 @@
 
 .question-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
 }
 
@@ -490,6 +491,7 @@
 
 .prompt-card ul {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 9px;
   padding: 0;
   margin: 0;
@@ -953,12 +955,14 @@
 
 .memory-aside {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   align-content: start;
 }
 
 .detail-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 0;
   margin-bottom: 16px;
 }
@@ -1162,6 +1166,7 @@
 
 .timeline {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 28px;
 }
 
@@ -1191,6 +1196,7 @@
 
 .timeline__items {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 11px;
   padding-left: 5px;
   border-left: 1px solid var(--line-strong);
@@ -1204,6 +1210,7 @@
 
 .export-main {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -1222,6 +1229,7 @@
 
 .export-step {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   width: 42px;
   height: 42px;
   place-items: center;
@@ -1254,6 +1262,7 @@
 
 .export-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 9px;
 }
 
@@ -1318,6 +1327,7 @@
 
 .export-fields {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -1343,6 +1353,7 @@
 
 .export-preview {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 13px;
   align-content: start;
 }
@@ -1399,6 +1410,7 @@
 
 .book-preview__details {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   margin-top: 18px;
 }
@@ -1532,6 +1544,7 @@
 
 .privacy-explainer ul {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 9px;
   padding-left: 20px;
   margin: 0;
@@ -1541,6 +1554,7 @@
 
 .danger-zone {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   border-color: color-mix(in srgb, var(--danger) 30%, var(--line));
 }
@@ -1854,6 +1868,7 @@
 
 .inline-form {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 13px;
 }
 
@@ -1895,6 +1910,7 @@
 
 .chapter-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 30px;
 }
 
@@ -2129,6 +2145,7 @@
 
 .participant-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -2166,6 +2183,7 @@
 .perspective-list,
 .reflection-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -2254,6 +2272,7 @@
 
 .asset-card__body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   padding: 14px;
 }

@@ -54,7 +54,8 @@
 
 .reader-jump {
   display: flex;
-  flex-shrink: 0;
+  min-width: 0;
+  flex: 0 1 auto;
   align-items: center;
   gap: 6px;
   padding: 0 4px 0 14px;
@@ -65,8 +66,11 @@
 }
 
 .reader-jump select {
+  min-width: 0;
   min-height: 44px;
+  width: 100%;
   max-width: 230px;
+  text-overflow: ellipsis;
   border: 0;
   background: transparent;
   color: var(--ink);
@@ -447,6 +451,7 @@
 
 .reader-contents ol {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   margin: 0;
   padding: 0;
@@ -638,6 +643,7 @@
 /* Media */
 .reader-media {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   justify-items: center;
   gap: 8px;
   text-align: center;
@@ -674,6 +680,7 @@
 /* Reflections as notes pinned to the page */
 .reader-notes {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   text-align: center;
 }

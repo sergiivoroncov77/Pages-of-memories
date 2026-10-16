@@ -6,6 +6,8 @@
 
 html {
   min-width: 320px;
+  /* Nothing may widen the layout viewport (fixed bars would stretch past the screen). */
+  overflow-x: clip;
   background: var(--bg);
   scroll-behavior: smooth;
 }
@@ -19,6 +21,9 @@ body {
     var(--bg);
   color: var(--ink);
   font: 17px/1.55 var(--font-sans);
+  /* Family names, places and pasted links can be one very long word: let them
+     break instead of pushing cards past the screen edge (see refinements.css). */
+  overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -153,7 +158,7 @@ p {
   bottom: 0;
   left: 0;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   min-height: calc(var(--mobile-nav-height) + env(safe-area-inset-bottom));
   padding: 7px 6px calc(7px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--line);
@@ -324,6 +329,7 @@ p {
 
   .sidebar__nav {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
     margin-top: 42px;
   }

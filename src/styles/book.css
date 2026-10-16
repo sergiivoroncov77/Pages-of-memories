@@ -17,10 +17,12 @@
   animation: page-turn-in 520ms var(--ease-page) both;
 }
 
+/* The page swings in from behind its left edge, so it never grows past the
+   screen: on Android any transient overflow makes Chrome zoom the whole app out. */
 @keyframes page-turn-in {
   from {
     opacity: 0;
-    transform: perspective(1800px) rotateY(-9deg) translateX(22px);
+    transform: perspective(1800px) rotateY(8deg);
   }
   60% {
     opacity: 1;
