@@ -364,6 +364,7 @@ export function deletePersonFromSnapshot(snapshot: AppSnapshot, personId: string
 export function emptySnapshot(settings: AppSettings, title = 'Наша семья'): AppSnapshot {
   const display: AppSettings = { ...settings };
   delete display.activeBookId;
+  delete display.demoBook;
   return {
     version: 1,
     project: {

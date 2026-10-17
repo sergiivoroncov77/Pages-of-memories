@@ -156,6 +156,8 @@ export interface AppSettings {
   theme: ThemePreference;
   /** The book shown on the home, book, reader and export screens. */
   activeBookId?: string;
+  /** The demo family and its book were turned on in the settings. */
+  demoBook?: boolean;
 }
 
 export interface AppSnapshot {

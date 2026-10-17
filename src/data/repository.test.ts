@@ -3,6 +3,7 @@ import { seedSnapshot } from './seed';
 import { loadSnapshot, loadSnapshotResult, parseSnapshotImport, persistSnapshot } from './repository';
 import { ensureMemoryMoments, publishMemoryToSnapshot } from './mutations';
 import { STORAGE_KEY } from '../lib/storage';
+import type { AppSnapshot } from './types';
 
 function createLocalStorage() {
   const values = new Map<string, string>();
@@ -22,31 +23,33 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function expectEmptyArchive(snapshot: AppSnapshot) {
+  expect(snapshot.project.title).toBe('Наша семья');
+  expect([snapshot.people, snapshot.books, snapshot.memories, snapshot.moments, snapshot.mediaAssets].every((items) => items.length === 0)).toBe(true);
+  expect(snapshot.settings).toEqual(seedSnapshot.settings);
+}
+
 describe('snapshot repository', () => {
-  it('falls back to a safe seed snapshot when stored JSON is malformed', () => {
+  it('starts with an empty archive when stored JSON is malformed', () => {
     window.localStorage.setItem(STORAGE_KEY, '{not valid json');
 
-    expect(loadSnapshot()).toEqual(ensureMemoryMoments(structuredClone(seedSnapshot)));
+    expectEmptyArchive(loadSnapshot());
   });
 
   it.each([null, [], false, 42, 'snapshot', {}, { version: 2 }])(
-    'falls back for an invalid or unsupported snapshot: %j',
+    'starts empty for an invalid or unsupported snapshot: %j',
     (value) => {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
-      expect(loadSnapshot()).toEqual(ensureMemoryMoments(structuredClone(seedSnapshot)));
+      expectEmptyArchive(loadSnapshot());
     }
   );
 
-  it('falls back when storage is missing or access is denied, without sharing mutable seed data', () => {
-    expect(loadSnapshot()).toEqual(ensureMemoryMoments(structuredClone(seedSnapshot)));
+  it('starts without the demo family on a first start or when storage access is denied', () => {
+    expectEmptyArchive(loadSnapshot());
     vi.stubGlobal('window', {
       get localStorage() { throw new Error('Storage access denied'); }
     });
-    const loaded = loadSnapshot();
-    loaded.memories[0].tags.push('changed');
-    loaded.people[0].name = 'Changed';
-    expect(loadSnapshot()).toEqual(ensureMemoryMoments(structuredClone(seedSnapshot)));
-    expect(seedSnapshot.memories[0].tags).not.toContain('changed');
+    expectEmptyArchive(loadSnapshot());
   });
 
   it('repairs malformed fields and discards unusable records and broken references', () => {
@@ -185,7 +188,7 @@ describe('snapshot repository', () => {
   });
 
   it('imports a complete backup without dropping new interviews or adding duplicate moments', () => {
-    const { snapshot, memory } = publishMemoryToSnapshot(loadSnapshot(), {
+    const { snapshot, memory } = publishMemoryToSnapshot(ensureMemoryMoments(structuredClone(seedSnapshot)), {
       personId: 'person_dmitry', questionId: 'question_home', transcript: 'Дом с верандой.',
       durationSeconds: 12, tags: ['дом']
     });

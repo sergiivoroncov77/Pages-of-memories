@@ -1,13 +1,14 @@
-import { Bell, Download, Eye, FileJson, HardDrive, Monitor, Moon, RotateCcw, ShieldCheck, Sparkles, Sun, Trash2, Upload } from 'lucide-react';
+import { Bell, BookOpen, Download, Eye, FileJson, HardDrive, Monitor, Moon, ShieldCheck, Sparkles, Sun, Trash2, Upload } from 'lucide-react';
 import { useRef, useState, type ChangeEvent } from 'react';
 import { useAppState } from '../../app/AppState';
 import { Card } from '../../components/Card';
 import { PageHeader } from '../../components/PageHeader';
 import { CloudSettingsCard } from '../cloud/CloudSettingsCard';
 import { Toggle } from '../../components/Toggle';
+import { DEMO_BOOK_ID, demoDependents, hasDemo } from '../../data/demoBook';
 import { parseSnapshotImport } from '../../data/repository';
 import type { AppSnapshot, ThemePreference } from '../../data/types';
-import { formatFileSize } from '../../lib/format';
+import { formatFileSize, pluralize } from '../../lib/format';
 import { isStoredMedia, storedMediaUrl } from '../../lib/mediaStore';
 import { estimateStorageBytes, MAX_STORAGE_BYTES } from '../../lib/storage';
 import { cloudErrorMessage } from '../../sync/cloudApi';
@@ -22,7 +23,7 @@ const themeOptions: { value: ThemePreference; label: string; icon: typeof Sun }[
 ];
 
 export function SettingsPage() {
-  const { snapshot, settings, updateSettings, resetDemo, startFresh, exportBackup, restoreBackup, persistenceError, activeBook: book } = useAppState();
+  const { snapshot, settings, updateSettings, setDemoBook, startFresh, exportBackup, restoreBackup, persistenceError, activeBook: book } = useAppState();
   const [freshTitle, setFreshTitle] = useState('Наша семья');
   const [pendingImport, setPendingImport] = useState<{ name: string; snapshot: AppSnapshot } | null>(null);
   const [importError, setImportError] = useState('');
@@ -31,6 +32,7 @@ export function SettingsPage() {
   const [isReading, setIsReading] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [sharedOnFresh, setSharedOnFresh] = useState<'local' | 'everyone'>('local');
+  const [demoStatus, setDemoStatus] = useState<{ error: boolean; message: string } | null>(null);
   const cloud = useCloudSync();
   const fileReadVersion = useRef(0);
   // Shared books on this phone, and those this phone created: only those can go for everyone.
@@ -52,6 +54,20 @@ export function SettingsPage() {
       }
     }
     return true;
+  };
+  const demoOn = hasDemo(snapshot);
+  const demoShared = demoOn && Boolean(cloud.books[DEMO_BOOK_ID]);
+  const toggleDemo = (on: boolean) => {
+    setDemoStatus(null);
+    if (!on) {
+      if (demoShared) return;
+      const own = demoDependents(snapshot);
+      if (own > 0 && !window.confirm(`В демо-книге и у демо-семьи есть то, что добавили вы: ${own} ${pluralize(own, 'запись', 'записи', 'записей')}. Оно удалится вместе с демо. Убрать демо-книгу?`)) return;
+    }
+    const result = setDemoBook(on);
+    setDemoStatus(result.ok
+      ? { error: false, message: on ? 'Демо-книга на полке, демо-семья — в разделе «Близкие».' : 'Демо-книга и демо-семья убраны.' }
+      : { error: true, message: result.error.message });
   };
   const storageSize = estimateStorageBytes(JSON.stringify(snapshot));
   const storageKb = Math.max(1, Math.round(storageSize / 1024));
@@ -183,12 +199,27 @@ export function SettingsPage() {
         </div>
       </Card>
 
+      <Card className="settings-section">
+        <div className="settings-section__heading">
+          <span className="settings-section__icon settings-section__icon--sage"><BookOpen size={23} aria-hidden="true" /></span>
+          <div>
+            <h2>Демо-книга</h2>
+            <p>Пример семьи из четырёх человек и книга с их историями — чтобы посмотреть, как всё устроено. Ваши книги и близкие не меняются.</p>
+          </div>
+        </div>
+        <div className="settings-toggles">
+          <Toggle checked={demoOn} onChange={toggleDemo} label="Показывать демо-книгу"
+            description={demoShared ? 'Демо-книга сохранена в семейном хранилище: удалить её можно на странице книги — «Изменить книгу» → «Удалить книгу».' : 'Демо-семья появится среди близких, а её книга — на полке.'} />
+        </div>
+        {demoStatus ? <p role={demoStatus.error ? 'alert' : 'status'} className={`field-message ${demoStatus.error ? 'field-message--error' : ''}`}>{demoStatus.message}</p> : null}
+      </Card>
+
       <Card className="danger-zone">
         <div>
           <Sparkles size={23} aria-hidden="true" />
           <div>
             <h2>Начать с чистого листа</h2>
-            <p>Для настоящей семейной книги: демо-семья, её книга и ответы удалятся, останутся только настройки оформления. Если вы уже что-то добавили, сначала скачайте копию.</p>
+            <p>Все книги, близкие, ответы и материалы на этом телефоне удалятся, останутся только настройки оформления. Сначала скачайте копию, если хотите что-то сохранить.</p>
           </div>
         </div>
         {sharedHere.length ? (
@@ -247,35 +278,6 @@ export function SettingsPage() {
             : { error: true, message: `${result.error.message} Данные не изменены.` });
         }}>
           <Trash2 size={19} aria-hidden="true" /><span>Очистить и начать</span>
-        </button>
-      </Card>
-
-      <Card className="danger-zone">
-        <div>
-          <RotateCcw size={23} aria-hidden="true" />
-          <div>
-            <h2>Вернуть демо-книгу</h2>
-            <p>Созданные истории, материалы и черновики будут заменены демонстрационными. Сначала скачайте копию.</p>
-          </div>
-        </div>
-        <button type="button" className="button button--danger button--normal" disabled={isRestoring} onClick={async () => {
-          if (!window.confirm(`Заменить все истории, материалы и черновики демо-данными?${createdHere.length ? ' Ваши общие книги уберутся только с этого телефона — у близких они останутся.' : ''}${leavingNote} Сохраните резервную копию перед сбросом.`)) return;
-          setIsRestoring(true);
-          setResetStatus(null);
-          if (!(await leaveJoined())) { setIsRestoring(false); return; }
-          const result = await resetDemo();
-          setIsRestoring(false);
-          if (!result.ok) {
-            setResetStatus({ error: true, message: `${result.error.message} Текущая книга не изменена.` });
-            return;
-          }
-          // Shared books are not reset: they leave this phone, or are taken again from the storage.
-          cloud.snapshotReplaced('detach');
-          setPendingImport(null);
-          setImportError('');
-          setResetStatus({ error: false, message: 'Демонстрационная книга восстановлена.' });
-        }}>
-          <RotateCcw size={19} aria-hidden="true" /><span>Сбросить демо</span>
         </button>
         {resetStatus ? <p role={resetStatus.error ? 'alert' : 'status'} className={`field-message ${resetStatus.error ? 'field-message--error' : ''}`}>{resetStatus.message}</p> : null}
       </Card>

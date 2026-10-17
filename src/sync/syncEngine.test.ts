@@ -9,9 +9,11 @@ import {
   createMoment,
   createPerspective,
   createReflection,
+  ensureMemoryMoments,
   updateMomentInSnapshot
 } from '../data/mutations';
-import { normalizeSnapshotValue, resetSnapshot } from '../data/repository';
+import { normalizeSnapshotValue } from '../data/repository';
+import { seedSnapshot } from '../data/seed';
 import type { AppSnapshot } from '../data/types';
 import { createMemoryMediaStore, storedMediaUrl } from '../lib/mediaStore';
 import { loadFamilyServer, type FamilyServer } from '../../server/google-apps-script/dev/fakeGoogle.mjs';
@@ -68,9 +70,12 @@ function device(server: FamilyServer, initial: AppSnapshot) {
   };
 }
 
+/** The demo family and its book, as an older version opened them. */
+const demoSnapshot = () => normalizeSnapshotValue(ensureMemoryMoments(structuredClone(seedSnapshot)));
+
 /** The owner's phone: one book with a chapter, a moment, a story with a photo, and Mama in the family. */
 function ownerSnapshot() {
-  let snapshot = emptySnapshot(resetSnapshot().settings, 'Семья Ивановых');
+  let snapshot = emptySnapshot(seedSnapshot.settings, 'Семья Ивановых');
   const created = createBookInSnapshot(snapshot, { title: 'Книга бабушки Веры' }, 'Детство');
   snapshot = created.snapshot;
   const chapter = snapshot.chapters.find((item) => item.bookId === created.book.id)!;
@@ -91,7 +96,7 @@ async function ownerAndMama() {
   await owner.blobs.put('media_photo1', new Blob([new Uint8Array([7, 7, 7])], { type: 'image/jpeg' }));
   await owner.engine.connectOwner(SERVER_URL, 'Сергей');
   await owner.engine.publishBook(setup.bookId);
-  const mama = device(server, emptySnapshot(resetSnapshot().settings, 'Мамин телефон'));
+  const mama = device(server, emptySnapshot(seedSnapshot.settings, 'Мамин телефон'));
   const { code } = await owner.engine.createInvite(setup.bookId, { id: setup.mamaId, name: 'Мама' });
   const preview = await mama.engine.previewInvite(SERVER_URL, code);
   const joined = await mama.engine.acceptInvite(SERVER_URL, code, preview.personName);
@@ -331,7 +336,7 @@ describe('cloud sync engine', () => {
     mama.edit(() => created.snapshot);
     await mama.engine.publishBook(created.book.id);
     expect(mama.store.get().books[created.book.id].canManage).toBe(true);
-    const brother = device(server, emptySnapshot(resetSnapshot().settings, 'Брат'));
+    const brother = device(server, emptySnapshot(seedSnapshot.settings, 'Брат'));
     const { code } = await mama.engine.createInvite(created.book.id);
     await brother.engine.acceptInvite(SERVER_URL, code, 'Брат');
     expect(brother.snapshot.chapters.some((chapter) => chapter.title === 'Школа')).toBe(true);
@@ -344,7 +349,7 @@ describe('cloud sync engine', () => {
 
   it('refreshes an expired Drive key and still downloads', async () => {
     const { server, owner, setup } = await ownerAndMama();
-    const second = device(server, emptySnapshot(resetSnapshot().settings, 'Второй телефон'));
+    const second = device(server, emptySnapshot(seedSnapshot.settings, 'Второй телефон'));
     const { code } = await owner.engine.createInvite(setup.bookId);
     server.fake.rotateToken();
     await second.engine.acceptInvite(SERVER_URL, code, 'Сергей');
@@ -359,13 +364,13 @@ describe('cloud sync engine', () => {
 
   it('removes an interview-based moment deleted elsewhere without rebuilding it', async () => {
     const server = loadFamilyServer();
-    const owner = device(server, resetSnapshot());
+    const owner = device(server, demoSnapshot());
     const bookId = owner.snapshot.settings.activeBookId ?? owner.snapshot.books[0].id;
     const linked = owner.snapshot.moments.find((moment) => moment.bookId === bookId && moment.sourceMemoryId)!;
     await owner.engine.connectOwner(SERVER_URL, 'Сергей');
     await owner.engine.publishBook(bookId);
     // The owner's second device (same key): it may delete what the owner's phone added.
-    const relative = device(server, emptySnapshot(resetSnapshot().settings, 'Планшет'));
+    const relative = device(server, emptySnapshot(seedSnapshot.settings, 'Планшет'));
     relative.store.update(() => ({ version: 1, connection: owner.store.get().connection, books: { [bookId]: freshBookState({ canManage: true }) } }));
     await relative.engine.syncBook(bookId);
     const copy = relative.snapshot.moments.find((moment) => moment.id === linked.id)!;

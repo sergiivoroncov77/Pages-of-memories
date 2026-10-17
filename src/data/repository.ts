@@ -1,5 +1,6 @@
 import { storedMediaUrl } from '../lib/mediaStore';
 import { STORAGE_KEY, writeStorage } from '../lib/storage';
+import { emptySnapshot } from './library';
 import { seedSnapshot } from './seed';
 import { ensureMemoryMoments } from './mutations';
 import { isValidDate } from './validation';
@@ -21,6 +22,11 @@ import type {
 
 function cloneSeed(): AppSnapshot {
   return ensureMemoryMoments(structuredClone(seedSnapshot));
+}
+
+/** A first start, or a start without readable data: an empty archive. The demo is turned on in the settings. */
+function firstStart(): AppSnapshot {
+  return emptySnapshot(structuredClone(seedSnapshot.settings));
 }
 
 type RecordValue = Record<string, unknown>;
@@ -342,7 +348,8 @@ function normalizeSettings(value: unknown, fallback: AppSettings): AppSettings {
     theme: typeof record.theme === 'string' && (THEME_PREFERENCES as readonly string[]).includes(record.theme)
       ? (record.theme as AppSettings['theme'])
       : fallback.theme,
-    activeBookId: typeof record.activeBookId === 'string' && record.activeBookId ? record.activeBookId : undefined
+    activeBookId: typeof record.activeBookId === 'string' && record.activeBookId ? record.activeBookId : undefined,
+    demoBook: record.demoBook === true ? true : undefined
   };
 }
 
@@ -671,7 +678,7 @@ export function parseSnapshotImport(json: string): AppSnapshot {
   if (!isRecord(value) || value.version !== 1) throw new Error('Формат резервной копии не поддерживается: нужна версия 1.');
   validateFields(value.project, { id: 'id', title: 'id', subtitle: 'text', createdAt: 'date', inviteCode: 'text' }, 'project');
   const projectId = value.project.id;
-  validateFields(value.settings, { cloudBackup: 'boolean', allowTranscriptSharing: 'boolean', weeklyReminder: 'boolean', highContrast: 'boolean', theme: optional(THEME_PREFERENCES), activeBookId: optional('id') }, 'settings');
+  validateFields(value.settings, { cloudBackup: 'boolean', allowTranscriptSharing: 'boolean', weeklyReminder: 'boolean', highContrast: 'boolean', theme: optional(THEME_PREFERENCES), activeBookId: optional('id'), demoBook: optional('boolean') }, 'settings');
   const modernKeys = ['books', 'chapters', 'moments', 'perspectives', 'reflections', 'mediaAssets'];
   const hasModern = modernKeys.some((key) => key in value);
   const collections: Record<string, RecordValue[]> = {};
@@ -764,15 +771,15 @@ export interface SnapshotLoadResult {
 export function loadSnapshotResult(): SnapshotLoadResult {
   let raw: string | null;
   try { raw = window.localStorage.getItem(STORAGE_KEY); } catch {
-    return { snapshot: cloneSeed(), warning: 'Не удалось прочитать хранилище браузера. Проверьте доступ перед сохранением изменений.' };
+    return { snapshot: firstStart(), warning: 'Не удалось прочитать хранилище браузера. Проверьте доступ перед сохранением изменений.' };
   }
-  if (raw === null) return { snapshot: cloneSeed() };
+  if (raw === null) return { snapshot: firstStart() };
   let stored: unknown;
   try { stored = JSON.parse(raw); } catch {
-    return { snapshot: cloneSeed(), warning: 'Сохранённая книга повреждена. Скачайте исходные данные перед новым сохранением.', rawBackup: raw };
+    return { snapshot: firstStart(), warning: 'Сохранённая книга повреждена. Скачайте исходные данные перед новым сохранением.', rawBackup: raw };
   }
   const snapshot = normalizeSnapshot(stored);
-  if (!snapshot) return { snapshot: cloneSeed(), warning: 'Версия или формат сохранённой книги не поддерживается. Скачайте исходные данные перед новым сохранением.', rawBackup: raw };
+  if (!snapshot) return { snapshot: firstStart(), warning: 'Версия или формат сохранённой книги не поддерживается. Скачайте исходные данные перед новым сохранением.', rawBackup: raw };
   try { parseSnapshotImport(raw); } catch {
     return { snapshot, warning: 'В сохранённых данных найдены повреждённые поля или неподдерживаемые материалы. Скачайте исходную копию перед новым сохранением.', rawBackup: raw };
   }
@@ -787,6 +794,3 @@ export function persistSnapshot(snapshot: AppSnapshot) {
   return writeStorage(STORAGE_KEY, snapshot);
 }
 
-export function resetSnapshot(): AppSnapshot {
-  return cloneSeed();
-}

@@ -106,6 +106,7 @@ describe('draft and publish mutations', () => {
     } });
     const input = { personId: 'person_dmitry', questionId: 'question_home', transcript: 'Дом у реки.',
       durationSeconds: 12, tags: ['дом'], photoUrl: '/photos/house.jpg', photoAlt: 'Дом' };
+    persistSnapshot(ensureMemoryMoments(structuredClone(seedSnapshot)));
     const published = publishMemoryToSnapshot(loadSnapshot(), input);
     const firstMoment = published.snapshot.moments.find((item) => item.sourceMemoryId === published.memory.id)!;
     expect(firstMoment.occurredAt).toBeUndefined();

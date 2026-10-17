@@ -1,6 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { loadSnapshotResult, persistSnapshot, resetSnapshot } from '../data/repository';
+import { addDemo, dropUnusedDemo, removeDemo } from '../data/demoBook';
+import { loadSnapshotResult, persistSnapshot } from '../data/repository';
+import { CLOUD_STATE_KEY, parseCloudState } from '../sync/cloudState';
 import { createId } from '../lib/id';
 import type { MediaUploadWithBlob } from '../lib/mediaFiles';
 import {
@@ -132,7 +134,8 @@ interface AppStateValue {
   toggleFavorite: (memoryId: string) => void;
   toggleMomentFavorite: (momentId: string) => void;
   updateSettings: (patch: Partial<AppSettings>) => void;
-  resetDemo: () => Promise<StorageWriteResult>;
+  /** Add the demo family and its book, or take them away with whatever was added inside. */
+  setDemoBook: (on: boolean) => StorageWriteResult;
   /** The book the home, book, reader and export screens show. */
   activeBook: Book | undefined;
   setActiveBook: (bookId: string) => void;
@@ -160,8 +163,20 @@ interface AppStateValue {
 
 const AppStateContext = createContext<AppStateValue | null>(null);
 
+/** Books this phone shares through the family storage: a start never drops them as demo. */
+function sharedBookIds(): Set<string> {
+  try {
+    return new Set(Object.keys(parseCloudState(window.localStorage.getItem(CLOUD_STATE_KEY)).books));
+  } catch {
+    return new Set();
+  }
+}
+
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const [initial] = useState(() => loadSnapshotResult());
+  const [initial] = useState(() => {
+    const loaded = loadSnapshotResult();
+    return loaded.rawBackup === undefined ? { ...loaded, snapshot: dropUnusedDemo(loaded.snapshot, sharedBookIds()) } : loaded;
+  });
   const [snapshot, setSnapshot] = useState<AppSnapshot>(initial.snapshot);
   const snapshotRef = useRef(snapshot);
   const [recoveryWarning, setRecoveryWarning] = useState<string | null>(initial.warning ?? null);
@@ -494,7 +509,17 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }));
   };
 
-  const resetDemo = () => restoreBackup(resetSnapshot());
+  const setDemoBook = (on: boolean): StorageWriteResult => {
+    let removed: string[] = [];
+    const result = commitSnapshot((current) => {
+      if (on) return addDemo(current);
+      const outcome = removeDemo(current);
+      removed = outcome.removedMediaIds;
+      return outcome.snapshot;
+    });
+    removed.forEach((id) => { void mediaStore().delete(id).catch(() => undefined); });
+    return result;
+  };
 
   /** Apply a deletion, then remove device files nothing references any more. */
   const commitDeletion = (remove: (current: AppSnapshot) => DeletionResult) => {
@@ -682,7 +707,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         toggleFavorite,
         toggleMomentFavorite: toggleMomentFavoriteState,
         updateSettings,
-        resetDemo,
+        setDemoBook,
         activeBook: activeBookOf(snapshot),
         setActiveBook,
         createBook,
