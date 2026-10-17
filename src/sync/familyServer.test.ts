@@ -163,6 +163,17 @@ describe('family server (Code.gs)', () => {
     expect(server.post({ action: 'acceptInvite', code: brotherCode, name: 'Брат' })).toMatchObject({ ok: false, error: 'invite_not_found' });
   });
 
+  it('needs a new invitation after a relative leaves the book', () => {
+    const { server, ownerToken } = ownerWithBook();
+    const code = invite(server, ownerToken);
+    const mama = server.post({ action: 'acceptInvite', code });
+    expect(server.post({ action: 'leaveBook', token: mama.token, bookId: 'book_1' })).toMatchObject({ ok: true });
+    const members = server.post({ action: 'members', token: ownerToken, bookId: 'book_1' }).members as { name: string }[];
+    expect(members.map((item) => item.name)).toEqual(['Сергей']);
+    expect(server.post({ action: 'acceptInvite', code, token: mama.token })).toMatchObject({ ok: false, error: 'invite_not_found' });
+    expect(server.post({ action: 'acceptInvite', code: invite(server, ownerToken), token: mama.token })).toMatchObject({ ok: true, book: { id: 'book_1' } });
+  });
+
   it('lets one invite link connect a second phone of the same person', () => {
     const { server, ownerToken } = ownerWithBook();
     const code = invite(server, ownerToken);

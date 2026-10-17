@@ -34,7 +34,7 @@ export function BookPage() {
   const [panel, setPanel] = useState<Panel>('none');
   const [momentChapterId, setMomentChapterId] = useState('');
   const [editingChapterId, setEditingChapterId] = useState('');
-  // A shared book is removed through a choice: here only, for everyone, or leaving it.
+  // The creator removes a shared book through a choice: from this phone only or for everyone.
   const [bookRemoval, setBookRemoval] = useState<{ busy: boolean; error: string } | null>(null);
   // A message handed over by the previous screen, e.g. after accepting an invitation.
   const [notice, setNotice] = useState(() => (typeof location.state?.notice === 'string' ? location.state.notice as string : ''));
@@ -122,31 +122,52 @@ export function BookPage() {
   const sharedBook = book && cloud.connection ? cloud.books[book.id] : undefined;
   const bookContents = `${chapters.length} ${pluralize(chapters.length, 'глава', 'главы', 'глав')} и ${allMoments.length} ${pluralize(allMoments.length, 'момент', 'момента', 'моментов')}`;
 
-  const removeBook = () => {
+  const isCreator = Boolean(sharedBook && sharedBook.creatorId === cloud.connection?.memberId);
+
+  const dropLocalCopy = (message: string) => {
     if (!book) return;
-    if (sharedBook) { setBookRemoval({ busy: false, error: '' }); return; }
-    if (!window.confirm(`Удалить книгу «${book.title}»? Будут удалены ${bookContents} со всеми рассказами, фото и голосами. Это нельзя отменить. Если сомневаетесь, сначала скачайте резервную копию в настройках.`)) return;
     deleteBook(book.id);
     setParams({}, { replace: true });
     setPanel('none');
-    setNotice(`Книга «${book.title}» удалена.`);
+    setNotice(message);
+  };
+
+  const leftMessage = (title: string, pending: boolean) => `Книга «${title}» удалена с этого телефона, и вы больше не участник. `
+    + (sharedBook?.canManage ? 'Открыть её снова можно в «Настройки → Семейное хранилище».' : 'Чтобы получить её снова, попросите создателя прислать новое приглашение.')
+    + (pending ? ' Хранилище узнает об этом, когда появится связь.' : '');
+
+  const removeBook = async () => {
+    if (!book) return;
+    // The creator and the storage owner choose; a relative who deletes the book leaves it.
+    if (sharedBook && (isCreator || sharedBook.canManage)) { setBookRemoval({ busy: false, error: '' }); return; }
+    if (sharedBook) {
+      const creator = sharedBook.creatorName ? ` (${sharedBook.creatorName})` : '';
+      if (!window.confirm(`Удалить книгу «${book.title}» с этого телефона? Вы перестанете быть участником книги: чтобы получить её снова, создатель${creator} должен прислать новое приглашение. У создателя и остальных участников ничего не удалится.`)) return;
+      try {
+        const { pending } = await cloud.removeBook(book.id, 'leave');
+        dropLocalCopy(leftMessage(book.title, pending));
+      } catch (error) {
+        setNotice(`Книга не удалена: ${cloudErrorMessage(error)}`);
+      }
+      return;
+    }
+    if (!window.confirm(`Удалить книгу «${book.title}»? Будут удалены ${bookContents} со всеми рассказами, фото и голосами. Это нельзя отменить. Если сомневаетесь, сначала скачайте резервную копию в настройках.`)) return;
+    dropLocalCopy(`Книга «${book.title}» удалена.`);
   };
 
   const finishBookRemoval = async (mode: 'local' | 'delete' | 'leave') => {
     if (!book) return;
     setBookRemoval({ busy: true, error: '' });
+    let pending = false;
     try {
-      await cloud.removeBook(book.id, mode);
+      pending = (await cloud.removeBook(book.id, mode)).pending;
     } catch (error) {
       setBookRemoval({ busy: false, error: `Не получилось: ${cloudErrorMessage(error)}` });
       return;
     }
-    deleteBook(book.id);
     setBookRemoval(null);
-    setParams({}, { replace: true });
-    setPanel('none');
-    setNotice(mode === 'delete' ? `Книга «${book.title}» удалена у всех участников.`
-      : mode === 'leave' ? `Вы вышли из книги «${book.title}». У остальных участников она осталась.`
+    dropLocalCopy(mode === 'delete' ? `Книга «${book.title}» удалена у всех участников.`
+      : mode === 'leave' ? leftMessage(book.title, pending)
         : `Книга «${book.title}» убрана с этого телефона. У остальных участников она осталась; вернуть её сюда можно в «Настройки → Семейное хранилище».`);
   };
 
@@ -246,7 +267,7 @@ export function BookPage() {
       {panel === 'edit-book' ? <Card className="library-form-card">
         <div className="card-heading"><div><p className="eyebrow">Книга</p><h2>Изменить книгу</h2></div>
           <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setPanel('none')}><X size={20} /></button></div>
-        <BookForm key={book.id} mode="edit" initial={book} photos={bookPhotos} onSubmit={submitBookEdit} onCancel={() => setPanel('none')} onDelete={removeBook} />
+        <BookForm key={book.id} mode="edit" initial={book} photos={bookPhotos} onSubmit={submitBookEdit} onCancel={() => setPanel('none')} onDelete={() => { void removeBook(); }} />
       </Card> : null}
 
       {panel === 'share' ? <div id="share-book"><ShareBookPanel book={book} onClose={() => setPanel('none')} /></div> : null}
@@ -315,17 +336,15 @@ export function BookPage() {
       </button>) : null}
 
       {bookRemoval && sharedBook ? (
-        <ChoiceDialog title={`${sharedBook.canManage ? 'Удалить' : 'Убрать'} книгу «${book.title}»?`} busy={bookRemoval.busy} error={bookRemoval.error}
+        <ChoiceDialog title={`Удалить книгу «${book.title}»?`} busy={bookRemoval.busy} error={bookRemoval.error}
           onCancel={() => setBookRemoval(null)} onChoose={(mode) => { void finishBookRemoval(mode as 'local' | 'delete' | 'leave'); }}
-          choices={sharedBook.canManage ? [
-            { id: 'local', label: 'Только с этого телефона', description: 'У остальных участников книга останется и будет обновляться. Вернуть её сюда можно в «Настройки → Семейное хранилище».' },
+          choices={[
+            isCreator
+              ? { id: 'local', label: 'Только с этого телефона', description: 'У остальных участников книга останется и будет обновляться. Вернуть её сюда можно в «Настройки → Семейное хранилище».' }
+              : { id: 'leave', label: 'Только с этого телефона', description: 'Вы перестанете быть участником, у остальных книга останется. Как владелец хранилища вы сможете снова открыть её в «Настройки → Семейное хранилище».' },
             { id: 'delete', label: 'У всех участников', danger: true, description: 'Папка книги уйдёт в корзину Google Диска хранилища (там она хранится 30 дней), участники перестанут получать изменения. Уже скачанные копии останутся на их телефонах.' }
-          ] : [
-            { id: 'local', label: 'Убрать с этого телефона', description: 'Вы останетесь участником: вернуть книгу можно в «Настройки → Семейное хранилище».' },
-            { id: 'leave', label: 'Выйти из книги', danger: true, description: 'Книга удалится с этого телефона, а вернуться получится только по новому приглашению.' }
           ]}>
           <p>В книге {bookContents}. Она хранится в семейном хранилище{sharedBook.creatorName ? `, создатель — ${sharedBook.creatorName}` : ''}.</p>
-          {!sharedBook.canManage ? <p>У создателя и остальных участников ничего не удалится.</p> : null}
         </ChoiceDialog>
       ) : null}
     </div>

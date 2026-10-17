@@ -27,10 +27,11 @@ function memoryStorage() {
   return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
 }
 
-interface Hooks { beforeSyncReply?: () => void }
+interface Hooks { beforeSyncReply?: () => void; offline?: boolean }
 
 function fakeFetch(server: FamilyServer, hooks: Hooks): FetchLike {
   return async (input, init) => {
+    if (hooks.offline) throw new TypeError('Failed to fetch');
     if (input === SERVER_URL) {
       const request = JSON.parse(String(init?.body));
       const reply = server.post(request);
@@ -94,7 +95,7 @@ async function ownerAndMama() {
   const { code } = await owner.engine.createInvite(setup.bookId, { id: setup.mamaId, name: 'Мама' });
   const preview = await mama.engine.previewInvite(SERVER_URL, code);
   const joined = await mama.engine.acceptInvite(SERVER_URL, code, preview.personName);
-  return { server, owner, mama, setup, preview, joined };
+  return { server, owner, mama, setup, preview, joined, code };
 }
 
 describe('cloud sync engine', () => {
@@ -210,31 +211,52 @@ describe('cloud sync engine', () => {
     expect(owner.snapshot.moments.some((item) => item.id === own.id)).toBe(false);
   });
 
-  it('removes a book from one phone only and brings it back later', async () => {
-    const { server, owner, mama, setup } = await ownerAndMama();
-    await mama.engine.removeBook(setup.bookId, 'local');
-    mama.edit((snapshot) => deleteBookFromSnapshot(snapshot, setup.bookId).snapshot);
+  it('lets the creator remove a book from one phone only and bring it back later', async () => {
+    const { owner, mama, setup } = await ownerAndMama();
+    await owner.engine.removeBook(setup.bookId, 'local');
+    owner.edit((snapshot) => deleteBookFromSnapshot(snapshot, setup.bookId).snapshot);
+    await owner.engine.syncAll();
+    expect(owner.snapshot.books.some((book) => book.id === setup.bookId)).toBe(false);
+    expect(owner.store.get().books[setup.bookId]).toMatchObject({ detached: true });
+    expect(owner.engine.hasLocalChanges(setup.bookId)).toBe(false);
+    // Nothing changed for Mama.
     await mama.engine.syncAll();
-    expect(mama.snapshot.books.some((book) => book.id === setup.bookId)).toBe(false);
-    expect(mama.store.get().books[setup.bookId]).toMatchObject({ detached: true });
-    expect(mama.engine.hasLocalChanges(setup.bookId)).toBe(false);
-    // Nothing changed for the owner, and Mama is still a member.
+    expect(mama.snapshot.moments.some((item) => item.id === setup.momentId)).toBe(true);
+
+    await owner.engine.attachBook(setup.bookId);
+    expect(owner.snapshot.moments.find((item) => item.id === setup.momentId)?.title).toBe('Сенокос');
+    expect(await owner.blobs.get('media_photo1')).toBeDefined();
+  });
+
+  it('makes a relative who deletes the book leave it until invited again', async () => {
+    const { server, owner, mama, setup, code: firstCode } = await ownerAndMama();
+    const ownerToken = owner.store.get().connection!.token;
+    const memberNames = () => (server.post({ action: 'members', token: ownerToken, bookId: setup.bookId }).members as { name: string }[]).map((item) => item.name);
+    expect(memberNames()).toContain('Мама');
+    expect(await mama.engine.removeBook(setup.bookId, 'leave')).toEqual({ pending: false });
+    mama.edit((snapshot) => deleteBookFromSnapshot(snapshot, setup.bookId).snapshot);
+    expect(memberNames()).not.toContain('Мама');
+    expect(mama.store.get().books[setup.bookId]).toBeUndefined();
     await owner.engine.syncAll();
     expect(owner.snapshot.moments.some((item) => item.id === setup.momentId)).toBe(true);
-    const members = server.post({ action: 'members', token: owner.store.get().connection!.token, bookId: setup.bookId }).members as { name: string }[];
-    expect(members.map((item) => item.name)).toContain('Мама');
-
-    await mama.engine.attachBook(setup.bookId);
-    expect(mama.snapshot.moments.find((item) => item.id === setup.momentId)?.title).toBe('Сенокос');
-    expect(await mama.blobs.get('media_photo1')).toBeDefined();
-
-    // A new invitation also brings a removed book back.
-    await mama.engine.removeBook(setup.bookId, 'local');
-    mama.edit((snapshot) => deleteBookFromSnapshot(snapshot, setup.bookId).snapshot);
+    // The old link no longer works; a new invitation brings the book back.
+    await expect(mama.engine.acceptInvite(SERVER_URL, firstCode, 'Мама')).rejects.toMatchObject({ code: 'invite_not_found' });
     const { code } = await owner.engine.createInvite(setup.bookId);
     await mama.engine.acceptInvite(SERVER_URL, code, 'Мама');
-    expect(mama.store.get().books[setup.bookId].detached).toBeUndefined();
     expect(mama.snapshot.moments.some((item) => item.id === setup.momentId)).toBe(true);
+    expect(memberNames()).toContain('Мама');
+
+    // Offline: the book leaves the phone at once, and the storage hears it on the next sync.
+    mama.hooks.offline = true;
+    expect(await mama.engine.removeBook(setup.bookId, 'leave')).toEqual({ pending: true });
+    mama.edit((snapshot) => deleteBookFromSnapshot(snapshot, setup.bookId).snapshot);
+    expect(mama.engine.hasLocalChanges(setup.bookId)).toBe(false);
+    expect(memberNames()).toContain('Мама');
+    mama.hooks.offline = false;
+    await mama.engine.syncAll();
+    expect(memberNames()).not.toContain('Мама');
+    expect(mama.store.get().books[setup.bookId]).toBeUndefined();
+    expect(mama.snapshot.books.some((book) => book.id === setup.bookId)).toBe(false);
   });
 
   it('never sends deletions from a replaced archive (backup, demo, fresh start)', async () => {

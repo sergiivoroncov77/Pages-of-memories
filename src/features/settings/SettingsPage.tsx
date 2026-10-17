@@ -36,7 +36,23 @@ export function SettingsPage() {
   // Shared books on this phone, and those this phone created: only those can go for everyone.
   const sharedHere = snapshot.books.filter((item) => cloud.books[item.id]);
   const createdHere = sharedHere.filter((item) => cloud.books[item.id].creatorId === cloud.connection?.memberId);
+  const joinedHere = sharedHere.filter((item) => !createdHere.includes(item));
   const quoted = (items: { title: string }[]) => items.map((item) => `«${item.title}»`).join(', ');
+  const comeBack = cloud.connection?.admin ? 'открыть их снова можно в «Семейном хранилище» выше' : 'чтобы получить их снова, понадобится новое приглашение';
+  const leavingNote = joinedHere.length ? ` Из книг, куда вас пригласили, вы выйдете — ${comeBack}.` : '';
+
+  /** Removing invited books from this phone means leaving them; false when one could not be left. */
+  const leaveJoined = async (): Promise<boolean> => {
+    for (const item of joinedHere) {
+      try {
+        await cloud.removeBook(item.id, 'leave');
+      } catch (error) {
+        setResetStatus({ error: true, message: `Не удалось выйти из книги «${item.title}»: ${cloudErrorMessage(error)} Телефон не очищен.` });
+        return false;
+      }
+    }
+    return true;
+  };
   const storageSize = estimateStorageBytes(JSON.stringify(snapshot));
   const storageKb = Math.max(1, Math.round(storageSize / 1024));
   const deviceMediaBytes = snapshot.mediaAssets.filter(isStoredMedia).reduce((total, asset) => total + (asset.sizeBytes ?? 0), 0);
@@ -176,31 +192,36 @@ export function SettingsPage() {
           </div>
         </div>
         {sharedHere.length ? (
-          <fieldset className="fresh-shared">
-            <legend>Общие книги на этом телефоне: {quoted(sharedHere)}</legend>
-            <label className="fresh-shared__option">
-              <input type="radio" name="fresh-shared" checked={sharedOnFresh === 'local'} onChange={() => setSharedOnFresh('local')} />
-              <span><strong>Убрать только с этого телефона</strong><small>У близких всё останется. Вернуть книги сюда можно в «Семейном хранилище» выше.</small></span>
-            </label>
+          <div className="fresh-shared">
             {createdHere.length ? (
-              <label className="fresh-shared__option">
-                <input type="radio" name="fresh-shared" checked={sharedOnFresh === 'everyone'} onChange={() => setSharedOnFresh('everyone')} />
-                <span><strong>Удалить у всех участников созданные мной: {quoted(createdHere)}</strong>
-                  <small>{createdHere.length < sharedHere.length ? 'Книги, в которые вас пригласили, просто уберутся с этого телефона — у их создателей ничего не удалится.' : 'Папки книг уйдут в корзину Google Диска хранилища, участники перестанут получать изменения.'}</small></span>
-              </label>
+              <fieldset>
+                <legend>Ваши общие книги: {quoted(createdHere)}</legend>
+                <label className="fresh-shared__option">
+                  <input type="radio" name="fresh-shared" checked={sharedOnFresh === 'local'} onChange={() => setSharedOnFresh('local')} />
+                  <span><strong>Убрать только с этого телефона</strong><small>У близких всё останется. Вернуть книги сюда можно в «Семейном хранилище» выше.</small></span>
+                </label>
+                <label className="fresh-shared__option">
+                  <input type="radio" name="fresh-shared" checked={sharedOnFresh === 'everyone'} onChange={() => setSharedOnFresh('everyone')} />
+                  <span><strong>Удалить у всех участников</strong><small>Папки книг уйдут в корзину Google Диска хранилища, участники перестанут получать изменения.</small></span>
+                </label>
+              </fieldset>
             ) : null}
-          </fieldset>
+            {joinedHere.length ? (
+              <p className="fresh-shared__note">Из книг, куда вас пригласили ({quoted(joinedHere)}), вы выйдете — {comeBack}. У их создателей ничего не удалится.</p>
+            ) : null}
+          </div>
         ) : null}
         <label className="field">
           <span>Как назвать ваш семейный архив</span>
           <input value={freshTitle} onChange={(event) => setFreshTitle(event.target.value)} maxLength={80} placeholder="Например, «Семья Ивановых»" />
         </label>
         <button type="button" className="button button--danger button--normal" disabled={isRestoring} onClick={async () => {
-          const everyone = sharedHere.length > 0 && createdHere.length > 0 && sharedOnFresh === 'everyone';
-          const sharedNote = !sharedHere.length ? '' : everyone
+          const everyone = createdHere.length > 0 && sharedOnFresh === 'everyone';
+          const createdNote = !createdHere.length ? '' : everyone
             ? ` ${createdHere.length === 1 ? 'Книга' : 'Книги'} ${quoted(createdHere)} ${createdHere.length === 1 ? 'удалится' : 'удалятся'} и у всех участников.`
-            : ' У близких общие книги останутся.';
-          if (!window.confirm(`Удалить все книги, близких, ответы и материалы на этом устройстве и начать заново?${sharedNote} Это нельзя отменить.`)) return;
+            : ' Ваши общие книги уберутся только с этого телефона.';
+          const keptNote = sharedHere.length && !everyone ? ' У близких ничего не удалится.' : '';
+          if (!window.confirm(`Удалить все книги, близких, ответы и материалы на этом устройстве и начать заново?${createdNote}${leavingNote}${keptNote} Это нельзя отменить.`)) return;
           setIsRestoring(true);
           setResetStatus(null);
           if (everyone) {
@@ -214,6 +235,7 @@ export function SettingsPage() {
               }
             }
           }
+          if (!(await leaveJoined())) { setIsRestoring(false); return; }
           const result = await startFresh(freshTitle);
           // Shared books left on this phone are removed from it only, never from the storage.
           if (result.ok) cloud.snapshotReplaced('detach');
@@ -237,8 +259,10 @@ export function SettingsPage() {
           </div>
         </div>
         <button type="button" className="button button--danger button--normal" disabled={isRestoring} onClick={async () => {
-          if (!window.confirm(`Заменить все истории, материалы и черновики демо-данными?${sharedHere.length ? ' Общие книги уберутся только с этого телефона — у близких они останутся.' : ''} Сохраните резервную копию перед сбросом.`)) return;
+          if (!window.confirm(`Заменить все истории, материалы и черновики демо-данными?${createdHere.length ? ' Ваши общие книги уберутся только с этого телефона — у близких они останутся.' : ''}${leavingNote} Сохраните резервную копию перед сбросом.`)) return;
           setIsRestoring(true);
+          setResetStatus(null);
+          if (!(await leaveJoined())) { setIsRestoring(false); return; }
           const result = await resetDemo();
           setIsRestoring(false);
           if (!result.ok) {

@@ -26,7 +26,7 @@ interface CloudSyncValue {
   connection?: CloudConnection;
   /** Shared books kept on this phone. */
   books: Record<string, CloudBookState>;
-  /** Shared books removed from this phone only: they can be brought back. */
+  /** The creator's shared books removed from this phone only: they can be brought back. */
   detachedBooks: DetachedBook[];
   status: CloudStatus;
   error: string | null;
@@ -51,8 +51,11 @@ interface CloudSyncValue {
   acceptInvite: (url: string, code: string, name: string) => Promise<{ bookId: string; pending: number }>;
   members: (bookId: string) => Promise<{ members: CloudMember[]; canManage: boolean }>;
   removeMember: (bookId: string, memberId: string) => Promise<void>;
-  /** Delete for everyone (creator), leave (member) or remove from this phone only. The local copy is removed by the caller. */
-  removeBook: (bookId: string, mode: 'delete' | 'leave' | 'local') => Promise<void>;
+  /**
+   * Delete for everyone (creator), leave (member) or keep the creator's book off this phone.
+   * The local copy is removed by the caller; `pending` means leaving reaches the storage once online.
+   */
+  removeBook: (bookId: string, mode: 'delete' | 'leave' | 'local') => Promise<{ pending: boolean }>;
   /** Bring back a book removed from this phone. */
   attachBook: (bookId: string) => Promise<void>;
   /** Call right after the whole archive on this phone was replaced. */
@@ -169,7 +172,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const value: CloudSyncValue = {
     connection: state.connection,
     books: linked,
-    detachedBooks: Object.entries(state.books).filter(([, book]) => book.detached)
+    detachedBooks: Object.entries(state.books).filter(([, book]) => book.detached && !book.leaving)
       .map(([id, book]) => ({ id, title: book.title ?? 'Книга без названия', creatorName: book.creatorName })),
     status,
     error,
@@ -206,10 +209,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     },
     members: (bookId) => engine.members(bookId),
     removeMember: async (bookId, memberId) => { await track(() => engine.removeMember(bookId, memberId)); },
-    removeBook: async (bookId, mode) => {
-      if (mode === 'local') await engine.removeBook(bookId, 'local');
-      else await track(() => engine.removeBook(bookId, mode));
-    },
+    removeBook: (bookId, mode) => (mode === 'local' ? engine.removeBook(bookId, 'local') : track(() => engine.removeBook(bookId, mode))),
     attachBook: async (bookId) => { await track(() => engine.attachBook(bookId)); },
     snapshotReplaced: (missing) => engine.snapshotReplaced(missing),
     joinBook: async (bookId) => {

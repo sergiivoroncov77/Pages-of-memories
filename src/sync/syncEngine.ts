@@ -159,7 +159,26 @@ export function createSyncEngine(env: SyncEnvironment) {
     if (!book) return freshBookState();
     if (!book.detached) return book;
     generation += 1;
-    return { ...restart(book), detached: undefined };
+    return { ...restart(book), detached: undefined, leaving: undefined };
+  }
+
+  /** Leave a book; without a network the book is gone from this phone at once and the storage hears later. */
+  async function leave(bookId: string): Promise<{ pending: boolean }> {
+    try {
+      await call('leaveBook', { bookId });
+    } catch (error) {
+      if (!(error instanceof CloudError)) throw error;
+      if (error.code === 'offline') {
+        generation += 1;
+        accessCache.delete(bookId);
+        updateBook(bookId, (book) => ({ ...restart(book), detached: true, leaving: true }));
+        return { pending: true };
+      }
+      // Already out of the book, or the storage no longer knows this phone.
+      if (!UNLINK_CODES.has(error.code) && error.code !== 'unauthorized') throw error;
+    }
+    unlink(bookId);
+    return { pending: false };
   }
 
   function detach(bookId: string) {
@@ -388,6 +407,10 @@ export function createSyncEngine(env: SyncEnvironment) {
     /** New shared books appear, removed ones become local copies, everything else syncs. */
     syncAll: () => serial(async () => {
       if (!env.store.get().connection) return { outcomes: [] as BookSyncOutcome[], unlinked: [] as string[], failed: [] as { bookId: string; error: string }[] };
+      // Books left while offline go first, so the storage stops counting this phone in.
+      for (const [bookId, book] of Object.entries(env.store.get().books)) {
+        if (book.leaving && (await leave(bookId)).pending) throw new CloudError('offline', 'Нет связи с семейным хранилищем.');
+      }
       const { unlinked } = await refreshBooks();
       const outcomes: BookSyncOutcome[] = [];
       const failed: { bookId: string; error: string }[] = [];
@@ -451,18 +474,21 @@ export function createSyncEngine(env: SyncEnvironment) {
     removeMember: (bookId: string, memberId: string) => serial(() => call('removeMember', { bookId, memberId })),
 
     /**
-     * Delete for everyone (creator), leave (member), or only stop keeping the
-     * book on this phone ('local': the membership stays, the book can come back).
-     * The local copy itself is the caller's business.
+     * Delete for everyone (creator), leave (member: coming back takes a new
+     * invitation), or keep the creator's book off this phone only ('local':
+     * it can be brought back). The local copy itself is the caller's business.
+     * `pending` means the phone was offline and the storage hears of leaving later.
      */
-    removeBook: (bookId: string, mode: 'delete' | 'leave' | 'local') => {
+    removeBook: (bookId: string, mode: 'delete' | 'leave' | 'local'): Promise<{ pending: boolean }> => {
       if (mode === 'local') {
         detach(bookId);
-        return Promise.resolve();
+        return Promise.resolve({ pending: false });
       }
+      if (mode === 'leave') return serial(() => leave(bookId));
       return serial(async () => {
-        await call(mode === 'delete' ? 'deleteBook' : 'leaveBook', { bookId });
+        await call('deleteBook', { bookId });
         unlink(bookId);
+        return { pending: false };
       });
     },
 

@@ -27,6 +27,8 @@ export interface CloudBookState {
   owners: Record<string, string>;
   /** Removed from this phone only: the membership stays, and the book can be brought back. */
   detached?: boolean;
+  /** Left on this phone while offline: the storage hears about it on the next sync. */
+  leaving?: boolean;
   /** Who this device is in the book, from the invitation. */
   personId?: string;
   creatorId?: string;
@@ -68,6 +70,7 @@ function parseBook(value: unknown): CloudBookState | null {
     people: Array.isArray(value.people) ? value.people.filter((id): id is string => typeof id === 'string') : [],
     owners: strings(value.owners),
     detached: value.detached === true ? true : undefined,
+    leaving: value.leaving === true ? true : undefined,
     personId: text(value.personId),
     creatorId: text(value.creatorId),
     creatorName: text(value.creatorName),

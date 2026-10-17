@@ -208,6 +208,8 @@ function leaveBook_(member, request) {
     if (book.creatorId === member.id) throw error_('forbidden', 'Создатель не может выйти из книги — её можно только удалить.');
     delete book.members[member.id];
     write_('b:' + book.id, book);
+    // Вернуться в книгу можно только по новому приглашению.
+    cancelInvitesOf_(book.id, member.id);
     return ok_({});
   });
 }
@@ -316,9 +318,7 @@ function removeMember_(member, request) {
     delete book.members[memberId];
     write_('b:' + book.id, book);
     // Иначе исключённый вернулся бы в книгу по той же ссылке.
-    forEachInvite_(function (key, invite) {
-      if (invite.bookId === book.id && (invite.usedBy || []).indexOf(memberId) >= 0) props_().deleteProperty(key);
-    });
+    cancelInvitesOf_(book.id, memberId);
     return ok_({});
   });
 }
@@ -512,6 +512,13 @@ function read_(key) {
 
 function write_(key, value) {
   props_().setProperty(key, JSON.stringify(value));
+}
+
+/** Отменить ссылки на книгу, по которым вошёл этот участник. */
+function cancelInvitesOf_(bookId, memberId) {
+  forEachInvite_(function (key, invite) {
+    if (invite.bookId === bookId && (invite.usedBy || []).indexOf(memberId) >= 0) props_().deleteProperty(key);
+  });
 }
 
 function forEachInvite_(fn) {

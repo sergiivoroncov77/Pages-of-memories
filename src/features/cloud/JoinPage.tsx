@@ -1,6 +1,6 @@
 import { BookOpen, Check, Cloud } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
@@ -11,6 +11,12 @@ import type { InvitePreview } from '../../sync/syncEngine';
 
 /** Opened from an invitation link: …/join#s=<storage>&c=<code>. */
 export function JoinPage() {
+  // A second link opened over the first changes only the part after #: start over for it.
+  const { hash } = useLocation();
+  return <Invitation key={hash} />;
+}
+
+function Invitation() {
   const cloud = useCloudSync();
   const { setActiveBook } = useAppState();
   const navigate = useNavigate();
