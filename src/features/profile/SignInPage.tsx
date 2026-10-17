@@ -2,8 +2,12 @@ import { LogIn } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { MAX_NAME_LENGTH, profileStore } from '../../app/profile';
 
-/** The first start on a phone: the person says who they are. No password — the profile lives on this phone. */
-export function SignInPage({ suggestedName = '' }: { suggestedName?: string }) {
+/**
+ * The first start on a phone: the person says what to call them. The name is
+ * theirs alone — in every book they pick the name others see there. No
+ * password: the profile lives on this phone.
+ */
+export function SignInPage({ suggestedName = '', invited = false }: { suggestedName?: string; invited?: boolean }) {
   const [name, setName] = useState(suggestedName);
   const [error, setError] = useState('');
 
@@ -22,7 +26,8 @@ export function SignInPage({ suggestedName = '' }: { suggestedName?: string }) {
         <span className="brand__mark" aria-hidden="true">ИБ</span>
         <p className="eyebrow">Истории близких</p>
         <h1 id="sign-in-title">Давайте познакомимся</h1>
-        <p>Как вас зовут? Это имя увидят близкие в общих книгах, им будут подписаны ваши рассказы. В каждой книге можно подписываться по-своему — например, «Бабушка Аня» во внуковой книге.</p>
+        <p>Как вас зовут? Это имя для вас: так приложение будет к вам обращаться. Участники книг его не видят — в каждой книге вы сами выберете, как вас подписывать, например «Бабушка Аня».</p>
+        {invited ? <p className="sign-in__invited">Вас пригласили в книгу. Сначала представьтесь, а имя для этой книги выберете на следующем шаге.</p> : null}
         <label className="field">
           <span>Ваше имя</span>
           <input autoFocus value={name} onChange={(event) => { setName(event.target.value); setError(''); }}
@@ -30,7 +35,7 @@ export function SignInPage({ suggestedName = '' }: { suggestedName?: string }) {
         </label>
         {error ? <p className="field-message field-message--error" role="alert">{error}</p> : null}
         <button type="submit" className="button button--primary button--large"><LogIn size={20} aria-hidden="true" /> Войти</button>
-        <p className="sign-in__note">Пароль не нужен: профиль хранится на этом телефоне. Имя потом можно изменить в профиле. Вас пригласили в книгу? Откройте ссылку из сообщения.</p>
+        <p className="sign-in__note">Пароль не нужен: профиль хранится на этом телефоне. Имя потом можно изменить в профиле.{invited ? '' : ' Вас пригласили в книгу? Откройте ссылку из сообщения.'}</p>
       </form>
     </main>
   );

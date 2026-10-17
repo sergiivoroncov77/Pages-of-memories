@@ -146,6 +146,13 @@ export function createSyncEngine(env: SyncEnvironment) {
   const withPerson = (book: CloudBookState, personId: string): CloudBookState =>
     ({ ...book, personId, people: book.people.includes(personId) ? book.people : [...book.people, personId] });
 
+  /** A narrator of this phone's own, once the storage took it: it goes into the archive before the first sync. */
+  function addSelf(self: Person) {
+    const saved = env.commit((snapshot) => (snapshot.people.some((person) => person.id === self.id) ? snapshot
+      : { ...snapshot, people: [...snapshot.people, { ...self, projectId: snapshot.project.id }] }));
+    if (!saved) throw new CloudError('local_write', 'Не удалось сохранить книгу на телефоне: не хватает места.');
+  }
+
   /** Start the book over from the storage: take everything, send nothing that looks like a deletion. */
   const restart = (book: CloudBookState): CloudBookState => ({ ...book, rev: 0, fingerprints: {}, owners: {} });
 
@@ -456,11 +463,7 @@ export function createSyncEngine(env: SyncEnvironment) {
       const sameStorage = existing?.url === url;
       const reply = await callFamilyServer<{ member: { id: string; name: string; admin: boolean }; token?: string; book: RemoteBook }>(url,
         { action: 'acceptInvite', code, name: who.name, profileName: who.profileName, personId: who.self?.id, token: sameStorage ? existing?.token : undefined }, env.fetch);
-      const self = who.self && reply.book.personId === who.self.id ? who.self : undefined;
-      if (self && !env.commit((snapshot) => (snapshot.people.some((person) => person.id === self.id) ? snapshot
-        : { ...snapshot, people: [...snapshot.people, { ...self, projectId: snapshot.project.id }] }))) {
-        throw new CloudError('local_write', 'Не удалось сохранить книгу на телефоне: не хватает места.');
-      }
+      if (who.self && reply.book.personId === who.self.id) addSelf(who.self);
       env.store.update((state) => {
         const base = sameStorage ? state : { version: 1 as const, books: {} };
         const connectionState: CloudConnection = reply.token
@@ -546,10 +549,14 @@ export function createSyncEngine(env: SyncEnvironment) {
       }));
     },
 
-    /** Owner of the storage steps into a book whose creator lost their phone. */
-    joinBook: (bookId: string) => serial(async () => {
-      await call('joinBook', { bookId });
-      env.store.update((state) => ({ ...state, books: { ...state.books, [bookId]: returning(state.books[bookId]) } }));
+    /** Owner of the storage steps into a book whose creator lost their phone, signing as `who`. */
+    joinBook: (bookId: string, who?: { name: string; self?: Person }) => serial(async () => {
+      const reply = await call<{ book: RemoteBook }>('joinBook', { bookId, name: who?.name, personId: who?.self?.id });
+      if (who?.self && reply.book.personId === who.self.id) addSelf(who.self);
+      env.store.update((state) => {
+        const book = returning(state.books[bookId]);
+        return { ...state, books: { ...state.books, [bookId]: reply.book.personId ? withPerson(book, reply.book.personId) : book } };
+      });
       return syncBookNow(bookId);
     }),
 

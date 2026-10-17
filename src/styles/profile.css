@@ -201,3 +201,11 @@
     flex-direction: column;
   }
 }
+
+.sign-in__invited {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sage);
+  color: var(--sage-dark);
+  font-weight: 600;
+}

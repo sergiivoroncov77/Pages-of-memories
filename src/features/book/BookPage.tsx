@@ -2,7 +2,6 @@ import { ArrowRight, BookOpen, CalendarDays, Clapperboard, Heart, Pencil, Plus, 
 import { useState, type CSSProperties } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
-import { useProfile } from '../../app/profile';
 import { Book3D } from '../../components/Book3D';
 import { Card } from '../../components/Card';
 import { ChoiceDialog } from '../../components/ChoiceDialog';
@@ -29,7 +28,6 @@ export function BookPage() {
     addMoment, toggleMomentFavorite, createBook, updateBook, setBookCover, deleteBook, createChapter, updateChapter, moveChapter, deleteChapter
   } = useAppState();
   const cloud = useCloudSync();
-  const profile = useProfile();
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
@@ -193,7 +191,7 @@ export function BookPage() {
     <Card className="library-form-card" id="create-book">
       <div className="card-heading"><div><p className="eyebrow">Новая книга</p><h2>Создать книгу</h2><p>Отдельная книга — для бабушки, для поездки, для свадьбы. У каждой свои главы и свой фильм.</p></div>
         <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setPanel('none')}><X size={20} /></button></div>
-      <BookForm mode="create" profileName={profile?.name} onSubmit={submitNewBook} onCancel={() => setPanel('none')} />
+      <BookForm mode="create" onSubmit={submitNewBook} onCancel={() => setPanel('none')} />
     </Card>
   ) : null;
   const noticeLine = notice ? <p className="field-message field-message--success library-notice" role="status">{notice}</p> : null;

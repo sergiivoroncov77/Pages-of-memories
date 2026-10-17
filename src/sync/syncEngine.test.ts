@@ -343,8 +343,14 @@ describe('cloud sync engine', () => {
     // The owner sees the book in the storage but is not a member until he steps in.
     const { books } = await owner.engine.refreshBooks();
     expect(books.find((book) => book.id === created.book.id)).toMatchObject({ member: false, canManage: true });
-    await owner.engine.joinBook(created.book.id);
+    // He signs in it with a name he picks for this book, not the one he calls himself.
+    const self = newSelfPerson(owner.snapshot, 'Сын Серёжа', 'Участник книги');
+    await owner.engine.joinBook(created.book.id, { name: 'Сын Серёжа', self });
     expect(owner.snapshot.books.some((book) => book.id === created.book.id)).toBe(true);
+    expect(owner.store.get().books[created.book.id].personId).toBe(self.id);
+    const names = (await mama.engine.members(created.book.id)).members.map((member) => member.name);
+    expect(names).toEqual(expect.arrayContaining(['Сын Серёжа']));
+    expect(names).not.toContain('Сергей');
   });
 
   it('signs the creator and a relative from a general link as narrators of their own, renamed only by them or the creator', async () => {

@@ -38,9 +38,9 @@ export function AppShell() {
     return () => media.removeEventListener('change', apply);
   }, [settings.theme]);
 
-  // Who uses the phone comes first; an invitation link asks for the name itself.
-  if (!profile && location.pathname !== '/join') {
-    return <div className={settings.highContrast ? 'is-high-contrast' : ''}><SignInPage suggestedName={cloud.connection?.name} /></div>;
+  // Who uses the phone comes first, also when they arrive by an invitation link.
+  if (!profile) {
+    return <div className={settings.highContrast ? 'is-high-contrast' : ''}><SignInPage suggestedName={cloud.connection?.name} invited={location.pathname === '/join'} /></div>;
   }
   const me = profile ? (
     <NavLink to="/profile" className={({ isActive }) => `profile-chip ${isActive ? 'is-active' : ''}`} aria-label={`Профиль: ${profile.name}`}>

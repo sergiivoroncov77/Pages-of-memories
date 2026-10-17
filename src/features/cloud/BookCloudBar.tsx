@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { Book } from '../../data/types';
 import { cloudErrorMessage } from '../../sync/cloudApi';
 import { useCloudSync } from '../../sync/CloudSync';
+import { BookNameField } from '../profile/BookNameField';
 import { formatSyncTime } from './cloudFormat';
 
 /** Where the open book lives and a button to sync it right now. */
@@ -10,6 +11,7 @@ export function BookCloudBar({ book }: { book: Book }) {
   const cloud = useCloudSync();
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
+  const [myName, setMyName] = useState('');
   if (!cloud.connection) return null;
   const info = cloud.books[book.id];
   const syncing = cloud.status === 'syncing';
@@ -26,7 +28,7 @@ export function BookCloudBar({ book }: { book: Book }) {
       setPublishing(true);
       setPublishError('');
       try {
-        await cloud.publishBook(book.id);
+        await cloud.publishBook(book.id, myName);
       } catch (error) {
         setPublishError(cloudErrorMessage(error));
       } finally {
@@ -42,6 +44,8 @@ export function BookCloudBar({ book }: { book: Book }) {
             <strong>Эта книга только на этом телефоне</strong>
             <span>Сохраните её в семейное хранилище на Google Диске — тогда близких можно пригласить по ссылке, и все изменения будут приходить сами.</span>
             {publishError ? <span className="cloud-bar__error" role="alert">{publishError}</span> : null}
+            {/* Books made before names were asked: their creator picks one now. */}
+            {!cloud.myPersonId(book.id) ? <BookNameField value={myName} onChange={setMyName} /> : null}
           </div>
           <button type="button" className="button button--primary button--small" onClick={() => { void publish(); }} disabled={publishing}>
             <UploadCloud size={17} aria-hidden="true" /> {publishing ? 'Сохраняем…' : 'Сохранить в Google Диск'}

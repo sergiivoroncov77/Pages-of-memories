@@ -33,7 +33,7 @@ export function ProfilePage() {
   return (
     <div className="page">
       <PageHeader eyebrow="Профиль" title={profile.name}
-        description="Профиль хранится на этом телефоне, пароль не нужен. Близкие видят вас по имени, которое вы выбрали в каждой книге." />
+        description="Профиль хранится на этом телефоне, пароль не нужен. Его имя — для вас; в каждой книге участники видят имя, которое вы выбрали для неё." />
 
       <Card className="account-card">
         <Avatar person={profileAvatar(profile.name)} size="large" />
@@ -41,7 +41,7 @@ export function ProfilePage() {
           <label className="field">
             <span>Как вас зовут</span>
             <input value={name} onChange={(event) => { setName(event.target.value); setMessage(null); }} maxLength={MAX_NAME_LENGTH} autoComplete="name" required />
-            <small>Это имя подставляется, когда вы создаёте книгу или принимаете приглашение. Имена в уже открытых книгах меняются ниже.</small>
+            <small>Это имя для вас: так к вам обращается приложение. Участники книг его не видят. Имена в книгах — ниже.</small>
           </label>
           <button type="submit" className="button button--primary button--normal" disabled={name.trim() === profile.name}><Save size={18} aria-hidden="true" /> Сохранить</button>
           {message ? <p className={`field-message ${message.error ? 'field-message--error' : 'field-message--success'}`} role={message.error ? 'alert' : 'status'}>{message.text}</p> : null}
@@ -57,7 +57,7 @@ export function ProfilePage() {
         </div>
         {ownBooks.length ? (
           <ul className="profile-books">
-            {ownBooks.map((book) => <BookName key={book.id} book={book} fallback={profile.name} />)}
+            {ownBooks.map((book) => <BookName key={book.id} book={book} />)}
           </ul>
         ) : (
           <p className="muted-copy">Книг пока нет. <Link to="/book" className="text-link">Создайте книгу</Link> или откройте ссылку-приглашение от близких.</p>
@@ -67,14 +67,14 @@ export function ProfilePage() {
   );
 }
 
-function BookName({ book, fallback }: { book: Book; fallback: string }) {
+function BookName({ book }: { book: Book }) {
   const cloud = useCloudSync();
   const { getPerson } = useAppState();
   const personId = cloud.myPersonId(book.id);
   const person = personId ? getPerson(personId) : undefined;
   const shared = cloud.books[book.id];
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(person?.name ?? fallback);
+  const [value, setValue] = useState(person?.name ?? '');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
 
@@ -115,7 +115,7 @@ function BookName({ book, fallback }: { book: Book; fallback: string }) {
         {message ? <p className={`field-message ${message.error ? 'field-message--error' : 'field-message--success'}`} role={message.error ? 'alert' : 'status'}>{message.text}</p> : null}
       </div>
       {!editing ? (
-        <button type="button" className="button button--secondary button--small" onClick={() => { setValue(person?.name ?? fallback); setEditing(true); setMessage(null); }}>
+        <button type="button" className="button button--secondary button--small" onClick={() => { setValue(person?.name ?? ''); setEditing(true); setMessage(null); }}>
           <Pencil size={16} aria-hidden="true" /> {person ? 'Изменить' : 'Выбрать имя'}
         </button>
       ) : null}

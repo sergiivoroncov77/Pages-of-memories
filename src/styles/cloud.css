@@ -571,3 +571,9 @@
   color: var(--muted);
   font-size: 0.85rem;
 }
+
+.cloud-open-book {
+  display: grid;
+  width: 100%;
+  gap: 10px;
+}

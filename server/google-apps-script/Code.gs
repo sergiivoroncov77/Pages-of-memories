@@ -167,7 +167,7 @@ function bookSummary_(book, member) {
 function createBook_(member, request) {
   var bookId = checkId_(request.bookId);
   var title = cleanName_(request.title, 'Семейная книга');
-  // Как создатель подписан в этой книге; по умолчанию — имя его профиля.
+  // Как создатель подписан в этой книге: имя он выбирает для каждой книги сам.
   var displayName = cleanName_(request.name, member.name);
   return withLock_(function () {
     var existing = readBook_(bookId);
@@ -224,7 +224,8 @@ function joinBook_(member, request) {
     var book = readBook_(request.bookId);
     if (!book) throw error_('book_not_found', 'Этой книги больше нет в хранилище.');
     if (!book.members[member.id]) {
-      book.members[member.id] = { name: member.name, personId: optionalId_(request.personId), joinedAt: new Date().toISOString() };
+      book.members[member.id] = { name: cleanName_(request.name, member.name),
+        personId: claimablePerson_(book, optionalId_(request.personId), member.id), joinedAt: new Date().toISOString() };
       write_('b:' + book.id, book);
     }
     return ok_({ book: bookSummary_(book, member) });

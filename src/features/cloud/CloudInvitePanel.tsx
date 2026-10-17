@@ -7,6 +7,7 @@ import { copyText, shareLink } from '../../lib/shareFile';
 import { cloudErrorMessage } from '../../sync/cloudApi';
 import { useCloudSync } from '../../sync/CloudSync';
 import type { CloudMember } from '../../sync/syncEngine';
+import { BookNameField } from '../profile/BookNameField';
 import { formatExpiry } from './cloudFormat';
 
 function MembersList({ bookId, canManage }: { bookId: string; canManage: boolean }) {
@@ -106,6 +107,7 @@ export function CloudInvitePanel({ book, person }: { book: Book; person?: Person
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [sent, setSent] = useState('');
+  const [myName, setMyName] = useState('');
   const sendButton = useRef<HTMLButtonElement>(null);
 
   // The create button disappears with the new link; keep focus on the next step.
@@ -117,12 +119,13 @@ export function CloudInvitePanel({ book, person }: { book: Book; person?: Person
     const publish = async () => {
       setBusy(true);
       setError('');
-      try { await cloud.publishBook(book.id); } catch (failure) { setError(cloudErrorMessage(failure)); } finally { setBusy(false); }
+      try { await cloud.publishBook(book.id, myName); } catch (failure) { setError(cloudErrorMessage(failure)); } finally { setBusy(false); }
     };
     return (
       <section className="cloud-invite" aria-labelledby="cloud-invite-title">
         <h3 id="cloud-invite-title"><Link2 size={19} aria-hidden="true" /> Пригласить по ссылке</h3>
         <p>Сначала сохраните книгу в семейное хранилище на Google Диске. Тогда близкие получат её по ссылке, а всё новое будет приходить само — без пересылки файлов.</p>
+        {!cloud.myPersonId(book.id) ? <BookNameField value={myName} onChange={setMyName} /> : null}
         <button type="button" className="button button--primary" onClick={() => { void publish(); }} disabled={busy}>
           <UploadCloud size={18} aria-hidden="true" /> {busy ? 'Сохраняем…' : 'Сохранить в Google Диск'}
         </button>

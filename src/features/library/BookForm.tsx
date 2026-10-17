@@ -2,6 +2,7 @@ import { Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { MediaImage } from '../../components/MediaImage';
 import type { Book, MediaAsset } from '../../data/types';
+import { BookNameField } from '../profile/BookNameField';
 
 export interface BookFormValues {
   title: string;
@@ -18,19 +19,17 @@ interface BookFormProps {
   initial?: Book;
   /** Photos of this book that can become its cover (edit mode). */
   photos?: MediaAsset[];
-  /** The profile name: the default signature in a new book. */
-  profileName?: string;
   onSubmit: (values: BookFormValues) => void;
   onCancel: () => void;
   onDelete?: () => void;
 }
 
-export function BookForm({ mode, initial, photos = [], profileName = '', onSubmit, onCancel, onDelete }: BookFormProps) {
+export function BookForm({ mode, initial, photos = [], onSubmit, onCancel, onDelete }: BookFormProps) {
   const [title, setTitle] = useState(initial?.title ?? '');
   const [subtitle, setSubtitle] = useState(initial?.subtitle ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [firstChapter, setFirstChapter] = useState('Начало');
-  const [myName, setMyName] = useState(profileName);
+  const [myName, setMyName] = useState('');
   const [cover, setCover] = useState(initial?.coverMediaAssetId ?? '');
   const [error, setError] = useState('');
 
@@ -66,13 +65,7 @@ export function BookForm({ mode, initial, photos = [], profileName = '', onSubmi
           <small>Главы можно добавить, переименовать и переставить потом.</small>
         </label>
       ) : null}
-      {mode === 'create' ? (
-        <label className="field">
-          <span>Как вас подписывать в этой книге</span>
-          <input value={myName} onChange={(event) => setMyName(event.target.value)} maxLength={80} required placeholder="Например, Сергей или папа" />
-          <small>Так близкие увидят вас в книге и под вашими рассказами. По умолчанию — имя из профиля.</small>
-        </label>
-      ) : null}
+      {mode === 'create' ? <BookNameField value={myName} onChange={setMyName} /> : null}
       {mode === 'edit' && photos.length ? (
         <fieldset className="cover-picker">
           <legend>Фото на обложке</legend>

@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useProfile } from '../../app/profile';
 import { Card } from '../../components/Card';
+import { BookNameField } from '../profile/BookNameField';
 import { pluralize } from '../../lib/format';
 import { cloudErrorMessage, normalizeServerUrl } from '../../sync/cloudApi';
 import { useCloudSync } from '../../sync/CloudSync';
@@ -13,7 +14,8 @@ export function CloudSettingsCard() {
   const cloud = useCloudSync();
   const profile = useProfile();
   const [url, setUrl] = useState('');
-  const [name, setName] = useState(profile?.name ?? '');
+  // The book being opened from the storage, and how its owner signs in it.
+  const [opening, setOpening] = useState<{ id: string; name: string } | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [joining, setJoining] = useState('');
@@ -25,7 +27,7 @@ export function CloudSettingsCard() {
     setBusy(true);
     setError('');
     try {
-      await cloud.connectOwner(normalized.url, name.trim() || 'Владелец хранилища');
+      await cloud.connectOwner(normalized.url, profile?.name ?? 'Владелец хранилища');
       setUrl('');
     } catch (failure) {
       setError(cloudErrorMessage(failure));
@@ -55,10 +57,6 @@ export function CloudSettingsCard() {
             <span>Адрес скрипта</span>
             <input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://script.google.com/macros/s/…/exec" inputMode="url" autoComplete="off" spellCheck={false} required />
           </label>
-          <label className="field">
-            <span>Ваше имя для близких</span>
-            <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Например, Сергей" maxLength={80} autoComplete="name" />
-          </label>
           {error ? <p className="field-message field-message--error" role="alert">{error}</p> : null}
           <div className="settings-actions">
             <button type="submit" className="button button--primary" disabled={busy}><LogIn size={18} aria-hidden="true" /> {busy ? 'Подключаем…' : 'Подключить хранилище'}</button>
@@ -81,7 +79,14 @@ export function CloudSettingsCard() {
   const join = async (bookId: string, back: boolean) => {
     setJoining(bookId);
     setError('');
-    try { await (back ? cloud.attachBook(bookId) : cloud.joinBook(bookId)); } catch (failure) { setError(cloudErrorMessage(failure)); } finally { setJoining(''); }
+    try {
+      await (back ? cloud.attachBook(bookId) : cloud.joinBook(bookId, opening?.name ?? ''));
+      setOpening(null);
+    } catch (failure) {
+      setError(cloudErrorMessage(failure));
+    } finally {
+      setJoining('');
+    }
   };
 
   return (
@@ -111,9 +116,19 @@ export function CloudSettingsCard() {
             {cloud.otherBooks.map((book) => (
               <li key={book.id}>
                 <span><strong>{book.title}</strong> · создатель {book.creatorName}</span>
-                <button type="button" className="button button--secondary button--small" disabled={joining === book.id} onClick={() => { void join(book.id, false); }}>
-                  {joining === book.id ? 'Открываем…' : 'Открыть на этом телефоне'}
-                </button>
+                {opening?.id === book.id ? (
+                  <form className="cloud-open-book" onSubmit={(event) => { event.preventDefault(); void join(book.id, false); }}>
+                    <BookNameField autoFocus value={opening.name} onChange={(value) => setOpening({ id: book.id, name: value })} />
+                    <div className="page-action-group">
+                      <button type="submit" className="button button--primary button--small" disabled={joining === book.id || !opening.name.trim()}>
+                        {joining === book.id ? 'Открываем…' : 'Открыть'}
+                      </button>
+                      <button type="button" className="button button--ghost button--small" onClick={() => setOpening(null)}>Отмена</button>
+                    </div>
+                  </form>
+                ) : (
+                  <button type="button" className="button button--secondary button--small" onClick={() => setOpening({ id: book.id, name: '' })}>Открыть на этом телефоне</button>
+                )}
               </li>
             ))}
           </ul>
