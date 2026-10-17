@@ -10,6 +10,7 @@ import type { MediaAsset, Moment, Person, Perspective, PerspectiveType } from '.
 import { formatDate, formatDuration, pluralize } from '../../lib/format';
 import { prepareMediaFile, validateMediaFile, type MediaUploadWithBlob } from '../../lib/mediaFiles';
 import { useMediaUrl } from '../../lib/useMediaUrl';
+import { useCloudSync } from '../../sync/CloudSync';
 import { MomentDetailsForm } from './MomentDetailsForm';
 
 type MomentTab = 'story' | 'perspectives' | 'materials';
@@ -33,6 +34,7 @@ export function MomentPage() {
 
 function MomentContent({ moment }: { moment: Moment }) {
   const { chapters, books, perspectivesForMoment, reflectionsForMoment, mediaForPerspective, getPerson, people, addPerspectiveWithMedia, addReflection, toggleMomentFavorite, updateMoment, deleteMoment } = useAppState();
+  const { myPersonId } = useCloudSync();
   const navigate = useNavigate();
   const chapter = chapters.find((item) => item.id === moment.chapterId)!;
   const book = books.find((item) => item.id === moment.bookId)!;
@@ -50,11 +52,14 @@ function MomentContent({ moment }: { moment: Moment }) {
   const [showForm, setShowForm] = useState(false);
   const [showReflection, setShowReflection] = useState(false);
   const [type, setType] = useState<PerspectiveType>('text');
-  const [authorId, setAuthorId] = useState(people[0]?.id ?? '');
+  // On a shared book, stories are signed by whoever this phone belongs to.
+  const me = myPersonId(moment.bookId);
+  const defaultAuthor = me && people.some((person) => person.id === me) ? me : people[0]?.id ?? '';
+  const [authorId, setAuthorId] = useState(defaultAuthor);
   const [content, setContent] = useState('');
   const [caption, setCaption] = useState('');
   const [reflectionText, setReflectionText] = useState('');
-  const [reflectionAuthorId, setReflectionAuthorId] = useState(people[0]?.id ?? '');
+  const [reflectionAuthorId, setReflectionAuthorId] = useState(defaultAuthor);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);

@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { BookPage } from '../features/book/BookPage';
+import { JoinPage } from '../features/cloud/JoinPage';
 import { ExportPage } from '../features/export/ExportPage';
 import { HomePage } from '../features/home/HomePage';
 import { InvitePage } from '../features/invite/InvitePage';
@@ -15,6 +16,7 @@ import { NotFoundPage } from './NotFoundPage';
 
 // The film studio and the page-flip reader are heavier and load on first visit.
 const ChapterFilmPage = lazy(() => import('../features/film/ChapterFilmPage').then((module) => ({ default: module.ChapterFilmPage })));
+const CloudSetupPage = lazy(() => import('../features/cloud/CloudSetupPage').then((module) => ({ default: module.CloudSetupPage })));
 const BookReaderPage = lazy(() => import('../features/reader/BookReaderPage').then((module) => ({ default: module.BookReaderPage })));
 
 function Loading() {
@@ -37,6 +39,8 @@ export function App() {
         <Route path="chapters/:chapterId/film" element={<Suspense fallback={<Loading />}><ChapterFilmPage /></Suspense>} />
         <Route path="export" element={<ExportPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="join" element={<JoinPage />} />
+        <Route path="cloud/setup" element={<Suspense fallback={<Loading />}><CloudSetupPage /></Suspense>} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

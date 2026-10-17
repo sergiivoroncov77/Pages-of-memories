@@ -1,9 +1,10 @@
-import { FileUp, Plus } from 'lucide-react';
+import { Cloud, FileUp, Plus } from 'lucide-react';
 import { useRef, useState, type ChangeEvent } from 'react';
 import { useAppState } from '../../app/AppState';
 import type { MergeSummary } from '../../data/bookPackage';
 import { clothStyle } from '../../lib/cloth';
 import { pluralize } from '../../lib/format';
+import { useCloudSync } from '../../sync/CloudSync';
 
 function importMessage(summary: MergeSummary): string {
   const { added, updated, isNewBook, bookTitle } = summary;
@@ -58,6 +59,7 @@ interface BookShelfProps {
 /** All books on this device; tapping one opens it everywhere in the app. */
 export function BookShelf({ onCreate }: BookShelfProps) {
   const { books, activeBook, setActiveBook, chaptersForBook, moments } = useAppState();
+  const { isShared } = useCloudSync();
   return (
     <section className="book-shelf" aria-label="Мои книги">
       <div className="book-shelf__heading">
@@ -75,6 +77,7 @@ export function BookShelf({ onCreate }: BookShelfProps) {
               <span className="shelf-book__cover" aria-hidden="true"><span>{book.title}</span></span>
               <span className="shelf-book__title">{book.title}</span>
               <span className="shelf-book__meta">{chapterCount} {pluralize(chapterCount, 'глава', 'главы', 'глав')} · {momentCount} {pluralize(momentCount, 'момент', 'момента', 'моментов')}</span>
+              {isShared(book.id) ? <span className="shelf-book__cloud"><Cloud size={13} aria-hidden="true" /> общая</span> : null}
             </button>
           );
         })}

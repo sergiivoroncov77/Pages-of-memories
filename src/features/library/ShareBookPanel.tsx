@@ -1,20 +1,27 @@
 import { Check, Copy, Download, Send, X } from 'lucide-react';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { Card } from '../../components/Card';
-import type { Book } from '../../data/types';
+import type { Book, Person } from '../../data/types';
 import { formatFileSize } from '../../lib/format';
 import { appAddress, copyText, downloadFile, shareOrDownload } from '../../lib/shareFile';
+import { useCloudSync } from '../../sync/CloudSync';
+import { CloudInvitePanel } from '../cloud/CloudInvitePanel';
 
 type Status = { kind: 'idle' } | { kind: 'packing' } | { kind: 'done'; message: string; file: File } | { kind: 'error'; message: string };
 
 /**
- * Sharing without accounts: the book leaves as one file through any messenger.
- * The relative opens it in their copy of the app, adds their memories and
- * sends it back; new things are added to the original.
+ * Sharing without accounts. With the family storage connected, relatives get
+ * an invitation link and see every change. Without it — or without internet
+ * on their side — the book leaves as one file through any messenger; the
+ * relative adds their memories and sends it back, new things are merged in.
  */
-export function ShareBookPanel({ book, personName, onClose }: { book: Book; personName?: string; onClose?: () => void }) {
+export function ShareBookPanel({ book, person, onClose }: { book: Book; person?: Person; onClose?: () => void }) {
   const { packBook, moments, perspectives, mediaAssets } = useAppState();
+  const cloud = useCloudSync();
+  const personName = person?.name;
+  const shared = Boolean(cloud.connection && cloud.books[book.id]);
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const [copied, setCopied] = useState(false);
   const address = appAddress();
@@ -47,17 +54,8 @@ export function ShareBookPanel({ book, personName, onClose }: { book: Book; pers
     window.setTimeout(() => setCopied(false), 2400);
   };
 
-  return (
-    <Card className="share-book" aria-labelledby="share-book-title">
-      <div className="card-heading">
-        <div>
-          <p className="eyebrow">Без регистрации</p>
-          <h2 id="share-book-title">{personName ? `Пригласить: ${personName}` : 'Поделиться книгой'}</h2>
-          <p>Книга уйдёт одним файлом — через MAX, почту, Bluetooth или другой мессенджер. Близкий откроет его в своём приложении, допишет воспоминания и пришлёт обратно, а новое добавится к вашей книге.</p>
-        </div>
-        {onClose ? <button type="button" className="icon-button" aria-label="Закрыть" onClick={onClose}><X size={20} /></button> : null}
-      </div>
-
+  const fileSharing = (
+    <>
       <ol className="share-steps">
         <li><strong>Отправьте файл книги.</strong> <span>Примерный размер: {estimated > 0 ? formatFileSize(estimated) : 'меньше 1 МБ'}. Фото, голос и видео едут внутри.</span></li>
         <li><strong>Близкий открывает приложение</strong> <span>по ссылке, на телефоне — в Chrome, и может установить его на главный экран.</span></li>
@@ -79,6 +77,30 @@ export function ShareBookPanel({ book, personName, onClose }: { book: Book; pers
       ) : null}
       {status.kind === 'error' ? <p className="field-message field-message--error" role="alert">{status.message}</p> : null}
       <p className="share-book__note">Файл — копия на момент отправки: удаления не переносятся, а одинаковые записи не дублируются. Ссылка на приложение: <a href={address}>{address.replace(/^https?:\/\//, '')}</a></p>
+    </>
+  );
+
+  return (
+    <Card className="share-book" aria-labelledby="share-book-title">
+      <div className="card-heading">
+        <div>
+          <p className="eyebrow">Без регистрации</p>
+          <h2 id="share-book-title">{personName ? `Пригласить: ${personName}` : 'Поделиться книгой'}</h2>
+          {cloud.connection ? null : <p>Книга уйдёт одним файлом — через MAX, почту, Bluetooth или другой мессенджер. Близкий откроет его в своём приложении, допишет воспоминания и пришлёт обратно, а новое добавится к вашей книге.</p>}
+        </div>
+        {onClose ? <button type="button" className="icon-button" aria-label="Закрыть" onClick={onClose}><X size={20} /></button> : null}
+      </div>
+
+      {cloud.connection ? <CloudInvitePanel book={book} person={person} /> : (
+        <p className="share-book__note share-book__hint">Хотите, чтобы близкие получали книгу по ссылке и сразу видели новое? <Link to="/settings#cloud" className="text-link">Подключите семейное хранилище на Google Диске</Link>.</p>
+      )}
+
+      {cloud.connection ? (
+        <details className="share-book__file" open={!shared}>
+          <summary>Отправить файлом — если у близкого нет интернета или хранилище недоступно</summary>
+          {fileSharing}
+        </details>
+      ) : fileSharing}
     </Card>
   );
 }

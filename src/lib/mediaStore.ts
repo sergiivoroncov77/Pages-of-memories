@@ -109,6 +109,18 @@ export function createMemoryMediaStore(initial: Record<string, Blob> = {}): Medi
   };
 }
 
+const storedListeners = new Set<(id: string) => void>();
+
+/** Tell open screens that bytes for an asset are now on the device (for example, downloaded from the family storage). */
+export function notifyMediaStored(id: string): void {
+  storedListeners.forEach((listener) => listener(id));
+}
+
+export function onMediaStored(listener: (id: string) => void): () => void {
+  storedListeners.add(listener);
+  return () => { storedListeners.delete(listener); };
+}
+
 let defaultStore: MediaBlobStore | undefined;
 export function mediaStore(): MediaBlobStore {
   defaultStore ??= typeof indexedDB === 'undefined' ? createMemoryMediaStore() : createIndexedDbMediaStore();

@@ -1,0 +1,374 @@
+/* Family storage on Google Drive: sync bar, invitations, joining, setup. */
+
+.cloud-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 14px;
+  margin: 0 0 22px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--sage) 35%, var(--line));
+  border-radius: 18px;
+  background: var(--surface-sage);
+  color: var(--ink);
+}
+
+.cloud-bar--local {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  background: var(--surface-warm);
+}
+
+.cloud-bar--error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+}
+
+.cloud-bar__icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--sage-dark);
+}
+
+.cloud-bar--local .cloud-bar__icon {
+  color: var(--muted);
+}
+
+.cloud-bar__copy {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 220px;
+  gap: 2px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.cloud-bar__copy span {
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.cloud-bar__copy .cloud-bar__error {
+  color: var(--danger);
+}
+
+.cloud-bar > .button {
+  flex: 0 1 auto;
+  margin-left: auto;
+}
+
+.is-spinning {
+  animation: film-spin 900ms linear infinite;
+}
+
+.cloud-notices {
+  position: relative;
+  margin: 0 0 18px;
+  padding: 12px 48px 12px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--surface-warm);
+  font-size: 0.92rem;
+}
+
+.cloud-notices p {
+  margin: 0 0 4px;
+}
+
+.cloud-notices .icon-button {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+/* ---------- Invitations ---------- */
+
+.cloud-invite {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-warm);
+}
+
+.cloud-invite h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.cloud-invite p {
+  margin: 0;
+}
+
+.cloud-invite > .button {
+  justify-self: start;
+}
+
+.cloud-invite__result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.cloud-invite__result input {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.82rem;
+}
+
+.cloud-invite__result .text-button {
+  justify-self: start;
+}
+
+.cloud-members h4 {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cloud-members ul {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cloud-members li {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.cloud-members__name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.cloud-members__tags {
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.share-book__file {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.share-book__file > summary {
+  margin-bottom: 12px;
+  color: var(--primary-dark);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.share-book__hint {
+  margin: 0 0 16px;
+}
+
+.shelf-book__cloud {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sage-dark);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* ---------- Joining ---------- */
+
+.join-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.join-card > div {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.join-card h2,
+.join-card p {
+  margin: 0;
+}
+
+.join-card__icon {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--primary);
+}
+
+/* ---------- Settings and setup ---------- */
+
+.cloud-connect {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.cloud-connect input {
+  min-width: 0;
+}
+
+.cloud-other-books {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.cloud-other-books h3 {
+  margin: 0 0 6px;
+}
+
+.cloud-other-books ul {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cloud-other-books li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.setup-steps {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  margin: 22px 0;
+  padding: 0;
+  counter-reset: setup;
+  list-style: none;
+}
+
+.setup-steps > li {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  padding: 18px 18px 18px 64px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  counter-increment: setup;
+}
+
+.setup-steps > li::before {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  content: counter(setup);
+  font-weight: 800;
+}
+
+.setup-steps h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.setup-steps p,
+.setup-steps ul {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.setup-steps > li > .button {
+  justify-self: start;
+}
+
+.setup-steps code,
+.setup-faq code {
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--surface-warm);
+  font-size: 0.88em;
+  overflow-wrap: anywhere;
+}
+
+.setup-code summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+
+.setup-code pre {
+  max-height: 320px;
+  margin: 8px 0 0;
+  padding: 12px;
+  overflow: auto;
+  border-radius: 12px;
+  background: #241d18;
+  color: #f1e6d4;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.setup-faq {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding-left: 1.1em;
+  line-height: 1.55;
+}
+
+@media (max-width: 520px) {
+  .cloud-bar > .button {
+    width: 100%;
+    justify-content: center;
+    margin-left: 0;
+  }
+
+  .setup-steps > li {
+    padding: 56px 16px 16px;
+  }
+
+  .setup-steps > li::before {
+    top: 14px;
+    left: 16px;
+  }
+
+  .join-card {
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-spinning {
+    animation: none;
+  }
+}

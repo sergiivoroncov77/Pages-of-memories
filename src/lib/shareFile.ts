@@ -44,3 +44,16 @@ export async function copyText(text: string): Promise<boolean> {
 export function appAddress(): string {
   return new URL(import.meta.env.BASE_URL, window.location.origin).href;
 }
+
+/** Send a link through the share sheet; without one, copy it. */
+export async function shareLink(meta: { title: string; text: string; url: string }): Promise<'shared' | 'copied' | 'cancelled' | 'failed'> {
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    try {
+      await navigator.share(meta);
+      return 'shared';
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled';
+    }
+  }
+  return (await copyText(`${meta.text}\n${meta.url}`)) ? 'copied' : 'failed';
+}

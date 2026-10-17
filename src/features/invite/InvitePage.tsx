@@ -29,11 +29,11 @@ export function InvitePage() {
       <PageHeader
         eyebrow="Пригласить в книгу"
         title={person.name}
-        description="Пока без регистрации и паролей: книга путешествует файлом. Так проще всего начать — а позже книгу можно будет связать с облаком."
+        description="Без регистрации и паролей. С семейным хранилищем на Google Диске — по ссылке-приглашению, без него — файлом книги."
         backTo={`/people/${person.id}`}
       />
 
-      {activeBook ? <ShareBookPanel book={activeBook} personName={person.name} /> : (
+      {activeBook ? <ShareBookPanel book={activeBook} person={person} /> : (
         <EmptyState title="Сначала создайте книгу" description="Пригласить можно в книгу — создайте её, добавьте пару моментов и возвращайтесь." action={<Link to="/book" className="button button--primary">К книгам</Link>} />
       )}
 
@@ -54,7 +54,7 @@ export function InvitePage() {
           <span>1</span>
           <BookOpen size={26} aria-hidden="true" />
           <h3>Получает книгу</h3>
-          <p>Открывает приложение по ссылке из сообщения и файл книги — она появляется на его полке.</p>
+          <p>Открывает ссылку-приглашение (или файл книги) — книга появляется у него на полке.</p>
         </Card>
         <Card className="invite-step">
           <span>2</span>
@@ -65,18 +65,18 @@ export function InvitePage() {
         <Card className="invite-step">
           <span>3</span>
           <FileUp size={26} aria-hidden="true" />
-          <h3>Присылает обратно</h3>
-          <p>«Поделиться» в книге — и файл уходит вам. Откройте его в разделе «Книга»: новое добавится, повторы — нет.</p>
+          <h3>Вы видите его вклад</h3>
+          <p>Через хранилище всё новое приходит само. Если делились файлом — он отправляет его обратно, а вы открываете в разделе «Книга».</p>
         </Card>
       </div>
 
       <Card tone="sage" className="privacy-note">
         <ShieldCheck size={26} aria-hidden="true" />
         <div>
-          <h2>Книга остаётся у вас</h2>
+          <h2>Книга остаётся в семье</h2>
           <p>
-            Файл книги видит только тот, кому вы его отправили, — как фото в переписке. Серверов и аккаунтов нет,
-            поэтому не пересылайте файл посторонним и храните резервную копию в настройках.
+            Общая книга лежит на Google Диске владельца хранилища, и открыть её можно только по ссылке-приглашению —
+            поэтому не пересылайте ссылки и файлы книги посторонним. Резервная копия — в настройках.
           </p>
           <Link to="/settings" className="text-link">Открыть настройки данных</Link>
         </div>

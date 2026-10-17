@@ -3,6 +3,7 @@ import { useRef, useState, type ChangeEvent } from 'react';
 import { useAppState } from '../../app/AppState';
 import { Card } from '../../components/Card';
 import { PageHeader } from '../../components/PageHeader';
+import { CloudSettingsCard } from '../cloud/CloudSettingsCard';
 import { Toggle } from '../../components/Toggle';
 import { parseSnapshotImport } from '../../data/repository';
 import type { AppSnapshot, ThemePreference } from '../../data/types';
@@ -76,6 +77,8 @@ export function SettingsPage() {
         </div>
       </Card>
 
+      <CloudSettingsCard />
+
       <Card className="settings-section backup-import">
         <div className="settings-section__heading">
           <span className="settings-section__icon"><FileJson size={23} aria-hidden="true" /></span>
@@ -126,10 +129,10 @@ export function SettingsPage() {
           <span className="settings-section__icon"><ShieldCheck size={23} aria-hidden="true" /></span>
           <div>
             <h2>Хранение и доступ</h2>
-            <p>Истории доступны людям, которые пользуются этим профилем браузера. Облачная синхронизация и семейные аккаунты пока не подключены — книгой можно поделиться файлом в разделе «Книга».</p>
+            <p>Истории доступны людям, которые пользуются этим профилем браузера. Общие книги дополнительно хранятся в семейном хранилище на Google Диске владельца и доступны только участникам книги. Без хранилища книгой можно поделиться файлом в разделе «Книга».</p>
           </div>
         </div>
-        <p>Голосовые ответы, фото и видео до 50 МБ хранятся только на этом устройстве. Резервная копия JSON включает их — скачивайте её, чтобы не потерять записи при очистке браузера.</p>
+        <p>Голосовые ответы, фото и видео до 50 МБ хранятся на этом устройстве, а у общих книг — ещё и в папке книги на Google Диске. Резервная копия JSON включает их — скачивайте её, чтобы не потерять записи при очистке браузера.</p>
       </Card>
 
       <Card className="settings-section">
@@ -205,7 +208,7 @@ export function SettingsPage() {
         {resetStatus ? <p role={resetStatus.error ? 'alert' : 'status'} className={`field-message ${resetStatus.error ? 'field-message--error' : ''}`}>{resetStatus.message}</p> : null}
       </Card>
 
-      <p className="settings-version"><Eye size={16} aria-hidden="true" />Тестовая версия 0.2 · данные на этом устройстве</p>
+      <p className="settings-version"><Eye size={16} aria-hidden="true" />Тестовая версия 0.3 · данные на этом устройстве и в семейном хранилище</p>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { MediaAsset } from '../data/types';
-import { isStoredMedia, mediaStore } from './mediaStore';
+import { isStoredMedia, mediaStore, onMediaStored } from './mediaStore';
 import { publicUrl } from './publicUrl';
 
 export type MediaUrlState =
@@ -12,7 +12,15 @@ export type MediaUrlState =
 export function useMediaUrl(asset: Pick<MediaAsset, 'id' | 'url'> | undefined): MediaUrlState {
   const stored = asset ? isStoredMedia(asset) : false;
   const [resolved, setResolved] = useState<{ key: string; state: MediaUrlState } | null>(null);
-  const key = asset ? `${asset.id}|${asset.url}` : '';
+  // Bumped when the file arrives later, for example from the family storage.
+  const [arrivals, setArrivals] = useState(0);
+  const key = asset ? `${asset.id}|${asset.url}|${arrivals}` : '';
+  const assetId = asset?.id;
+
+  useEffect(() => {
+    if (!assetId || !stored) return;
+    return onMediaStored((id) => { if (id === assetId) setArrivals((count) => count + 1); });
+  }, [assetId, stored]);
 
   useEffect(() => {
     if (!asset || !stored) return;

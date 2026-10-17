@@ -1,6 +1,6 @@
 import { ArrowRight, BookOpen, CalendarDays, Clapperboard, Heart, Pencil, Plus, Search, Share2, Users, X } from 'lucide-react';
 import { useState, type CSSProperties } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { Book3D } from '../../components/Book3D';
 import { Card } from '../../components/Card';
@@ -10,6 +10,9 @@ import { PageHeader } from '../../components/PageHeader';
 import { clothStyle } from '../../lib/cloth';
 import { chapterLabel, toRoman } from '../../lib/film/text';
 import { formatDate, pluralize, truncate } from '../../lib/format';
+import { cloudErrorMessage } from '../../sync/cloudApi';
+import { useCloudSync } from '../../sync/CloudSync';
+import { BookCloudBar } from '../cloud/BookCloudBar';
 import { BookForm, type BookFormValues } from '../library/BookForm';
 import { BookShelf, ImportBookButton } from '../library/BookShelf';
 import { ChapterForm } from '../library/ChapterForm';
@@ -23,12 +26,15 @@ export function BookPage() {
     books, activeBook: book, people, mediaAssets, chaptersForBook, momentsForChapter, perspectivesForMoment, mediaForPerspective, getPerson,
     addMoment, toggleMomentFavorite, createBook, updateBook, setBookCover, deleteBook, createChapter, updateChapter, moveChapter, deleteChapter
   } = useAppState();
+  const cloud = useCloudSync();
   const navigate = useNavigate();
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const [panel, setPanel] = useState<Panel>('none');
   const [momentChapterId, setMomentChapterId] = useState('');
   const [editingChapterId, setEditingChapterId] = useState('');
-  const [notice, setNotice] = useState('');
+  // A message handed over by the previous screen, e.g. after accepting an invitation.
+  const [notice, setNotice] = useState(() => (typeof location.state?.notice === 'string' ? location.state.notice as string : ''));
   const chapters = book ? chaptersForBook(book.id) : [];
   const allMoments = chapters.flatMap((chapter) => momentsForChapter(chapter.id));
   const query = params.get('q') ?? '';
@@ -93,6 +99,13 @@ export function BookPage() {
     setParams({}, { replace: true });
     setPanel('none');
     setNotice(`Книга «${created.title}» создана. Добавьте первый момент или ещё главы.`);
+    // With the family storage connected, a new book goes to Google Drive right away.
+    if (cloud.connection) {
+      cloud.publishBook(created.id).then(
+        () => setNotice(`Книга «${created.title}» создана и сохранена в семейное хранилище. Пригласите близких через «Поделиться».`),
+        (error) => setNotice(`Книга «${created.title}» создана на телефоне. В хранилище сохранить не удалось: ${cloudErrorMessage(error)} Нажмите «Сохранить в Google Диск» позже.`)
+      );
+    }
   };
 
   const submitBookEdit = (values: BookFormValues) => {
@@ -103,10 +116,25 @@ export function BookPage() {
     setNotice('Книга обновлена.');
   };
 
-  const removeBook = () => {
+  const removeBook = async () => {
     if (!book) return;
     const count = allMoments.length;
-    if (!window.confirm(`Удалить книгу «${book.title}»? Будут удалены ${chapters.length} ${pluralize(chapters.length, 'глава', 'главы', 'глав')} и ${count} ${pluralize(count, 'момент', 'момента', 'моментов')} со всеми рассказами, фото и голосами. Это нельзя отменить. Если сомневаетесь, сначала скачайте резервную копию в настройках.`)) return;
+    const shared = cloud.connection ? cloud.books[book.id] : undefined;
+    const contents = `${chapters.length} ${pluralize(chapters.length, 'глава', 'главы', 'глав')} и ${count} ${pluralize(count, 'момент', 'момента', 'моментов')} со всеми рассказами, фото и голосами`;
+    const question = !shared
+      ? `Удалить книгу «${book.title}»? Будут удалены ${contents}. Это нельзя отменить. Если сомневаетесь, сначала скачайте резервную копию в настройках.`
+      : shared.canManage
+        ? `Удалить книгу «${book.title}» для всех? С этого телефона удалятся ${contents}, папка книги уйдёт в корзину Google Диска, а участники перестанут получать изменения (их копии останутся у них).`
+        : `Выйти из книги «${book.title}»? Она удалится с этого телефона и перестанет обновляться. У остальных участников книга останется.`;
+    if (!window.confirm(question)) return;
+    if (shared) {
+      try {
+        await cloud.removeBook(book.id, shared.canManage ? 'delete' : 'leave');
+      } catch (error) {
+        setNotice(`Книга не удалена: ${cloudErrorMessage(error)}`);
+        return;
+      }
+    }
     deleteBook(book.id);
     setParams({}, { replace: true });
     setPanel('none');
@@ -202,10 +230,12 @@ export function BookPage() {
         </div>
       </section>
 
+      <BookCloudBar book={book} />
+
       {panel === 'edit-book' ? <Card className="library-form-card">
         <div className="card-heading"><div><p className="eyebrow">Книга</p><h2>Изменить книгу</h2></div>
           <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setPanel('none')}><X size={20} /></button></div>
-        <BookForm key={book.id} mode="edit" initial={book} photos={bookPhotos} onSubmit={submitBookEdit} onCancel={() => setPanel('none')} onDelete={removeBook} />
+        <BookForm key={book.id} mode="edit" initial={book} photos={bookPhotos} onSubmit={submitBookEdit} onCancel={() => setPanel('none')} onDelete={() => { void removeBook(); }} />
       </Card> : null}
 
       {panel === 'share' ? <div id="share-book"><ShareBookPanel book={book} onClose={() => setPanel('none')} /></div> : null}

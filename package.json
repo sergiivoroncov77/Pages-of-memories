@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "eslint .",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false",
+    "cloud:mock": "node server/google-apps-script/dev/mockServer.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

@@ -94,6 +94,10 @@ interface AppStateValue {
   exportBackup: () => Promise<void>;
   registerDraftFlush: (flush: () => void) => () => void;
   importSnapshot: (snapshot: AppSnapshot) => StorageWriteResult;
+  /** The latest snapshot, also between renders (for background sync). */
+  getSnapshot: () => AppSnapshot;
+  /** Apply changes that came from the family storage; false if they could not be saved. */
+  applyCloudUpdate: (update: (current: AppSnapshot) => AppSnapshot) => boolean;
   /** Moves embedded backup media into the device blob store before replacing the book. */
   restoreBackup: (snapshot: AppSnapshot) => Promise<StorageWriteResult>;
   getPerson: (id: string) => Person | undefined;
@@ -228,6 +232,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setPersistenceError(null);
     setSnapshot(next);
     return result;
+  }, []);
+
+  const getSnapshot = useCallback(() => snapshotRef.current, []);
+
+  const applyCloudUpdate = useCallback((update: (current: AppSnapshot) => AppSnapshot) => {
+    // Original data waiting for recovery must not be overwritten by a sync.
+    if (originalDataRef.current !== undefined) return false;
+    const next = update(snapshotRef.current);
+    if (next === snapshotRef.current) return true;
+    const result = persistSnapshot(next);
+    if (!result.ok) return false;
+    snapshotRef.current = next;
+    persistenceErrorRef.current = null;
+    setPersistenceError(null);
+    setSnapshot(next);
+    return true;
   }, []);
 
   const restoreBackup = useCallback(async (next: AppSnapshot): Promise<StorageWriteResult> => {
@@ -625,6 +645,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         exportBackup,
         registerDraftFlush,
         importSnapshot,
+        getSnapshot,
+        applyCloudUpdate,
         restoreBackup,
         getPerson,
         getQuestion,
