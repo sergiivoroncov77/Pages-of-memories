@@ -4,6 +4,7 @@ import { useAppState } from '../../app/AppState';
 import { StoredAudio } from '../../components/StoredAudio';
 import type { Moment, Perspective } from '../../data/types';
 import { formatDuration } from '../../lib/format';
+import { useCloudSync } from '../../sync/CloudSync';
 import { useAudioRecorder } from '../session/useAudioRecorder';
 
 const extensions: Record<string, string> = { 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg' };
@@ -20,6 +21,7 @@ export function NarrationPanel({ moments, disabled }: { moments: { moment: Momen
 
 function NarrationRow({ moment, script, open, onOpen, onClose, disabled }: { moment: Moment; script: string; open: boolean; onOpen: () => void; onClose: () => void; disabled: boolean }) {
   const { mediaAssets, setMomentNarration } = useAppState();
+  const cloud = useCloudSync();
   const recorder = useAudioRecorder();
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -27,6 +29,8 @@ function NarrationRow({ moment, script, open, onOpen, onClose, disabled }: { mom
   const asset = moment.narrationMediaAssetId ? mediaAssets.find((item) => item.id === moment.narrationMediaAssetId) : undefined;
   const live = recorder.status === 'recording' || recorder.status === 'paused';
   const problem = recorder.status === 'denied' || recorder.status === 'unsupported' || recorder.status === 'error';
+  // In a shared book someone else's voice-over is theirs to replace or delete.
+  const locked = asset ? cloud.deletionBlocker(moment.bookId, { type: 'media', id: asset.id }) : null;
 
   const begin = () => {
     setError('');
@@ -65,12 +69,13 @@ function NarrationRow({ moment, script, open, onOpen, onClose, disabled }: { mom
         <strong>{moment.title}</strong>
         <small>{asset ? 'Озвучка записана' + (asset.durationSeconds ? ' · ' + formatDuration(asset.durationSeconds) : '') : 'Без озвучки'}</small>
       </div>
-      {!open ? <button type="button" className="button button--secondary button--small" onClick={begin} disabled={disabled}>
+      {!open && !locked ? <button type="button" className="button button--secondary button--small" onClick={begin} disabled={disabled}>
         <Mic size={16} aria-hidden="true" /> {asset ? 'Перезаписать' : 'Озвучить'}
       </button> : null}
     </div>
     {asset && !open ? <div className="narration-row__player"><StoredAudio asset={asset} label={'Озвучка: ' + moment.title} />
-      <button type="button" className="icon-button" aria-label={'Удалить озвучку: ' + moment.title} onClick={() => { void remove(); }} disabled={disabled}><Trash2 size={18} /></button></div> : null}
+      {locked ? null : <button type="button" className="icon-button" aria-label={'Удалить озвучку: ' + moment.title} onClick={() => { void remove(); }} disabled={disabled}><Trash2 size={18} /></button>}</div> : null}
+    {locked && !open ? <p className="delete-blocked">Озвучку записали не вы — перезаписать или удалить её может автор или создатель книги.</p> : null}
     {open ? <div className="narration-studio">
       {script ? <div className="narration-script">
         <button type="button" className="text-button" aria-expanded={showScript} onClick={() => setShowScript((value) => !value)}>

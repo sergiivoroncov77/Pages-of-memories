@@ -64,18 +64,65 @@ describe('family server (Code.gs)', () => {
     const pulled = server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 0, changes: [] });
     expect((pulled.entities as { key: string }[]).map((item) => item.key).sort()).toEqual(['book:book_1', 'chapter:c1']);
 
+    // Mama's moment is taken; deleting the owner's chapter is refused and the chapter comes back.
+    const ownerId = (server.post({ action: 'me', token: ownerToken }).member as { id: string }).id;
+    const mamaId = (accepted.member as { id: string }).id;
     const added = server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 2,
       changes: [{ key: 'moment:m1', data: { id: 'm1', title: 'Сенокос' } }, { key: 'chapter:c1', deleted: true }] });
-    expect(added).toMatchObject({ rev: 4 });
+    expect(added).toMatchObject({ rev: 3, denied: ['chapter:c1'] });
     expect(added.entities).toEqual([
-      { key: 'chapter:c1', rev: 4, deleted: true },
-      { key: 'moment:m1', rev: 3, data: { id: 'm1', title: 'Сенокос' } }
+      { key: 'chapter:c1', rev: 2, data: { id: 'c1', title: 'Детство' }, owner: ownerId },
+      { key: 'moment:m1', rev: 3, data: { id: 'm1', title: 'Сенокос' }, owner: mamaId }
     ]);
 
     const ownerView = server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 2, changes: [] });
-    expect((ownerView.entities as { key: string }[]).map((item) => item.key).sort()).toEqual(['chapter:c1', 'moment:m1']);
-    const quiet = server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 4, changes: [] });
-    expect(quiet).toMatchObject({ ok: true, rev: 4, entities: [] });
+    expect((ownerView.entities as { key: string }[]).map((item) => item.key).sort()).toEqual(['moment:m1']);
+    const quiet = server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 3, changes: [] });
+    expect(quiet).toMatchObject({ ok: true, rev: 3, entities: [] });
+  });
+
+  it('lets a relative delete only what they added, and the creator anything', () => {
+    const { server, ownerToken } = ownerWithBook();
+    const sync = (token: string, changes: unknown[]) => server.post({ action: 'sync', token, bookId: 'book_1', sinceRev: 0, changes });
+    const keysOf = (reply: Record<string, unknown>) => (reply.denied as string[]).sort();
+    sync(ownerToken, [
+      { key: 'book:book_1', data: { id: 'book_1', title: 'Книга бабушки' } },
+      { key: 'chapter:c1', data: { id: 'c1', bookId: 'book_1' } },
+      { key: 'moment:m1', data: { id: 'm1', chapterId: 'c1' } }
+    ]);
+    const mamaToken = server.post({ action: 'acceptInvite', code: invite(server, ownerToken) }).token as string;
+    sync(mamaToken, [
+      { key: 'perspective:p1', data: { id: 'p1', momentId: 'm1' } },
+      { key: 'moment:m2', data: { id: 'm2', chapterId: 'c1' } },
+      { key: 'perspective:p2', data: { id: 'p2', momentId: 'm2' } },
+      { key: 'chapter:c2', data: { id: 'c2', bookId: 'book_1' } },
+      { key: 'moment:m3', data: { id: 'm3', chapterId: 'c2' } }
+    ]);
+    // An edit by the creator keeps Mama as the author of her moment.
+    sync(ownerToken, [{ key: 'moment:m3', data: { id: 'm3', chapterId: 'c2', title: 'Поправил' } }, { key: 'reflection:r1', data: { id: 'r1', momentId: 'm3' } }]);
+
+    // Someone else's moment, chapter, the book and a person are refused; her own story goes.
+    const first = sync(mamaToken, [
+      { key: 'moment:m1', deleted: true }, { key: 'chapter:c1', deleted: true }, { key: 'perspective:p1', deleted: true },
+      { key: 'book:book_1', deleted: true }, { key: 'person:person_mama', deleted: true }
+    ]);
+    expect(keysOf(first)).toEqual(['book:book_1', 'chapter:c1', 'moment:m1', 'person:person_mama']);
+    const returned = new Map((first.entities as { key: string; deleted?: boolean }[]).map((item) => [item.key, item]));
+    expect(returned.get('moment:m1')).toMatchObject({ data: { id: 'm1' } });
+    expect(returned.get('perspective:p1')).toMatchObject({ deleted: true });
+
+    // Her chapter still holds her moment with the creator's comment: both stay.
+    const second = sync(mamaToken, [{ key: 'chapter:c2', deleted: true }, { key: 'moment:m3', deleted: true }, { key: 'reflection:r1', deleted: true }]);
+    expect(keysOf(second)).toEqual(['chapter:c2', 'moment:m3', 'reflection:r1']);
+    // Her own moment with her own story goes.
+    const third = sync(mamaToken, [{ key: 'moment:m2', deleted: true }, { key: 'perspective:p2', deleted: true }]);
+    expect(third.denied).toEqual([]);
+
+    // The creator deletes anything, except the book and people through sync.
+    const owner = sync(ownerToken, [{ key: 'chapter:c2', deleted: true }, { key: 'moment:m3', deleted: true }, { key: 'reflection:r1', deleted: true }, { key: 'book:book_1', deleted: true }]);
+    expect(owner.denied).toEqual(['book:book_1']);
+    const state = new Map((sync(ownerToken, []).entities as { key: string; deleted?: boolean }[]).map((item) => [item.key, Boolean(item.deleted)]));
+    expect(Object.fromEntries(state)).toMatchObject({ 'book:book_1': false, 'chapter:c1': false, 'moment:m1': false, 'chapter:c2': true, 'moment:m3': true, 'moment:m2': true });
   });
 
   it('stores Russian text intact in the Drive file', () => {

@@ -328,7 +328,9 @@ function removeMember_(member, request) {
 /**
  * Каждое устройство присылает свои изменения и получает всё, что поменялось
  * с прошлого раза. Записи хранятся по ключам «тип:id»; побеждает последняя
- * присланная правка, удаления хранятся отметками.
+ * присланная правка, удаления хранятся отметками. У каждой записи помнится
+ * автор (owner): участник удаляет только своё, создатель книги — что угодно.
+ * Отклонённые удаления возвращаются телефону, и он восстанавливает записи.
  */
 function sync_(member, request) {
   var book = requireBook_(member, request.bookId);
@@ -347,17 +349,21 @@ function sync_(member, request) {
     if (since > rev) since = 0;
     var now = new Date().toISOString();
     var trash = [];
-    clean.forEach(function (change) {
+    var manager = book.creatorId === member.id || !!member.admin;
+    var denied = deniedDeletions_(state.entities, clean, member.id, book.creatorId, manager);
+    var accepted = clean.filter(function (change) { return !denied[change.key]; });
+    accepted.forEach(function (change) {
       rev += 1;
       var previous = state.entities[change.key];
       if (change.deleted) {
         state.entities[change.key] = { rev: rev, deleted: true, by: member.id, at: now };
         if (change.key.indexOf('file:') === 0 && previous && previous.data && previous.data.fileId) trash.push(String(previous.data.fileId));
       } else {
-        state.entities[change.key] = { rev: rev, data: change.data, by: member.id, at: now };
+        var owner = previous && !previous.deleted ? ownerOf_(previous, book) : member.id;
+        state.entities[change.key] = { rev: rev, data: change.data, by: member.id, at: now, owner: owner };
       }
     });
-    if (clean.length) {
+    if (accepted.length) {
       state.rev = rev;
       driveWriteJson_(book.stateFileId, state);
       var bookEntity = state.entities['book:' + book.id];
@@ -371,11 +377,54 @@ function sync_(member, request) {
     var entities = [];
     Object.keys(state.entities).forEach(function (key) {
       var entry = state.entities[key];
-      if (entry.rev <= since) return;
-      entities.push(entry.deleted ? { key: key, rev: entry.rev, deleted: true } : { key: key, rev: entry.rev, data: entry.data });
+      if (entry.rev <= since && !denied[key]) return;
+      entities.push(entry.deleted ? { key: key, rev: entry.rev, deleted: true }
+        : { key: key, rev: entry.rev, data: entry.data, owner: ownerOf_(entry, book) });
     });
-    return ok_({ rev: Number(state.rev) || 0, entities: entities, title: book.title });
+    return ok_({ rev: Number(state.rev) || 0, entities: entities, title: book.title, denied: Object.keys(denied) });
   });
+}
+
+/** Записи, созданные до учёта авторов, считаются записями создателя книги. */
+function ownerOf_(entry, book) {
+  return entry.owner || book.creatorId;
+}
+
+/**
+ * Какие удаления не принимать. Книгу и людей через синхронизацию не удаляет
+ * никто. Участник удаляет только свои записи, и момент или главу — только
+ * если внутри не остаётся чужого: иначе чужие рассказы пропали бы у всех.
+ */
+function deniedDeletions_(entities, changes, memberId, creatorId, manager) {
+  var denied = {};
+  var deleting = {};
+  changes.forEach(function (change) {
+    if (!change.deleted) return;
+    if (/^(book|person):/.test(change.key)) denied[change.key] = true;
+    else deleting[change.key] = true;
+  });
+  if (manager) return denied;
+  var live = function (key) { var entry = entities[key]; return !!entry && !entry.deleted; };
+  var mine = function (key) { return !live(key) || (entities[key].owner || creatorId) === memberId; };
+  var removed = function (key) { return deleting[key] && !denied[key]; };
+  Object.keys(deleting).forEach(function (key) { if (!mine(key)) denied[key] = true; });
+  // Что останется внутри: для момента — чужие рассказы и отклики, для главы — любые моменты.
+  var remainsInside = function (parentKey, prefix, field, onlyOthers) {
+    var id = parentKey.slice(parentKey.indexOf(':') + 1);
+    return Object.keys(entities).some(function (key) {
+      if (key.indexOf(prefix) !== 0 || !live(key) || removed(key)) return false;
+      var data = entities[key].data;
+      return !!data && data[field] === id && (!onlyOthers || !mine(key));
+    });
+  };
+  Object.keys(deleting).forEach(function (key) {
+    if (key.indexOf('moment:') === 0 && !denied[key]
+      && (remainsInside(key, 'perspective:', 'momentId', true) || remainsInside(key, 'reflection:', 'momentId', true))) denied[key] = true;
+  });
+  Object.keys(deleting).forEach(function (key) {
+    if (key.indexOf('chapter:') === 0 && !denied[key] && remainsInside(key, 'moment:', 'chapterId', false)) denied[key] = true;
+  });
+  return denied;
 }
 
 function cleanChange_(change) {

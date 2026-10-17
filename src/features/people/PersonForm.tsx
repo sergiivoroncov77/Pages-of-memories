@@ -9,11 +9,13 @@ interface PersonFormProps {
   onSubmit: (values: PersonInput) => void;
   onCancel: () => void;
   onDelete?: () => void;
+  /** Why the person cannot be deleted here, shown instead of the delete button. */
+  deleteNote?: string;
 }
 
 const RELATIONS = ['Бабушка', 'Дедушка', 'Мама', 'Папа', 'Сестра', 'Брат', 'Тётя', 'Дядя', 'Дочь', 'Сын', 'Друг семьи'];
 
-export function PersonForm({ initial, submitLabel, onSubmit, onCancel, onDelete }: PersonFormProps) {
+export function PersonForm({ initial, submitLabel, onSubmit, onCancel, onDelete, deleteNote }: PersonFormProps) {
   const [name, setName] = useState(initial?.name ?? '');
   const [relation, setRelation] = useState(initial?.relation ?? '');
   const [birthYear, setBirthYear] = useState(initial?.birthYear ? String(initial.birthYear) : '');
@@ -61,6 +63,7 @@ export function PersonForm({ initial, submitLabel, onSubmit, onCancel, onDelete 
           </button>
         ) : null}
       </div>
+      {deleteNote ? <p className="delete-blocked">{deleteNote}</p> : null}
     </form>
   );
 }

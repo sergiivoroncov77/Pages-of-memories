@@ -23,6 +23,10 @@ export interface CloudBookState {
   fingerprints: Record<string, string>;
   files: Record<string, CloudFile>;
   people: string[];
+  /** Who added each record (member id), as the storage reports it. */
+  owners: Record<string, string>;
+  /** Removed from this phone only: the membership stays, and the book can be brought back. */
+  detached?: boolean;
   /** Who this device is in the book, from the invitation. */
   personId?: string;
   creatorId?: string;
@@ -43,7 +47,7 @@ export const CLOUD_STATE_KEY = 'family-stories:cloud:v1';
 export const emptyCloudState = (): CloudState => ({ version: 1, books: {} });
 
 export function freshBookState(extra: Partial<CloudBookState> = {}): CloudBookState {
-  return { rev: 0, fingerprints: {}, files: {}, people: [], ...extra };
+  return { rev: 0, fingerprints: {}, files: {}, people: [], owners: {}, ...extra };
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -54,14 +58,16 @@ function parseBook(value: unknown): CloudBookState | null {
   Object.entries(value.files).forEach(([id, file]) => {
     if (isRecord(file) && typeof file.fileId === 'string') files[id] = { fileId: file.fileId, size: typeof file.size === 'number' ? file.size : undefined };
   });
-  const fingerprints: Record<string, string> = {};
-  Object.entries(value.fingerprints).forEach(([key, hash]) => { if (typeof hash === 'string') fingerprints[key] = hash; });
+  const strings = (record: unknown) => Object.fromEntries(Object.entries(isRecord(record) ? record : {})
+    .filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
   const text = (field: unknown) => (typeof field === 'string' ? field : undefined);
   return {
     rev: Math.max(0, Math.floor(value.rev)),
-    fingerprints,
+    fingerprints: strings(value.fingerprints),
     files,
     people: Array.isArray(value.people) ? value.people.filter((id): id is string => typeof id === 'string') : [],
+    owners: strings(value.owners),
+    detached: value.detached === true ? true : undefined,
     personId: text(value.personId),
     creatorId: text(value.creatorId),
     creatorName: text(value.creatorName),

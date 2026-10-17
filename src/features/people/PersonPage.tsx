@@ -11,6 +11,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { ProgressBar } from '../../components/ProgressBar';
 import type { QuestionStatus } from '../../data/types';
 import { formatDate, pluralize, truncate } from '../../lib/format';
+import { useCloudSync } from '../../sync/CloudSync';
 import { PersonForm } from './PersonForm';
 
 const statusCopy: Record<QuestionStatus, string> = {
@@ -23,9 +24,11 @@ const statusCopy: Record<QuestionStatus, string> = {
 export function PersonPage() {
   const { personId } = useParams();
   const { getPerson, questionsForPerson, memoriesForPerson, moments, perspectives, chapters, mediaAssets, drafts, updatePerson, deletePerson } = useAppState();
+  const cloud = useCloudSync();
   const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const person = personId ? getPerson(personId) : undefined;
+  const sharedIn = person ? cloud.sharedBooksWithPerson(person.id) : [];
 
   if (!person) {
     return (
@@ -87,11 +90,12 @@ export function PersonPage() {
             <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setEditing(false)}><X size={20} /></button></div>
           <PersonForm key={person.id} initial={person} submitLabel="Сохранить" onCancel={() => setEditing(false)}
             onSubmit={(values) => { updatePerson(person.id, values); setEditing(false); }}
-            onDelete={() => {
+            onDelete={sharedIn.length ? undefined : () => {
               if (!window.confirm(`Удалить «${person.name}» из близких? Вопросы, черновики и ответы интервью этого человека удалятся. Истории, уже добавленные в книгу, останутся — без подписи.`)) return;
               deletePerson(person.id);
               navigate('/people');
-            }} />
+            }}
+            deleteNote={sharedIn.length ? `«${person.name}» есть в общих книгах: ${sharedIn.map((title) => `«${title}»`).join(', ')}. Чтобы рассказы не потеряли подпись у всех участников, удалить этого человека нельзя.` : undefined} />
         </Card>
       ) : null}
 

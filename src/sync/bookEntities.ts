@@ -31,6 +31,8 @@ export interface RemoteEntity {
   rev: number;
   data?: EntityData;
   deleted?: boolean;
+  /** Member who added the record. */
+  owner?: string;
 }
 
 export const entityKey = (type: EntityType, id: string) => `${type}:${id}`;

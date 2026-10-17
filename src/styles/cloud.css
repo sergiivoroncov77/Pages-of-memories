@@ -372,3 +372,165 @@
     animation: none;
   }
 }
+
+/* ---------- Choices: delete here or for everyone ---------- */
+
+.choice-dialog {
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 22px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 22%);
+}
+
+.choice-dialog::backdrop {
+  background: rgb(30 22 16 / 45%);
+}
+
+.choice-dialog h2 {
+  margin: 0 0 10px;
+  font-size: 1.25rem;
+}
+
+.choice-dialog__body {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.choice-dialog__body p {
+  margin: 0;
+}
+
+.choice-dialog__choices {
+  display: grid;
+  gap: 10px;
+}
+
+.choice-dialog__choice {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-height: 56px;
+  padding: 12px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: var(--surface-warm);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.choice-dialog__choice span {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.choice-dialog__choice:hover:not(:disabled),
+.choice-dialog__choice:focus-visible {
+  border-color: var(--primary);
+}
+
+.choice-dialog__choice--danger strong {
+  color: var(--danger);
+}
+
+.choice-dialog__choice--danger:hover:not(:disabled),
+.choice-dialog__choice--danger:focus-visible {
+  border-color: var(--danger);
+}
+
+.choice-dialog__choice:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.choice-dialog .field-message {
+  margin: 12px 0 0;
+}
+
+.choice-dialog__cancel {
+  width: 100%;
+  margin-top: 12px;
+  justify-content: center;
+}
+
+.delete-blocked {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+/* Delete buttons on a story or a comment: quiet until needed. */
+.perspective-card__delete,
+.reflection-card__delete {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.perspective-card__delete:hover:not(:disabled),
+.reflection-card__delete:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.reflection-card > div {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.reflection-card__delete {
+  margin: -6px -6px 0 0;
+}
+
+.fresh-shared {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+
+.fresh-shared legend {
+  padding: 0 6px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.fresh-shared__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.fresh-shared__option input {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: var(--primary);
+}
+
+.fresh-shared__option span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+
+.fresh-shared__option small {
+  color: var(--ink-soft);
+  line-height: 1.45;
+}

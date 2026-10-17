@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createBookInSnapshot, createPersonInSnapshot, emptySnapshot } from '../data/library';
+import { createBookInSnapshot, createPersonInSnapshot, deleteBookFromSnapshot, deleteMomentsFromSnapshot, emptySnapshot } from '../data/library';
 import {
   addMediaAssetToSnapshot,
   addMomentToSnapshot,
@@ -16,7 +16,8 @@ import type { AppSnapshot } from '../data/types';
 import { createMemoryMediaStore, storedMediaUrl } from '../lib/mediaStore';
 import { loadFamilyServer, type FamilyServer } from '../../server/google-apps-script/dev/fakeGoogle.mjs';
 import { createDriveTransfer, type FetchLike } from './cloudApi';
-import { createCloudStateStore } from './cloudState';
+import { createCloudStateStore, freshBookState } from './cloudState';
+import { deletionBlocker } from './permissions';
 import { createSyncEngine } from './syncEngine';
 
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbTestDeployment1234567890/exec';
@@ -156,14 +157,112 @@ describe('cloud sync engine', () => {
     await mama.engine.syncBook(setup.bookId);
     expect(mama.snapshot.moments.find((item) => item.id === setup.momentId)?.title).toBe('Сенокос, 1962');
 
+    // The creator deletes the moment: it goes for everyone, with its photo.
     const fileId = owner.store.get().books[setup.bookId].files.media_photo1.fileId;
-    mama.edit((snapshot) => ({ ...snapshot, moments: snapshot.moments.filter((item) => item.id !== setup.momentId) }));
+    expect(await mama.blobs.get('media_photo1')).toBeDefined();
+    owner.edit((snapshot) => deleteMomentsFromSnapshot(snapshot, [setup.momentId]).snapshot);
+    await owner.engine.syncBook(setup.bookId);
+    await mama.engine.syncBook(setup.bookId);
+    expect(mama.snapshot.moments.some((item) => item.id === setup.momentId)).toBe(false);
+    expect(mama.snapshot.mediaAssets.some((item) => item.id === 'media_photo1')).toBe(false);
+    expect(await mama.blobs.get('media_photo1')).toBeUndefined();
+    expect(server.fake.drive.files.get(fileId)?.trashed).toBe(true);
+  });
+
+  it('lets a relative delete only what she added and brings back the rest', async () => {
+    const { owner, mama, setup } = await ownerAndMama();
+    const memberId = mama.store.get().connection!.memberId;
+    const mamaBook = () => mama.store.get().books[setup.bookId];
+    expect(deletionBlocker(mama.snapshot, mamaBook(), memberId, { type: 'moment', id: setup.momentId })).toContain('Сергей');
+    expect(deletionBlocker(owner.snapshot, owner.store.get().books[setup.bookId], owner.store.get().connection!.memberId, { type: 'moment', id: setup.momentId })).toBeNull();
+
+    // Deleting the owner's moment anyway (an old app, a race): the storage refuses and it comes back with its photo.
+    mama.edit((snapshot) => deleteMomentsFromSnapshot(snapshot, [setup.momentId]).snapshot);
+    await mama.blobs.delete('media_photo1');
+    const refused = await mama.engine.syncBook(setup.bookId);
+    expect(refused.denied).toBeGreaterThan(0);
+    expect(mama.snapshot.moments.find((item) => item.id === setup.momentId)?.title).toBe('Сенокос');
+    expect(mama.snapshot.mediaAssets.some((item) => item.id === 'media_photo1')).toBe(true);
+    expect(await mama.blobs.get('media_photo1')).toBeDefined();
+    expect(mama.engine.hasLocalChanges(setup.bookId)).toBe(false);
+    await owner.engine.syncBook(setup.bookId);
+    expect(owner.snapshot.moments.some((item) => item.id === setup.momentId)).toBe(true);
+
+    // Her own moment, with her story and the owner's comment on it.
+    const own = createMoment({ bookId: setup.bookId, chapterId: setup.chapterId, title: 'Мамин момент', summary: '' });
+    mama.edit((snapshot) => addPerspectiveToSnapshot(addMomentToSnapshot(snapshot, own), createPerspective({ momentId: own.id, type: 'text', content: 'Моё', authorId: setup.mamaId, isPrimary: true })));
+    await mama.engine.syncBook(setup.bookId);
+    expect(deletionBlocker(mama.snapshot, mamaBook(), memberId, { type: 'moment', id: own.id })).toBeNull();
+    await owner.engine.syncBook(setup.bookId);
+    owner.edit((snapshot) => addReflectionToSnapshot(snapshot, createReflection({ momentId: own.id, text: 'Здорово!' })));
+    await owner.engine.syncBook(setup.bookId);
+    await mama.engine.syncBook(setup.bookId);
+    expect(deletionBlocker(mama.snapshot, mamaBook(), memberId, { type: 'moment', id: own.id })).toContain('других участников');
+    expect(deletionBlocker(mama.snapshot, mamaBook(), memberId, { type: 'chapter', id: setup.chapterId })).toContain('добавили не вы');
+
+    // Without the comment, her moment is hers to delete — for everyone.
+    owner.edit((snapshot) => ({ ...snapshot, reflections: snapshot.reflections.filter((item) => item.momentId !== own.id) }));
+    await owner.engine.syncBook(setup.bookId);
+    await mama.engine.syncBook(setup.bookId);
+    mama.edit((snapshot) => deleteMomentsFromSnapshot(snapshot, [own.id]).snapshot);
+    expect((await mama.engine.syncBook(setup.bookId)).denied).toBe(0);
+    await owner.engine.syncBook(setup.bookId);
+    expect(owner.snapshot.moments.some((item) => item.id === own.id)).toBe(false);
+  });
+
+  it('removes a book from one phone only and brings it back later', async () => {
+    const { server, owner, mama, setup } = await ownerAndMama();
+    await mama.engine.removeBook(setup.bookId, 'local');
+    mama.edit((snapshot) => deleteBookFromSnapshot(snapshot, setup.bookId).snapshot);
+    await mama.engine.syncAll();
+    expect(mama.snapshot.books.some((book) => book.id === setup.bookId)).toBe(false);
+    expect(mama.store.get().books[setup.bookId]).toMatchObject({ detached: true });
+    expect(mama.engine.hasLocalChanges(setup.bookId)).toBe(false);
+    // Nothing changed for the owner, and Mama is still a member.
+    await owner.engine.syncAll();
+    expect(owner.snapshot.moments.some((item) => item.id === setup.momentId)).toBe(true);
+    const members = server.post({ action: 'members', token: owner.store.get().connection!.token, bookId: setup.bookId }).members as { name: string }[];
+    expect(members.map((item) => item.name)).toContain('Мама');
+
+    await mama.engine.attachBook(setup.bookId);
+    expect(mama.snapshot.moments.find((item) => item.id === setup.momentId)?.title).toBe('Сенокос');
+    expect(await mama.blobs.get('media_photo1')).toBeDefined();
+
+    // A new invitation also brings a removed book back.
+    await mama.engine.removeBook(setup.bookId, 'local');
+    mama.edit((snapshot) => deleteBookFromSnapshot(snapshot, setup.bookId).snapshot);
+    const { code } = await owner.engine.createInvite(setup.bookId);
+    await mama.engine.acceptInvite(SERVER_URL, code, 'Мама');
+    expect(mama.store.get().books[setup.bookId].detached).toBeUndefined();
+    expect(mama.snapshot.moments.some((item) => item.id === setup.momentId)).toBe(true);
+  });
+
+  it('never sends deletions from a replaced archive (backup, demo, fresh start)', async () => {
+    const { owner, mama, setup } = await ownerAndMama();
+    const story = createPerspective({ momentId: setup.momentId, type: 'text', content: 'Мамин рассказ', authorId: setup.mamaId });
+    mama.edit((snapshot) => addPerspectiveToSnapshot(snapshot, story));
     await mama.engine.syncBook(setup.bookId);
     await owner.engine.syncBook(setup.bookId);
-    expect(owner.snapshot.moments.some((item) => item.id === setup.momentId)).toBe(false);
-    expect(owner.snapshot.mediaAssets.some((item) => item.id === 'media_photo1')).toBe(false);
-    expect(await owner.blobs.get('media_photo1')).toBeUndefined();
-    expect(server.fake.drive.files.get(fileId)?.trashed).toBe(true);
+    expect(owner.snapshot.perspectives.some((item) => item.id === story.id)).toBe(true);
+
+    // An older backup without Mama's story: it is taken back from the storage, not deleted.
+    owner.edit(() => setup.snapshot);
+    owner.engine.snapshotReplaced('pull');
+    await owner.engine.syncAll();
+    expect(owner.snapshot.perspectives.some((item) => item.id === story.id)).toBe(true);
+    await mama.engine.syncAll();
+    expect(mama.snapshot.perspectives.some((item) => item.id === story.id)).toBe(true);
+
+    // A fresh start: shared books leave this phone only and can come back.
+    owner.edit(() => emptySnapshot(owner.snapshot.settings, 'Новый архив'));
+    owner.engine.snapshotReplaced('detach');
+    await owner.engine.syncAll();
+    expect(owner.snapshot.books.some((book) => book.id === setup.bookId)).toBe(false);
+    await mama.engine.syncAll();
+    expect(mama.snapshot.perspectives.some((item) => item.id === story.id)).toBe(true);
+    expect(mama.snapshot.moments.some((item) => item.id === setup.momentId)).toBe(true);
+    await owner.engine.attachBook(setup.bookId);
+    expect(owner.snapshot.perspectives.some((item) => item.id === story.id)).toBe(true);
   });
 
   it('keeps an edit made while a sync was in flight and sends it next time', async () => {
@@ -243,9 +342,10 @@ describe('cloud sync engine', () => {
     const linked = owner.snapshot.moments.find((moment) => moment.bookId === bookId && moment.sourceMemoryId)!;
     await owner.engine.connectOwner(SERVER_URL, 'Сергей');
     await owner.engine.publishBook(bookId);
-    const relative = device(server, emptySnapshot(resetSnapshot().settings, 'Родственник'));
-    const { code } = await owner.engine.createInvite(bookId);
-    await relative.engine.acceptInvite(SERVER_URL, code, 'Родственник');
+    // The owner's second device (same key): it may delete what the owner's phone added.
+    const relative = device(server, emptySnapshot(resetSnapshot().settings, 'Планшет'));
+    relative.store.update(() => ({ version: 1, connection: owner.store.get().connection, books: { [bookId]: freshBookState({ canManage: true }) } }));
+    await relative.engine.syncBook(bookId);
     const copy = relative.snapshot.moments.find((moment) => moment.id === linked.id)!;
     expect(copy.sourceMemoryId).toBeUndefined();
     relative.edit((snapshot) => ({ ...snapshot, moments: snapshot.moments.filter((moment) => moment.id !== linked.id) }));

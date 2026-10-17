@@ -10,6 +10,8 @@ import type { AppSnapshot, ThemePreference } from '../../data/types';
 import { formatFileSize } from '../../lib/format';
 import { isStoredMedia, storedMediaUrl } from '../../lib/mediaStore';
 import { estimateStorageBytes, MAX_STORAGE_BYTES } from '../../lib/storage';
+import { cloudErrorMessage } from '../../sync/cloudApi';
+import { useCloudSync } from '../../sync/CloudSync';
 
 const MAX_BACKUP_FILE_BYTES = 500 * 1024 * 1024;
 
@@ -28,7 +30,13 @@ export function SettingsPage() {
   const [resetStatus, setResetStatus] = useState<{ error: boolean; message: string } | null>(null);
   const [isReading, setIsReading] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [sharedOnFresh, setSharedOnFresh] = useState<'local' | 'everyone'>('local');
+  const cloud = useCloudSync();
   const fileReadVersion = useRef(0);
+  // Shared books on this phone, and those this phone created: only those can go for everyone.
+  const sharedHere = snapshot.books.filter((item) => cloud.books[item.id]);
+  const createdHere = sharedHere.filter((item) => cloud.books[item.id].creatorId === cloud.connection?.memberId);
+  const quoted = (items: { title: string }[]) => items.map((item) => `«${item.title}»`).join(', ');
   const storageSize = estimateStorageBytes(JSON.stringify(snapshot));
   const storageKb = Math.max(1, Math.round(storageSize / 1024));
   const deviceMediaBytes = snapshot.mediaAssets.filter(isStoredMedia).reduce((total, asset) => total + (asset.sizeBytes ?? 0), 0);
@@ -114,9 +122,13 @@ export function SettingsPage() {
                   setImportError(`${result.error.message} Текущая книга не изменена.`);
                   return;
                 }
+                // Shared books in the copy are checked against the storage, so an old copy deletes nothing there.
+                cloud.snapshotReplaced('pull');
                 setPendingImport(null);
                 setImportError('');
-                setNotice('Книга восстановлена и сохранена в этом браузере.');
+                setNotice(sharedHere.length
+                  ? 'Книга восстановлена. Общие книги сверятся с семейным хранилищем: у близких ничего не удалится.'
+                  : 'Книга восстановлена и сохранена в этом браузере.');
               }}>{isRestoring ? 'Восстанавливаем…' : 'Заменить книгу этой копией'}</button>
               <button type="button" className="button button--secondary button--normal" onClick={() => setPendingImport(null)}>Отмена</button>
             </div>
@@ -163,14 +175,48 @@ export function SettingsPage() {
             <p>Для настоящей семейной книги: демо-семья, её книга и ответы удалятся, останутся только настройки оформления. Если вы уже что-то добавили, сначала скачайте копию.</p>
           </div>
         </div>
+        {sharedHere.length ? (
+          <fieldset className="fresh-shared">
+            <legend>Общие книги на этом телефоне: {quoted(sharedHere)}</legend>
+            <label className="fresh-shared__option">
+              <input type="radio" name="fresh-shared" checked={sharedOnFresh === 'local'} onChange={() => setSharedOnFresh('local')} />
+              <span><strong>Убрать только с этого телефона</strong><small>У близких всё останется. Вернуть книги сюда можно в «Семейном хранилище» выше.</small></span>
+            </label>
+            {createdHere.length ? (
+              <label className="fresh-shared__option">
+                <input type="radio" name="fresh-shared" checked={sharedOnFresh === 'everyone'} onChange={() => setSharedOnFresh('everyone')} />
+                <span><strong>Удалить у всех участников созданные мной: {quoted(createdHere)}</strong>
+                  <small>{createdHere.length < sharedHere.length ? 'Книги, в которые вас пригласили, просто уберутся с этого телефона — у их создателей ничего не удалится.' : 'Папки книг уйдут в корзину Google Диска хранилища, участники перестанут получать изменения.'}</small></span>
+              </label>
+            ) : null}
+          </fieldset>
+        ) : null}
         <label className="field">
           <span>Как назвать ваш семейный архив</span>
           <input value={freshTitle} onChange={(event) => setFreshTitle(event.target.value)} maxLength={80} placeholder="Например, «Семья Ивановых»" />
         </label>
         <button type="button" className="button button--danger button--normal" disabled={isRestoring} onClick={async () => {
-          if (!window.confirm('Удалить все книги, близких, ответы и материалы на этом устройстве и начать заново? Это нельзя отменить.')) return;
+          const everyone = sharedHere.length > 0 && createdHere.length > 0 && sharedOnFresh === 'everyone';
+          const sharedNote = !sharedHere.length ? '' : everyone
+            ? ` ${createdHere.length === 1 ? 'Книга' : 'Книги'} ${quoted(createdHere)} ${createdHere.length === 1 ? 'удалится' : 'удалятся'} и у всех участников.`
+            : ' У близких общие книги останутся.';
+          if (!window.confirm(`Удалить все книги, близких, ответы и материалы на этом устройстве и начать заново?${sharedNote} Это нельзя отменить.`)) return;
           setIsRestoring(true);
+          setResetStatus(null);
+          if (everyone) {
+            for (const item of createdHere) {
+              try {
+                await cloud.removeBook(item.id, 'delete');
+              } catch (error) {
+                setIsRestoring(false);
+                setResetStatus({ error: true, message: `Не удалось удалить у всех «${item.title}»: ${cloudErrorMessage(error)} Телефон не очищен — попробуйте ещё раз, когда будет связь.` });
+                return;
+              }
+            }
+          }
           const result = await startFresh(freshTitle);
+          // Shared books left on this phone are removed from it only, never from the storage.
+          if (result.ok) cloud.snapshotReplaced('detach');
           setIsRestoring(false);
           setPendingImport(null);
           setImportError('');
@@ -191,7 +237,7 @@ export function SettingsPage() {
           </div>
         </div>
         <button type="button" className="button button--danger button--normal" disabled={isRestoring} onClick={async () => {
-          if (!window.confirm('Заменить все истории, материалы и черновики демо-данными? Сохраните резервную копию перед сбросом.')) return;
+          if (!window.confirm(`Заменить все истории, материалы и черновики демо-данными?${sharedHere.length ? ' Общие книги уберутся только с этого телефона — у близких они останутся.' : ''} Сохраните резервную копию перед сбросом.`)) return;
           setIsRestoring(true);
           const result = await resetDemo();
           setIsRestoring(false);
@@ -199,6 +245,8 @@ export function SettingsPage() {
             setResetStatus({ error: true, message: `${result.error.message} Текущая книга не изменена.` });
             return;
           }
+          // Shared books are not reset: they leave this phone, or are taken again from the storage.
+          cloud.snapshotReplaced('detach');
           setPendingImport(null);
           setImportError('');
           setResetStatus({ error: false, message: 'Демонстрационная книга восстановлена.' });

@@ -76,10 +76,10 @@ export function CloudSettingsCard() {
       : ' Чтобы подключиться снова, понадобится новое приглашение.';
     if (window.confirm(`Отключить этот телефон от семейного хранилища? Книги останутся на телефоне, но перестанут обновляться.${warning}`)) cloud.disconnect();
   };
-  const join = async (bookId: string) => {
+  const join = async (bookId: string, back: boolean) => {
     setJoining(bookId);
     setError('');
-    try { await cloud.joinBook(bookId); } catch (failure) { setError(cloudErrorMessage(failure)); } finally { setJoining(''); }
+    try { await (back ? cloud.attachBook(bookId) : cloud.joinBook(bookId)); } catch (failure) { setError(cloudErrorMessage(failure)); } finally { setJoining(''); }
   };
 
   return (
@@ -109,8 +109,24 @@ export function CloudSettingsCard() {
             {cloud.otherBooks.map((book) => (
               <li key={book.id}>
                 <span><strong>{book.title}</strong> · создатель {book.creatorName}</span>
-                <button type="button" className="button button--secondary button--small" disabled={joining === book.id} onClick={() => { void join(book.id); }}>
+                <button type="button" className="button button--secondary button--small" disabled={joining === book.id} onClick={() => { void join(book.id, false); }}>
                   {joining === book.id ? 'Открываем…' : 'Открыть на этом телефоне'}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {cloud.detachedBooks.length ? (
+        <div className="cloud-other-books">
+          <h3>Убраны с этого телефона</h3>
+          <p>Вы по-прежнему участник этих книг, и у близких они на месте. Вернуть книгу — значит снова скачать её из хранилища со всеми новыми рассказами.</p>
+          <ul>
+            {cloud.detachedBooks.map((book) => (
+              <li key={book.id}>
+                <span><strong>{book.title}</strong>{book.creatorName ? ` · создатель ${book.creatorName}` : ''}</span>
+                <button type="button" className="button button--secondary button--small" disabled={joining === book.id} onClick={() => { void join(book.id, true); }}>
+                  {joining === book.id ? 'Скачиваем…' : 'Вернуть на телефон'}
                 </button>
               </li>
             ))}

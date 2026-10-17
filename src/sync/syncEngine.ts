@@ -73,6 +73,8 @@ export interface BookSyncOutcome {
   downloaded: number;
   /** Files that could not be uploaded or downloaded this time. */
   mediaPending: number;
+  /** Deletions the storage refused (someone else's records); they came back. */
+  denied: number;
   reason?: string;
 }
 
@@ -80,6 +82,7 @@ interface SyncReply {
   rev: number;
   entities: RemoteEntity[];
   title?: string;
+  denied?: string[];
 }
 
 const UNLINK_CODES = new Set(['not_member', 'book_not_found']);
@@ -99,6 +102,8 @@ const extensionFor = (mimeType: string) => {
 export function createSyncEngine(env: SyncEnvironment) {
   const accessCache = new Map<string, MediaAccess>();
   let queue: Promise<unknown> = Promise.resolve();
+  // Bumped when a book's sync position is reset; a reply that was already on its way is then dropped.
+  let generation = 0;
   const now = () => (env.now ? env.now() : new Date());
 
   function serial<T>(task: () => Promise<T>): Promise<T> {
@@ -137,6 +142,9 @@ export function createSyncEngine(env: SyncEnvironment) {
     });
   }
 
+  /** Start the book over from the storage: take everything, send nothing that looks like a deletion. */
+  const restart = (book: CloudBookState): CloudBookState => ({ ...book, rev: 0, fingerprints: {}, owners: {} });
+
   function unlink(bookId: string) {
     accessCache.delete(bookId);
     env.store.update((state) => {
@@ -144,6 +152,20 @@ export function createSyncEngine(env: SyncEnvironment) {
       delete books[bookId];
       return { ...state, books };
     });
+  }
+
+  /** The book's state when it comes back to this phone (an invitation, the owner joining). */
+  function returning(book: CloudBookState | undefined): CloudBookState {
+    if (!book) return freshBookState();
+    if (!book.detached) return book;
+    generation += 1;
+    return { ...restart(book), detached: undefined };
+  }
+
+  function detach(bookId: string) {
+    generation += 1;
+    accessCache.delete(bookId);
+    updateBook(bookId, (book) => ({ ...restart(book), detached: true }));
   }
 
   async function mediaAccess(bookId: string, refresh = false): Promise<MediaAccess> {
@@ -172,12 +194,13 @@ export function createSyncEngine(env: SyncEnvironment) {
   const scopeOf = (book: CloudBookState) => ({ files: book.files, people: book.people });
 
   /** Send local changes, take everyone else's, and remember what was exchanged. */
-  async function exchange(bookId: string, changes: CloudChange[], local: EntityMap): Promise<{ pulled: number }> {
+  async function exchange(bookId: string, changes: CloudChange[], local: EntityMap): Promise<{ pulled: number; denied: number }> {
     const before = bookState(bookId);
-    if (!before) return { pulled: 0 };
+    if (!before) return { pulled: 0, denied: 0 };
+    const sent = generation;
     const reply = await call<SyncReply>('sync', { bookId, sinceRev: before.rev, changes });
     const afterReply = bookState(bookId);
-    if (!afterReply) return { pulled: 0 };
+    if (!afterReply || sent !== generation || afterReply.detached) return { pulled: 0, denied: 0 };
     // Records edited on this phone while the request was out win over what came back.
     const current = collectBookEntities(env.getSnapshot(), bookId, scopeOf(afterReply));
     const hashOf = (map: EntityMap, key: string) => (map.has(key) ? entityHash(map.get(key)!) : null);
@@ -196,6 +219,11 @@ export function createSyncEngine(env: SyncEnvironment) {
       else delete files[id];
     });
     const people = [...new Set([...afterReply.people, ...(applied?.people ?? [])])];
+    const owners = { ...afterReply.owners };
+    reply.entities.forEach((entity) => {
+      if (entity.deleted) delete owners[entity.key];
+      else if (entity.owner) owners[entity.key] = entity.owner;
+    });
     const after = collectBookEntities(env.getSnapshot(), bookId, { files, people });
     const fingerprints = { ...afterReply.fingerprints };
     const touched = new Set([...changes.map((change) => change.key), ...incoming.map((entity) => entity.key)]);
@@ -206,9 +234,9 @@ export function createSyncEngine(env: SyncEnvironment) {
       if (after.has(key)) fingerprints[key] = entityHash(after.get(key)!);
       else delete fingerprints[key];
     });
-    updateBook(bookId, (book) => ({ ...book, rev: reply.rev, fingerprints, files, people, title: reply.title ?? book.title, lastSyncAt: now().toISOString() }));
+    updateBook(bookId, (book) => ({ ...book, rev: reply.rev, fingerprints, files, people, owners, title: reply.title ?? book.title, lastSyncAt: now().toISOString() }));
     applied?.removedMediaIds.forEach((assetId) => { void env.blobs.delete(assetId).catch(() => undefined); });
-    return { pulled: incoming.length };
+    return { pulled: incoming.length, denied: reply.denied?.length ?? 0 };
   }
 
   async function uploadMissing(bookId: string): Promise<{ uploaded: number; pending: number }> {
@@ -259,13 +287,15 @@ export function createSyncEngine(env: SyncEnvironment) {
   }
 
   async function syncBookNow(bookId: string): Promise<BookSyncOutcome> {
-    const outcome: BookSyncOutcome = { bookId, status: 'synced', pushed: 0, pulled: 0, uploaded: 0, downloaded: 0, mediaPending: 0 };
+    const outcome: BookSyncOutcome = { bookId, status: 'synced', pushed: 0, pulled: 0, uploaded: 0, downloaded: 0, mediaPending: 0, denied: 0 };
     try {
       let book = bookState(bookId);
       if (!book) throw new CloudError('not_member', 'Эта книга не в семейном хранилище.');
+      if (book.detached) return outcome;
       if (!env.getSnapshot().books.some((item) => item.id === bookId) && book.rev > 0) {
-        // The local copy is gone (a fresh start or a restored backup): take the book again.
-        updateBook(bookId, (current) => ({ ...current, rev: 0, fingerprints: {} }));
+        // The local copy vanished some other way: take the book again rather than lose it.
+        generation += 1;
+        updateBook(bookId, restart);
         book = bookState(bookId)!;
       }
       if (book.rev === 0) {
@@ -283,7 +313,9 @@ export function createSyncEngine(env: SyncEnvironment) {
         // Without the book on this phone, nothing is sent: an empty archive must never erase the shared one.
         const changes = snapshot.books.some((item) => item.id === bookId) ? diffEntities(local, book.fingerprints) : [];
         outcome.pushed = changes.length;
-        outcome.pulled += (await exchange(bookId, changes, local)).pulled;
+        const result = await exchange(bookId, changes, local);
+        outcome.pulled += result.pulled;
+        outcome.denied = result.denied;
       }
       const download = await downloadMissing(bookId);
       outcome.downloaded = download.downloaded;
@@ -302,7 +334,7 @@ export function createSyncEngine(env: SyncEnvironment) {
   function hasLocalChanges(bookId: string): boolean {
     const book = bookState(bookId);
     const snapshot = env.getSnapshot();
-    if (!book || !snapshot.books.some((item) => item.id === bookId)) return false;
+    if (!book || book.detached || !snapshot.books.some((item) => item.id === bookId)) return false;
     if (mediaIdsOfBook(snapshot, bookId).size && snapshot.mediaAssets.some((asset) =>
       hasLocalBytes(asset) && !book.files[asset.id] && mediaIdsOfBook(snapshot, bookId).has(asset.id))) return true;
     return diffEntities(collectBookEntities(snapshot, bookId, scopeOf(book)), book.fingerprints).length > 0;
@@ -314,8 +346,11 @@ export function createSyncEngine(env: SyncEnvironment) {
       ? { ...state, connection: { ...state.connection, name: reply.member.name, admin: reply.member.admin } } : state));
     const available = new Map(reply.books.filter((book) => book.member).map((book) => [book.id, book]));
     const unlinked: string[] = [];
-    Object.keys(env.store.get().books).forEach((bookId) => {
-      if (!available.has(bookId)) { unlink(bookId); unlinked.push(bookId); }
+    Object.entries(env.store.get().books).forEach(([bookId, book]) => {
+      if (available.has(bookId)) return;
+      unlink(bookId);
+      // A book already removed from this phone leaves quietly.
+      if (!book.detached) unlinked.push(bookId);
     });
     env.store.update((state) => {
       const books = { ...state.books };
@@ -356,7 +391,8 @@ export function createSyncEngine(env: SyncEnvironment) {
       const { unlinked } = await refreshBooks();
       const outcomes: BookSyncOutcome[] = [];
       const failed: { bookId: string; error: string }[] = [];
-      for (const bookId of Object.keys(env.store.get().books)) {
+      for (const [bookId, book] of Object.entries(env.store.get().books)) {
+        if (book.detached) continue;
         try {
           outcomes.push(await syncBookNow(bookId));
         } catch (error) {
@@ -372,8 +408,10 @@ export function createSyncEngine(env: SyncEnvironment) {
       const book = env.getSnapshot().books.find((item) => item.id === bookId);
       if (!book) throw new CloudError('bad_request', 'Книга не найдена.');
       const reply = await call<{ book: RemoteBook }>('createBook', { bookId, title: book.title, personId });
-      env.store.update((state) => ({ ...state, books: { ...state.books, [bookId]: state.books[bookId] ?? freshBookState({
-        title: reply.book.title, creatorId: reply.book.creatorId, creatorName: reply.book.creatorName, canManage: reply.book.canManage, personId }) } }));
+      const existing = env.store.get().books[bookId];
+      // A copy of a book that was removed from this phone starts over from the storage.
+      env.store.update((state) => ({ ...state, books: { ...state.books, [bookId]: existing ? returning(existing)
+        : freshBookState({ title: reply.book.title, creatorId: reply.book.creatorId, creatorName: reply.book.creatorName, canManage: reply.book.canManage, personId }) } }));
       return syncBookNow(bookId);
     }),
 
@@ -390,7 +428,7 @@ export function createSyncEngine(env: SyncEnvironment) {
         const connectionState: CloudConnection = reply.token
           ? { url, memberId: reply.member.id, token: reply.token, name: reply.member.name, admin: reply.member.admin, connectedAt: now().toISOString() }
           : state.connection!;
-        const current = base.books[reply.book.id] ?? freshBookState();
+        const current = returning(base.books[reply.book.id]);
         return { ...base, connection: connectionState, books: { ...base.books, [reply.book.id]: { ...current, title: reply.book.title,
           creatorId: reply.book.creatorId, creatorName: reply.book.creatorName, canManage: reply.book.canManage,
           personId: reply.book.personId ?? current.personId } } };
@@ -412,16 +450,52 @@ export function createSyncEngine(env: SyncEnvironment) {
 
     removeMember: (bookId: string, memberId: string) => serial(() => call('removeMember', { bookId, memberId })),
 
-    /** Delete for everyone (creator) or leave (member). The local copy is the caller's business. */
-    removeBook: (bookId: string, mode: 'delete' | 'leave') => serial(async () => {
-      await call(mode === 'delete' ? 'deleteBook' : 'leaveBook', { bookId });
-      unlink(bookId);
+    /**
+     * Delete for everyone (creator), leave (member), or only stop keeping the
+     * book on this phone ('local': the membership stays, the book can come back).
+     * The local copy itself is the caller's business.
+     */
+    removeBook: (bookId: string, mode: 'delete' | 'leave' | 'local') => {
+      if (mode === 'local') {
+        detach(bookId);
+        return Promise.resolve();
+      }
+      return serial(async () => {
+        await call(mode === 'delete' ? 'deleteBook' : 'leaveBook', { bookId });
+        unlink(bookId);
+      });
+    },
+
+    /** Bring a book removed from this phone back from the storage. */
+    attachBook: (bookId: string) => serial(async () => {
+      generation += 1;
+      updateBook(bookId, (book) => ({ ...restart(book), detached: undefined }));
+      return syncBookNow(bookId);
     }),
+
+    /**
+     * The whole archive on this phone was replaced (a fresh start, the demo,
+     * a backup). Books still here are taken again from the storage, so an old
+     * or empty copy never sends deletions; the rest are removed from this
+     * phone only ('detach') or downloaded again ('pull').
+     */
+    snapshotReplaced(missing: 'detach' | 'pull') {
+      generation += 1;
+      accessCache.clear();
+      const present = new Set(env.getSnapshot().books.map((book) => book.id));
+      env.store.update((state) => ({
+        ...state,
+        books: Object.fromEntries(Object.entries(state.books).map(([bookId, book]) => {
+          if (present.has(bookId)) return [bookId, { ...restart(book), detached: undefined }];
+          return [bookId, missing === 'detach' || book.detached ? { ...restart(book), detached: true } : restart(book)];
+        }))
+      }));
+    },
 
     /** Owner of the storage steps into a book whose creator lost their phone. */
     joinBook: (bookId: string) => serial(async () => {
       await call('joinBook', { bookId });
-      env.store.update((state) => ({ ...state, books: { ...state.books, [bookId]: state.books[bookId] ?? freshBookState() } }));
+      env.store.update((state) => ({ ...state, books: { ...state.books, [bookId]: returning(state.books[bookId]) } }));
       return syncBookNow(bookId);
     }),
 

@@ -5,6 +5,7 @@ import type { Person } from '../data/types';
 import { mediaStore, notifyMediaStored } from '../lib/mediaStore';
 import { CloudError, cloudErrorMessage, createDriveTransfer, inviteLink } from './cloudApi';
 import { createCloudStateStore, type CloudBookState, type CloudConnection, type CloudState } from './cloudState';
+import { deletionBlocker, sharedBooksWithPerson, type DeletionTarget } from './permissions';
 import { createSyncEngine, type CloudMember, type InvitePreview, type RemoteBook } from './syncEngine';
 
 /*
@@ -15,9 +16,18 @@ import { createSyncEngine, type CloudMember, type InvitePreview, type RemoteBook
 
 export type CloudStatus = 'idle' | 'syncing' | 'offline' | 'error';
 
+export interface DetachedBook {
+  id: string;
+  title: string;
+  creatorName?: string;
+}
+
 interface CloudSyncValue {
   connection?: CloudConnection;
+  /** Shared books kept on this phone. */
   books: Record<string, CloudBookState>;
+  /** Shared books removed from this phone only: they can be brought back. */
+  detachedBooks: DetachedBook[];
   status: CloudStatus;
   error: string | null;
   lastSyncAt?: string;
@@ -28,6 +38,10 @@ interface CloudSyncValue {
   otherBooks: RemoteBook[];
   isShared: (bookId: string) => boolean;
   myPersonId: (bookId: string | undefined) => string | undefined;
+  /** Why this phone may not delete a record of a shared book, or null. */
+  deletionBlocker: (bookId: string | undefined, target: DeletionTarget) => string | null;
+  /** Shared books on this phone where the person tells or is invited. */
+  sharedBooksWithPerson: (personId: string) => string[];
   syncNow: () => Promise<void>;
   connectOwner: (url: string, name: string) => Promise<void>;
   disconnect: () => void;
@@ -37,8 +51,12 @@ interface CloudSyncValue {
   acceptInvite: (url: string, code: string, name: string) => Promise<{ bookId: string; pending: number }>;
   members: (bookId: string) => Promise<{ members: CloudMember[]; canManage: boolean }>;
   removeMember: (bookId: string, memberId: string) => Promise<void>;
-  /** Creator: delete for everyone. Member: leave. The local copy is removed by the caller. */
-  removeBook: (bookId: string, mode: 'delete' | 'leave') => Promise<void>;
+  /** Delete for everyone (creator), leave (member) or remove from this phone only. The local copy is removed by the caller. */
+  removeBook: (bookId: string, mode: 'delete' | 'leave' | 'local') => Promise<void>;
+  /** Bring back a book removed from this phone. */
+  attachBook: (bookId: string) => Promise<void>;
+  /** Call right after the whole archive on this phone was replaced. */
+  snapshotReplaced: (missing: 'detach' | 'pull') => void;
   joinBook: (bookId: string) => Promise<void>;
 }
 
@@ -98,6 +116,11 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       setNotices((current) => [...current, ...result.unlinked.map((bookId) =>
         `Книга «${titleOf(bookId)}» больше не в семейном хранилище: её удалили или вас исключили. Копия осталась на этом телефоне.`)]);
     }
+    const refused = result.outcomes.filter((outcome) => outcome.denied > 0);
+    if (refused.length) {
+      setNotices((current) => [...current, ...refused.map((outcome) =>
+        `В книге «${titleOf(outcome.bookId)}» часть удалений отменена: удалять то, что добавили другие, может только создатель книги. Эти записи вернулись.`)]);
+    }
     if (result.failed.length) {
       setStatus('error');
       setError(result.failed.map((item) => `«${titleOf(item.bookId)}»: ${item.error}`).join(' '));
@@ -142,17 +165,23 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer);
   }, [snapshot, connected, engine, quietSync]);
 
+  const linked = Object.fromEntries(Object.entries(state.books).filter(([, book]) => !book.detached));
   const value: CloudSyncValue = {
     connection: state.connection,
-    books: state.books,
+    books: linked,
+    detachedBooks: Object.entries(state.books).filter(([, book]) => book.detached)
+      .map(([id, book]) => ({ id, title: book.title ?? 'Книга без названия', creatorName: book.creatorName })),
     status,
     error,
-    lastSyncAt: Object.values(state.books).map((book) => book.lastSyncAt).filter(Boolean).sort().at(-1),
+    lastSyncAt: Object.values(linked).map((book) => book.lastSyncAt).filter(Boolean).sort().at(-1),
     notices,
     dismissNotices: () => setNotices([]),
     otherBooks,
-    isShared: (bookId) => Boolean(state.connection && state.books[bookId]),
-    myPersonId: (bookId) => (bookId ? state.books[bookId]?.personId : undefined),
+    isShared: (bookId) => Boolean(state.connection && linked[bookId]),
+    myPersonId: (bookId) => (bookId ? linked[bookId]?.personId : undefined),
+    deletionBlocker: (bookId, target) => (bookId && state.connection
+      ? deletionBlocker(snapshot, linked[bookId], state.connection.memberId, target) : null),
+    sharedBooksWithPerson: (personId) => (state.connection ? sharedBooksWithPerson(snapshot, linked, personId) : []),
     syncNow,
     connectOwner: async (url, name) => {
       await track(() => engine.connectOwner(url, name));
@@ -177,7 +206,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     },
     members: (bookId) => engine.members(bookId),
     removeMember: async (bookId, memberId) => { await track(() => engine.removeMember(bookId, memberId)); },
-    removeBook: async (bookId, mode) => { await track(() => engine.removeBook(bookId, mode)); },
+    removeBook: async (bookId, mode) => {
+      if (mode === 'local') await engine.removeBook(bookId, 'local');
+      else await track(() => engine.removeBook(bookId, mode));
+    },
+    attachBook: async (bookId) => { await track(() => engine.attachBook(bookId)); },
+    snapshotReplaced: (missing) => engine.snapshotReplaced(missing),
     joinBook: async (bookId) => {
       await track(() => engine.joinBook(bookId));
       setOtherBooks((current) => current.filter((book) => book.id !== bookId));

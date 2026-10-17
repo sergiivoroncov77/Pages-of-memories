@@ -25,6 +25,8 @@ import {
   deleteChapterFromSnapshot,
   deleteMomentsFromSnapshot,
   deletePersonFromSnapshot,
+  deletePerspectiveFromSnapshot,
+  deleteReflectionFromSnapshot,
   emptySnapshot,
   moveChapterInSnapshot,
   setActiveBookInSnapshot,
@@ -143,6 +145,8 @@ interface AppStateValue {
   moveChapter: (chapterId: string, direction: -1 | 1) => void;
   deleteChapter: (chapterId: string) => void;
   deleteMoment: (momentId: string) => void;
+  deletePerspective: (perspectiveId: string) => void;
+  deleteReflection: (reflectionId: string) => void;
   createPerson: (input: PersonInput) => Person;
   updatePerson: (personId: string, patch: Partial<PersonInput>) => void;
   deletePerson: (personId: string) => void;
@@ -549,6 +553,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const deleteMoment = (momentId: string) => commitDeletion((current) => deleteMomentsFromSnapshot(current, [momentId]));
 
+  const deletePerspective = (perspectiveId: string) => commitDeletion((current) => deletePerspectiveFromSnapshot(current, perspectiveId));
+
+  const deleteReflection = (reflectionId: string) => commitSnapshot((current) => deleteReflectionFromSnapshot(current, reflectionId));
+
   const createPerson = (input: PersonInput) => {
     let person: Person | undefined;
     commitSnapshot((current) => {
@@ -686,6 +694,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         moveChapter,
         deleteChapter,
         deleteMoment,
+        deletePerspective,
+        deleteReflection,
         createPerson,
         updatePerson,
         deletePerson,

@@ -11,9 +11,11 @@ interface ChapterFormProps {
   canMoveUp?: boolean;
   canMoveDown?: boolean;
   onDelete?: () => void;
+  /** Why the chapter cannot be deleted here, shown instead of the delete button. */
+  deleteNote?: string;
 }
 
-export function ChapterForm({ initial, submitLabel, onSubmit, onCancel, onMove, canMoveUp, canMoveDown, onDelete }: ChapterFormProps) {
+export function ChapterForm({ initial, submitLabel, onSubmit, onCancel, onMove, canMoveUp, canMoveDown, onDelete, deleteNote }: ChapterFormProps) {
   const [title, setTitle] = useState(initial?.title ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [error, setError] = useState('');
@@ -54,6 +56,7 @@ export function ChapterForm({ initial, submitLabel, onSubmit, onCancel, onMove, 
           </button>
         ) : null}
       </div>
+      {deleteNote ? <p className="delete-blocked">{deleteNote}</p> : null}
     </form>
   );
 }

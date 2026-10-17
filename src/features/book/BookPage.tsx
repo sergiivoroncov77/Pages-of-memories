@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { useAppState } from '../../app/AppState';
 import { Book3D } from '../../components/Book3D';
 import { Card } from '../../components/Card';
+import { ChoiceDialog } from '../../components/ChoiceDialog';
 import { EmptyState } from '../../components/EmptyState';
 import { MediaImage } from '../../components/MediaImage';
 import { PageHeader } from '../../components/PageHeader';
@@ -33,6 +34,8 @@ export function BookPage() {
   const [panel, setPanel] = useState<Panel>('none');
   const [momentChapterId, setMomentChapterId] = useState('');
   const [editingChapterId, setEditingChapterId] = useState('');
+  // A shared book is removed through a choice: here only, for everyone, or leaving it.
+  const [bookRemoval, setBookRemoval] = useState<{ busy: boolean; error: string } | null>(null);
   // A message handed over by the previous screen, e.g. after accepting an invitation.
   const [notice, setNotice] = useState(() => (typeof location.state?.notice === 'string' ? location.state.notice as string : ''));
   const chapters = book ? chaptersForBook(book.id) : [];
@@ -116,29 +119,35 @@ export function BookPage() {
     setNotice('Книга обновлена.');
   };
 
-  const removeBook = async () => {
+  const sharedBook = book && cloud.connection ? cloud.books[book.id] : undefined;
+  const bookContents = `${chapters.length} ${pluralize(chapters.length, 'глава', 'главы', 'глав')} и ${allMoments.length} ${pluralize(allMoments.length, 'момент', 'момента', 'моментов')}`;
+
+  const removeBook = () => {
     if (!book) return;
-    const count = allMoments.length;
-    const shared = cloud.connection ? cloud.books[book.id] : undefined;
-    const contents = `${chapters.length} ${pluralize(chapters.length, 'глава', 'главы', 'глав')} и ${count} ${pluralize(count, 'момент', 'момента', 'моментов')} со всеми рассказами, фото и голосами`;
-    const question = !shared
-      ? `Удалить книгу «${book.title}»? Будут удалены ${contents}. Это нельзя отменить. Если сомневаетесь, сначала скачайте резервную копию в настройках.`
-      : shared.canManage
-        ? `Удалить книгу «${book.title}» для всех? С этого телефона удалятся ${contents}, папка книги уйдёт в корзину Google Диска, а участники перестанут получать изменения (их копии останутся у них).`
-        : `Выйти из книги «${book.title}»? Она удалится с этого телефона и перестанет обновляться. У остальных участников книга останется.`;
-    if (!window.confirm(question)) return;
-    if (shared) {
-      try {
-        await cloud.removeBook(book.id, shared.canManage ? 'delete' : 'leave');
-      } catch (error) {
-        setNotice(`Книга не удалена: ${cloudErrorMessage(error)}`);
-        return;
-      }
-    }
+    if (sharedBook) { setBookRemoval({ busy: false, error: '' }); return; }
+    if (!window.confirm(`Удалить книгу «${book.title}»? Будут удалены ${bookContents} со всеми рассказами, фото и голосами. Это нельзя отменить. Если сомневаетесь, сначала скачайте резервную копию в настройках.`)) return;
     deleteBook(book.id);
     setParams({}, { replace: true });
     setPanel('none');
     setNotice(`Книга «${book.title}» удалена.`);
+  };
+
+  const finishBookRemoval = async (mode: 'local' | 'delete' | 'leave') => {
+    if (!book) return;
+    setBookRemoval({ busy: true, error: '' });
+    try {
+      await cloud.removeBook(book.id, mode);
+    } catch (error) {
+      setBookRemoval({ busy: false, error: `Не получилось: ${cloudErrorMessage(error)}` });
+      return;
+    }
+    deleteBook(book.id);
+    setBookRemoval(null);
+    setParams({}, { replace: true });
+    setPanel('none');
+    setNotice(mode === 'delete' ? `Книга «${book.title}» удалена у всех участников.`
+      : mode === 'leave' ? `Вы вышли из книги «${book.title}». У остальных участников она осталась.`
+        : `Книга «${book.title}» убрана с этого телефона. У остальных участников она осталась; вернуть её сюда можно в «Настройки → Семейное хранилище».`);
   };
 
   const removeChapter = (chapterId: string) => {
@@ -146,7 +155,8 @@ export function BookPage() {
     if (!chapter) return;
     const count = momentsForChapter(chapterId).length;
     const warning = count ? ` Вместе с ней удалятся ${count} ${pluralize(count, 'момент', 'момента', 'моментов')} со всеми рассказами и материалами.` : '';
-    if (!window.confirm(`Удалить главу «${chapter.title}»?${warning} Это нельзя отменить.`)) return;
+    const everyone = sharedBook ? ' у всех участников книги' : '';
+    if (!window.confirm(`Удалить главу «${chapter.title}»${everyone}?${warning} Это нельзя отменить.`)) return;
     deleteChapter(chapterId);
     setEditingChapterId('');
     if (activeChapterId === chapterId) setFilter('chapter', '');
@@ -184,7 +194,8 @@ export function BookPage() {
         onSubmit={(values) => { updateChapter(chapter.id, values); setEditingChapterId(''); }}
         onCancel={() => setEditingChapterId('')}
         onMove={(direction) => moveChapter(chapter.id, direction)} canMoveUp={index > 0} canMoveDown={index < chapters.length - 1}
-        onDelete={() => removeChapter(chapter.id)} />
+        onDelete={cloud.deletionBlocker(book?.id, { type: 'chapter', id: chapter.id }) ? undefined : () => removeChapter(chapter.id)}
+        deleteNote={cloud.deletionBlocker(book?.id, { type: 'chapter', id: chapter.id }) ?? undefined} />
     </Card>
   ) : (
     <div className="chapter-section__heading"><span className="chapter-numeral" aria-hidden="true">{toRoman(chapter.order)}</span>
@@ -235,7 +246,7 @@ export function BookPage() {
       {panel === 'edit-book' ? <Card className="library-form-card">
         <div className="card-heading"><div><p className="eyebrow">Книга</p><h2>Изменить книгу</h2></div>
           <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setPanel('none')}><X size={20} /></button></div>
-        <BookForm key={book.id} mode="edit" initial={book} photos={bookPhotos} onSubmit={submitBookEdit} onCancel={() => setPanel('none')} onDelete={() => { void removeBook(); }} />
+        <BookForm key={book.id} mode="edit" initial={book} photos={bookPhotos} onSubmit={submitBookEdit} onCancel={() => setPanel('none')} onDelete={removeBook} />
       </Card> : null}
 
       {panel === 'share' ? <div id="share-book"><ShareBookPanel book={book} onClose={() => setPanel('none')} /></div> : null}
@@ -302,6 +313,21 @@ export function BookPage() {
       </Card> : <button type="button" className="add-chapter" onClick={() => toggle('new-chapter')}>
         <Plus size={22} aria-hidden="true" /><span><strong>{chapters.length ? 'Добавить главу' : 'Добавить первую главу'}</strong><small>{chapters.length ? 'Она появится в конце книги — порядок можно поменять' : 'Без главы моменты некуда положить'}</small></span>
       </button>) : null}
+
+      {bookRemoval && sharedBook ? (
+        <ChoiceDialog title={`${sharedBook.canManage ? 'Удалить' : 'Убрать'} книгу «${book.title}»?`} busy={bookRemoval.busy} error={bookRemoval.error}
+          onCancel={() => setBookRemoval(null)} onChoose={(mode) => { void finishBookRemoval(mode as 'local' | 'delete' | 'leave'); }}
+          choices={sharedBook.canManage ? [
+            { id: 'local', label: 'Только с этого телефона', description: 'У остальных участников книга останется и будет обновляться. Вернуть её сюда можно в «Настройки → Семейное хранилище».' },
+            { id: 'delete', label: 'У всех участников', danger: true, description: 'Папка книги уйдёт в корзину Google Диска хранилища (там она хранится 30 дней), участники перестанут получать изменения. Уже скачанные копии останутся на их телефонах.' }
+          ] : [
+            { id: 'local', label: 'Убрать с этого телефона', description: 'Вы останетесь участником: вернуть книгу можно в «Настройки → Семейное хранилище».' },
+            { id: 'leave', label: 'Выйти из книги', danger: true, description: 'Книга удалится с этого телефона, а вернуться получится только по новому приглашению.' }
+          ]}>
+          <p>В книге {bookContents}. Она хранится в семейном хранилище{sharedBook.creatorName ? `, создатель — ${sharedBook.creatorName}` : ''}.</p>
+          {!sharedBook.canManage ? <p>У создателя и остальных участников ничего не удалится.</p> : null}
+        </ChoiceDialog>
+      ) : null}
     </div>
   );
 }

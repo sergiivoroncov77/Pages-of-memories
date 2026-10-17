@@ -242,6 +242,23 @@ export function deleteMomentsFromSnapshot(snapshot: AppSnapshot, momentIds: Iter
   return dropOrphanedMedia(next, candidates);
 }
 
+/** Delete one story of a moment (not its main one) with its photo, voice or video. */
+export function deletePerspectiveFromSnapshot(snapshot: AppSnapshot, perspectiveId: string): DeletionResult {
+  const perspective = snapshot.perspectives.find((item) => item.id === perspectiveId);
+  if (!perspective) return { snapshot, removedMediaIds: [] };
+  const next: AppSnapshot = {
+    ...snapshot,
+    perspectives: snapshot.perspectives.filter((item) => item.id !== perspectiveId),
+    moments: snapshot.moments.map((moment) => moment.primaryPerspectiveId === perspectiveId ? { ...moment, primaryPerspectiveId: undefined } : moment)
+  };
+  return dropOrphanedMedia(next, [perspective.mediaAssetId]);
+}
+
+export function deleteReflectionFromSnapshot(snapshot: AppSnapshot, reflectionId: string): AppSnapshot {
+  return snapshot.reflections.some((item) => item.id === reflectionId)
+    ? { ...snapshot, reflections: snapshot.reflections.filter((item) => item.id !== reflectionId) } : snapshot;
+}
+
 export function deleteChapterFromSnapshot(snapshot: AppSnapshot, chapterId: string): DeletionResult {
   const chapter = snapshot.chapters.find((item) => item.id === chapterId);
   if (!chapter) return { snapshot, removedMediaIds: [] };
