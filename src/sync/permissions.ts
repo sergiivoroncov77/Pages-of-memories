@@ -50,3 +50,22 @@ export function sharedBooksWithPerson(snapshot: AppSnapshot, books: Record<strin
     return [...snapshot.perspectives, ...snapshot.reflections].some((item) => moments.has(item.momentId) && item.authorId === personId);
   }).map((book) => book.title);
 }
+
+/**
+ * Why this phone may not rename a person of a shared book, or null. Like the
+ * storage: a member renames only themselves and people they added; the
+ * creator renames anyone.
+ */
+export function renameBlocker(books: Record<string, CloudBookState>, memberId: string, personId: string): string | null {
+  const key = entityKey('person', personId);
+  for (const book of Object.values(books)) {
+    if (book.detached || book.canManage || book.personId === personId) continue;
+    const exchanged = key in book.fingerprints;
+    if (!exchanged && !book.people.includes(personId)) continue;
+    const owner = book.owners[key] ?? (exchanged ? book.creatorId : memberId);
+    if (owner !== memberId) {
+      return `Этот человек есть в общей книге «${book.title ?? 'без названия'}». Его имя может изменить он сам или создатель книги${book.creatorName ? ` — ${book.creatorName}` : ''}.`;
+    }
+  }
+  return null;
+}

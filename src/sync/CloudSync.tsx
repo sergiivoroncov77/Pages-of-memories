@@ -1,11 +1,13 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useAppState } from '../app/AppState';
-import type { Person } from '../data/types';
+import { cleanName, profileStore, useProfile } from '../app/profile';
+import { newSelfPerson } from '../data/library';
+import type { AppSnapshot, Person } from '../data/types';
 import { mediaStore, notifyMediaStored } from '../lib/mediaStore';
 import { CloudError, cloudErrorMessage, createDriveTransfer, inviteLink } from './cloudApi';
 import { createCloudStateStore, type CloudBookState, type CloudConnection, type CloudState } from './cloudState';
-import { deletionBlocker, sharedBooksWithPerson, type DeletionTarget } from './permissions';
+import { deletionBlocker, renameBlocker, sharedBooksWithPerson, type DeletionTarget } from './permissions';
 import { createSyncEngine, type CloudMember, type InvitePreview, type RemoteBook } from './syncEngine';
 
 /*
@@ -37,7 +39,16 @@ interface CloudSyncValue {
   /** Books in the storage this device is not a member of (visible to its owner). */
   otherBooks: RemoteBook[];
   isShared: (bookId: string) => boolean;
+  /** Who this phone signs as in a book. */
   myPersonId: (bookId: string | undefined) => string | undefined;
+  /** Everyone this phone signs as, in any book. */
+  myPersonIds: Set<string>;
+  /** Sign as this name in a book: renames this phone's narrator there, or creates one. */
+  setMyName: (bookId: string, name: string) => Promise<void>;
+  /** The creator renames a member of a shared book for everyone (or anyone renames themselves). */
+  renameMember: (bookId: string, member: CloudMember, name: string) => Promise<void>;
+  /** Why this phone may not rename a person of a shared book, or null. */
+  renameBlocker: (personId: string) => string | null;
   /** Why this phone may not delete a record of a shared book, or null. */
   deletionBlocker: (bookId: string | undefined, target: DeletionTarget) => string | null;
   /** Shared books on this phone where the person tells or is invited. */
@@ -48,7 +59,8 @@ interface CloudSyncValue {
   publishBook: (bookId: string) => Promise<void>;
   createInviteLink: (bookId: string, person?: Pick<Person, 'id' | 'name'>) => Promise<{ link: string; expiresAt: string }>;
   previewInvite: (url: string, code: string) => Promise<InvitePreview>;
-  acceptInvite: (url: string, code: string, name: string) => Promise<{ bookId: string; pending: number }>;
+  /** `name` is how the person signs in this book; `invitedPersonId` when the invitation names them. */
+  acceptInvite: (url: string, code: string, name: string, invitedPersonId?: string | null) => Promise<{ bookId: string; pending: number }>;
   members: (bookId: string) => Promise<{ members: CloudMember[]; canManage: boolean }>;
   removeMember: (bookId: string, memberId: string) => Promise<void>;
   /**
@@ -70,7 +82,8 @@ const PERIODIC_MS = 2 * 60 * 1000;
 const AFTER_EDIT_MS = 4000;
 
 export function CloudSyncProvider({ children }: { children: ReactNode }) {
-  const { getSnapshot, applyCloudUpdate, snapshot } = useAppState();
+  const { getSnapshot, applyCloudUpdate, snapshot, createSelfPerson, updatePerson } = useAppState();
+  const profile = useProfile();
   const state = useSyncExternalStore(cloudStore.subscribe, cloudStore.get, cloudStore.get) as CloudState;
   const [status, setStatus] = useState<CloudStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +135,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const refused = result.outcomes.filter((outcome) => outcome.denied > 0);
     if (refused.length) {
       setNotices((current) => [...current, ...refused.map((outcome) =>
-        `В книге «${titleOf(outcome.bookId)}» часть удалений отменена: удалять то, что добавили другие, может только создатель книги. Эти записи вернулись.`)]);
+        `В книге «${titleOf(outcome.bookId)}» часть изменений отменена: удалять добавленное другими и менять чужие имена может только создатель книги. Эти записи вернулись.`)]);
     }
     if (result.failed.length) {
       setStatus('error');
@@ -168,6 +181,47 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timer);
   }, [snapshot, connected, engine, quietSync]);
 
+  /** The narrator this phone signs as in a book, if it has one there. */
+  const myPersonIn = (bookId: string, current: AppSnapshot = getSnapshot()): Person | undefined => {
+    const ids = [cloudStore.get().books[bookId]?.personId, profileStore.get()?.books[bookId]];
+    return ids.map((id) => current.people.find((person) => person.id === id)).find(Boolean);
+  };
+
+  /** Make sure this phone has a narrator of its own in the book: the profile name, unless another is given. */
+  const ensureMe = (bookId: string, name?: string): Person => {
+    const known = myPersonIn(bookId);
+    if (known) return known;
+    const state = cloudStore.get();
+    const book = state.books[bookId];
+    const creator = !book || book.creatorId === state.connection?.memberId;
+    const person = createSelfPerson(name ?? profileStore.get()?.name ?? state.connection?.name ?? 'Я', creator ? 'Автор книги' : 'Участник книги');
+    profileStore.setBookPerson(bookId, person.id);
+    return person;
+  };
+
+  const requireName = (name: string) => {
+    const clean = cleanName(name);
+    if (!clean) throw new Error('Напишите имя.');
+    return clean;
+  };
+
+  const setMyName = async (bookId: string, name: string) => {
+    const clean = requireName(name);
+    const state = cloudStore.get();
+    const book = state.connection ? state.books[bookId] : undefined;
+    const known = myPersonIn(bookId);
+    if (known && known.name !== clean) updatePerson(known.id, { name: clean });
+    const person = known ?? ensureMe(bookId, clean);
+    if (!book || book.detached) return;
+    // A phone that has no narrator in the book yet tells the storage who it is.
+    await track(() => engine.updateMember(bookId, book.personId === person.id ? { name: clean } : { name: clean, personId: person.id }));
+  };
+
+  const myPersonIds = new Set([
+    ...Object.values(state.books).map((book) => book.personId),
+    ...Object.values(profile?.books ?? {})
+  ].filter((id): id is string => Boolean(id)));
+
   const linked = Object.fromEntries(Object.entries(state.books).filter(([, book]) => !book.detached));
   const value: CloudSyncValue = {
     connection: state.connection,
@@ -181,7 +235,17 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     dismissNotices: () => setNotices([]),
     otherBooks,
     isShared: (bookId) => Boolean(state.connection && linked[bookId]),
-    myPersonId: (bookId) => (bookId ? linked[bookId]?.personId : undefined),
+    myPersonId: (bookId) => (bookId ? myPersonIn(bookId, snapshot)?.id : undefined),
+    myPersonIds,
+    setMyName,
+    renameMember: async (bookId, member, name) => {
+      if (member.isYou) return setMyName(bookId, name);
+      const clean = requireName(name);
+      await track(() => engine.updateMember(bookId, { memberId: member.id, name: clean }));
+      const person = member.personId ? getSnapshot().people.find((item) => item.id === member.personId) : undefined;
+      if (person && person.name !== clean) updatePerson(person.id, { name: clean });
+    },
+    renameBlocker: (personId) => (state.connection ? renameBlocker(linked, state.connection.memberId, personId) : null),
     deletionBlocker: (bookId, target) => (bookId && state.connection
       ? deletionBlocker(snapshot, linked[bookId], state.connection.memberId, target) : null),
     sharedBooksWithPerson: (personId) => (state.connection ? sharedBooksWithPerson(snapshot, linked, personId) : []),
@@ -196,15 +260,27 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       setError(null);
       setOtherBooks([]);
     },
-    publishBook: async (bookId) => { await track(() => engine.publishBook(bookId)); },
+    publishBook: async (bookId) => {
+      const me = ensureMe(bookId);
+      await track(() => engine.publishBook(bookId, { personId: me.id, name: me.name }));
+    },
     createInviteLink: async (bookId, person) => {
       const { code, expiresAt } = await track(() => engine.createInvite(bookId, person));
       const appUrl = new URL(import.meta.env.BASE_URL, window.location.origin).href;
       return { link: inviteLink(appUrl, cloudStore.get().connection!.url, code), expiresAt };
     },
     previewInvite: (url, code) => engine.previewInvite(url, code),
-    acceptInvite: async (url, code, name) => {
-      const { book, outcome } = await track(() => engine.acceptInvite(url, code, name));
+    acceptInvite: async (url, code, name, invitedPersonId) => {
+      const clean = requireName(name);
+      // Invited without a name: the person signs as a new narrator of their own.
+      const self = invitedPersonId ? undefined : newSelfPerson(getSnapshot(), clean, 'Участник книги');
+      const { book, outcome } = await track(() => engine.acceptInvite(url, code, { name: clean, profileName: profileStore.get()?.name, self }));
+      if (book.personId) {
+        profileStore.setBookPerson(book.id, book.personId);
+        // The name the creator wrote in the invitation is theirs to change: it is who they are in the book.
+        const person = getSnapshot().people.find((item) => item.id === book.personId);
+        if (person && person.name !== clean) updatePerson(person.id, { name: clean });
+      }
       return { bookId: book.id, pending: outcome.mediaPending };
     },
     members: (bookId) => engine.members(bookId),

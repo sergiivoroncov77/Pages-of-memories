@@ -9,7 +9,7 @@ import { PeoplePage } from './PeoplePage';
 import { PersonPage } from './PersonPage';
 
 vi.mock('../../app/AppState', () => ({ useAppState: vi.fn() }));
-vi.mock('../../sync/CloudSync', () => ({ useCloudSync: () => ({ sharedBooksWithPerson: () => [] }) }));
+vi.mock('../../sync/CloudSync', () => ({ useCloudSync: () => ({ sharedBooksWithPerson: () => [], myPersonIds: new Set(), myPersonId: () => undefined, renameBlocker: () => null }) }));
 
 let snapshot: AppSnapshot;
 

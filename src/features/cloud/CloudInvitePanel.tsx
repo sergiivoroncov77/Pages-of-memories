@@ -1,5 +1,6 @@
-import { Check, Copy, Link2, Send, UploadCloud, UserMinus } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Check, Copy, Link2, Pencil, Send, UploadCloud, UserMinus, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { MAX_NAME_LENGTH } from '../../app/profile';
 import { useAppState } from '../../app/AppState';
 import type { Book, Person } from '../../data/types';
 import { copyText, shareLink } from '../../lib/shareFile';
@@ -21,13 +22,33 @@ function MembersList({ bookId, canManage }: { bookId: string; canManage: boolean
   }, [bookId]);
   useEffect(load, [load]);
 
+  const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  // The book's own record of the person comes first: it is the name everyone sees there.
+  const nameOf = (member: CloudMember) => (member.personId ? getPerson(member.personId)?.name : undefined) ?? member.name;
+
   const remove = async (member: CloudMember) => {
-    if (!window.confirm(`Убрать из книги: ${member.name}? Обновления перестанут приходить на телефон этого человека, а ссылка, по которой он вошёл, перестанет действовать. Уже скачанная копия книги останется у него.`)) return;
+    if (!window.confirm(`Убрать из книги: ${nameOf(member)}? Обновления перестанут приходить на телефон этого человека, а ссылка, по которой он вошёл, перестанет действовать. Уже скачанная копия книги останется у него.`)) return;
     try {
       await cloud.removeMember(bookId, member.id);
       load();
     } catch (failure) {
       setError(cloudErrorMessage(failure));
+    }
+  };
+
+  const rename = async (event: FormEvent, member: CloudMember) => {
+    event.preventDefault();
+    if (!renaming) return;
+    setBusy(true);
+    try {
+      await cloud.renameMember(bookId, member, renaming.name);
+      setRenaming(null);
+      load();
+    } catch (failure) {
+      setError(cloudErrorMessage(failure));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -38,18 +59,37 @@ function MembersList({ bookId, canManage }: { bookId: string; canManage: boolean
       <h4>Участники книги · {members.length}</h4>
       <ul>
         {members.map((member) => {
-          const person = member.personId ? getPerson(member.personId) : undefined;
+          const name = nameOf(member);
+          if (renaming?.id === member.id) {
+            return (
+              <li key={member.id}>
+                <form className="cloud-members__rename" onSubmit={(event) => { void rename(event, member); }}>
+                  <label className="field">
+                    <span>{member.isYou ? 'Ваше имя в этой книге' : `Имя в книге вместо «${name}»`}</span>
+                    <input autoFocus value={renaming.name} onChange={(event) => setRenaming({ id: member.id, name: event.target.value })} maxLength={MAX_NAME_LENGTH} required />
+                  </label>
+                  <button type="submit" className="icon-button" aria-label="Сохранить имя" disabled={busy}><Check size={18} /></button>
+                  <button type="button" className="icon-button" aria-label="Отменить" onClick={() => setRenaming(null)} disabled={busy}><X size={18} /></button>
+                </form>
+              </li>
+            );
+          }
           return (
             <li key={member.id}>
-              <span className="cloud-members__name">{member.name}{person && person.name !== member.name ? ` (${person.name})` : ''}</span>
+              <span className="cloud-members__name">{name}</span>
               <span className="cloud-members__tags">{[member.isCreator && 'создатель', member.isYou && 'это вы'].filter(Boolean).join(' · ')}</span>
+              {canManage || member.isYou ? (
+                <button type="button" className="icon-button" aria-label={member.isYou ? 'Изменить ваше имя в книге' : `Изменить имя: ${name}`}
+                  onClick={() => setRenaming({ id: member.id, name })}><Pencil size={17} /></button>
+              ) : null}
               {canManage && !member.isCreator && !member.isYou ? (
-                <button type="button" className="icon-button" aria-label={`Убрать ${member.name} из книги`} onClick={() => { void remove(member); }}><UserMinus size={18} /></button>
+                <button type="button" className="icon-button" aria-label={`Убрать ${name} из книги`} onClick={() => { void remove(member); }}><UserMinus size={18} /></button>
               ) : null}
             </li>
           );
         })}
       </ul>
+      {canManage ? <p className="cloud-members__note">Создатель книги может изменить имя любого участника — новое имя увидят все.</p> : null}
     </div>
   );
 }
@@ -57,7 +97,9 @@ function MembersList({ bookId, canManage }: { bookId: string; canManage: boolean
 /** Invitations by link: the relative opens it and the shared book appears on their phone. */
 export function CloudInvitePanel({ book, person }: { book: Book; person?: Person }) {
   const cloud = useCloudSync();
-  const { people } = useAppState();
+  const { people: everyone } = useAppState();
+  // Nobody invites themselves.
+  const people = everyone.filter((item) => !cloud.myPersonIds.has(item.id));
   const [personId, setPersonId] = useState(person?.id ?? '');
   const [invite, setInvite] = useState<{ link: string; expiresAt: string; name: string } | null>(null);
   const [busy, setBusy] = useState(false);

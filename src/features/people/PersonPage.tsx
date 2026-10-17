@@ -46,6 +46,9 @@ export function PersonPage() {
     );
   }
 
+  // In a shared book a person's name is changed by them, by whoever added them, or by the creator.
+  const editBlocker = cloud.renameBlocker(person.id);
+  const isMe = cloud.myPersonIds.has(person.id);
   const questions = questionsForPerson(person.id);
   const personMemories = memoriesForPerson(person.id);
   const answeredIds = new Set(personMemories.map((memory) => memory.questionId));
@@ -73,10 +76,14 @@ export function PersonPage() {
         title={person.name}
         backTo="/people"
         action={<div className="page-action-group">
-          <Link to={`/invite/${person.id}`} className="button button--secondary button--small">
-            <Send size={17} aria-hidden="true" />
-            <span>Пригласить</span>
-          </Link>
+          {isMe ? (
+            <Link to="/profile" className="button button--secondary button--small"><span>Это вы · профиль</span></Link>
+          ) : (
+            <Link to={`/invite/${person.id}`} className="button button--secondary button--small">
+              <Send size={17} aria-hidden="true" />
+              <span>Пригласить</span>
+            </Link>
+          )}
           <button type="button" className="button button--ghost button--small" aria-expanded={editing} onClick={() => setEditing((value) => !value)}>
             <Pencil size={17} aria-hidden="true" />
             <span>Изменить</span>
@@ -88,14 +95,14 @@ export function PersonPage() {
         <Card className="person-form-card">
           <div className="card-heading"><div><p className="eyebrow">Участник</p><h2>Изменить данные</h2></div>
             <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setEditing(false)}><X size={20} /></button></div>
-          <PersonForm key={person.id} initial={person} submitLabel="Сохранить" onCancel={() => setEditing(false)}
+          {editBlocker ? <p className="delete-blocked">{editBlocker}</p> : <PersonForm key={person.id} initial={person} submitLabel="Сохранить" onCancel={() => setEditing(false)}
             onSubmit={(values) => { updatePerson(person.id, values); setEditing(false); }}
             onDelete={sharedIn.length ? undefined : () => {
               if (!window.confirm(`Удалить «${person.name}» из близких? Вопросы, черновики и ответы интервью этого человека удалятся. Истории, уже добавленные в книгу, останутся — без подписи.`)) return;
               deletePerson(person.id);
               navigate('/people');
             }}
-            deleteNote={sharedIn.length ? `«${person.name}» есть в общих книгах: ${sharedIn.map((title) => `«${title}»`).join(', ')}. Чтобы рассказы не потеряли подпись у всех участников, удалить этого человека нельзя.` : undefined} />
+            deleteNote={sharedIn.length ? `«${person.name}» есть в общих книгах: ${sharedIn.map((title) => `«${title}»`).join(', ')}. Чтобы рассказы не потеряли подпись у всех участников, удалить этого человека нельзя.` : undefined} />}
         </Card>
       ) : null}
 

@@ -82,6 +82,7 @@ function handle_(request) {
     case 'createInvite': return createInvite_(member, request);
     case 'members': return members_(member, request);
     case 'removeMember': return removeMember_(member, request);
+    case 'updateMember': return updateMember_(member, request);
     case 'sync': return sync_(member, request);
     case 'mediaAccess': return mediaAccess_(member, request);
     default: throw error_('bad_request', 'Неизвестное действие: ' + action);
@@ -166,6 +167,8 @@ function bookSummary_(book, member) {
 function createBook_(member, request) {
   var bookId = checkId_(request.bookId);
   var title = cleanName_(request.title, 'Семейная книга');
+  // Как создатель подписан в этой книге; по умолчанию — имя его профиля.
+  var displayName = cleanName_(request.name, member.name);
   return withLock_(function () {
     var existing = readBook_(bookId);
     if (existing) {
@@ -179,9 +182,9 @@ function createBook_(member, request) {
     var now = new Date().toISOString();
     var book = {
       id: bookId, title: title, folderId: folderId, mediaFolderId: mediaFolderId, stateFileId: stateFileId,
-      creatorId: member.id, creatorName: member.name, members: {}, rev: 0, createdAt: now
+      creatorId: member.id, creatorName: displayName, members: {}, rev: 0, createdAt: now
     };
-    book.members[member.id] = { name: member.name, personId: optionalId_(request.personId), joinedAt: now };
+    book.members[member.id] = { name: displayName, personId: optionalId_(request.personId), joinedAt: now };
     write_('b:' + bookId, book);
     return ok_({ book: bookSummary_(book, member) });
   });
@@ -237,7 +240,7 @@ function createInvite_(member, request) {
   var now = new Date();
   var invite = {
     bookId: book.id, personId: optionalId_(request.personId), personName: cleanName_(request.personName, ''),
-    createdBy: member.id, createdByName: member.name, createdAt: now.toISOString(),
+    createdBy: member.id, createdByName: book.members[member.id].name || member.name, createdAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + INVITE_DAYS * 24 * 3600 * 1000).toISOString()
   };
   forEachInvite_(function (key, item) {
@@ -275,15 +278,20 @@ function acceptInvite_(request) {
       var memberId = props_().getProperty('t:' + hash_(String(request.token)));
       member = memberId ? read_('m:' + memberId) : null;
     }
+    // Имя в книге человек выбирает сам; имя профиля — то, как он называет себя вообще.
+    var displayName = cleanName_(request.name, found.invite.personName || 'Участник');
     if (!member) {
-      var created = newMember_(cleanName_(request.name, found.invite.personName || 'Участник'), false);
+      var created = newMember_(cleanName_(request.profileName, displayName), false);
       member = created.member;
       token = created.token;
     }
     var book = found.book;
     var existing = book.members[member.id];
+    // Приглашение без имени: человек подписывается новым рассказчиком, которого создал сам.
+    var personId = found.invite.personId || (existing && existing.personId)
+      || claimablePerson_(book, optionalId_(request.personId), member.id);
     book.members[member.id] = {
-      name: member.name, personId: found.invite.personId || (existing ? existing.personId : null),
+      name: displayName, personId: personId || null,
       joinedAt: existing ? existing.joinedAt : new Date().toISOString()
     };
     write_('b:' + book.id, book);
@@ -323,14 +331,54 @@ function removeMember_(member, request) {
   });
 }
 
+/**
+ * Имя участника в книге: создатель меняет любое, участник — своё. Кем
+ * подписываться (рассказчик в книге), участник выбирает только сам и только
+ * если ещё не выбрал.
+ */
+function updateMember_(member, request) {
+  return withLock_(function () {
+    var book = requireBook_(member, request.bookId);
+    var targetId = request.memberId ? checkId_(request.memberId) : member.id;
+    if (targetId !== member.id) requireManager_(member, book);
+    var target = book.members[targetId];
+    if (!target) throw error_('not_member', 'Этого участника уже нет в книге.');
+    if (request.personId !== undefined && request.personId !== null) {
+      if (targetId !== member.id) throw error_('forbidden', 'Выбрать, кем подписываться, участник может только сам.');
+      var personId = optionalId_(request.personId);
+      if (target.personId && target.personId !== personId) throw error_('forbidden', 'У вас уже есть имя в этой книге — его можно изменить.');
+      if (!target.personId && !claimablePerson_(book, personId, member.id)) throw error_('forbidden', 'Этим именем в книге уже подписывается другой участник.');
+      target.personId = personId;
+    }
+    if (typeof request.name === 'string' && request.name.trim()) {
+      target.name = cleanName_(request.name, target.name);
+      if (targetId === book.creatorId) book.creatorName = target.name;
+    }
+    write_('b:' + book.id, book);
+    return ok_({ book: bookSummary_(book, member) });
+  });
+}
+
+/** Рассказчик, которым участник может подписываться: новый или созданный им самим, и не занятый другим участником. */
+function claimablePerson_(book, personId, memberId) {
+  if (!personId) return null;
+  var taken = Object.keys(book.members).some(function (id) { return id !== memberId && book.members[id].personId === personId; });
+  if (taken) return null;
+  var state = driveReadJson_(book.stateFileId);
+  var entry = state.entities ? state.entities['person:' + personId] : null;
+  if (entry && !entry.deleted && ownerOf_(entry, book) !== memberId) return null;
+  return personId;
+}
+
 // ---------- Синхронизация ----------
 
 /**
  * Каждое устройство присылает свои изменения и получает всё, что поменялось
  * с прошлого раза. Записи хранятся по ключам «тип:id»; побеждает последняя
  * присланная правка, удаления хранятся отметками. У каждой записи помнится
- * автор (owner): участник удаляет только своё, создатель книги — что угодно.
- * Отклонённые удаления возвращаются телефону, и он восстанавливает записи.
+ * автор (owner): участник удаляет только своё и меняет только своё имя,
+ * создатель книги — что угодно. Отклонённые удаления и правки возвращаются
+ * телефону, и он восстанавливает записи.
  */
 function sync_(member, request) {
   var book = requireBook_(member, request.bookId);
@@ -351,6 +399,7 @@ function sync_(member, request) {
     var trash = [];
     var manager = book.creatorId === member.id || !!member.admin;
     var denied = deniedDeletions_(state.entities, clean, member.id, book.creatorId, manager);
+    if (!manager) deniedRenames_(state.entities, clean, member.id, book).forEach(function (key) { denied[key] = true; });
     var accepted = clean.filter(function (change) { return !denied[change.key]; });
     accepted.forEach(function (change) {
       rev += 1;
@@ -425,6 +474,20 @@ function deniedDeletions_(entities, changes, memberId, creatorId, manager) {
     if (key.indexOf('chapter:') === 0 && !denied[key] && remainsInside(key, 'moment:', 'chapterId', false)) denied[key] = true;
   });
   return denied;
+}
+
+/**
+ * Имена в книге: участник меняет только своё имя и рассказчиков, которых
+ * добавил сам. Чужие правки не принимаются, и телефон получает имя обратно.
+ */
+function deniedRenames_(entities, changes, memberId, book) {
+  var membership = book.members[memberId];
+  var own = membership && membership.personId ? 'person:' + membership.personId : '';
+  return changes.filter(function (change) {
+    if (change.deleted || change.key.indexOf('person:') !== 0 || change.key === own) return false;
+    var entry = entities[change.key];
+    return !!entry && !entry.deleted && ownerOf_(entry, book) !== memberId;
+  }).map(function (change) { return change.key; });
 }
 
 function cleanChange_(change) {

@@ -2,6 +2,7 @@ import { ArrowRight, BookOpen, CalendarDays, Clapperboard, Heart, Pencil, Plus, 
 import { useState, type CSSProperties } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
+import { useProfile } from '../../app/profile';
 import { Book3D } from '../../components/Book3D';
 import { Card } from '../../components/Card';
 import { ChoiceDialog } from '../../components/ChoiceDialog';
@@ -28,6 +29,7 @@ export function BookPage() {
     addMoment, toggleMomentFavorite, createBook, updateBook, setBookCover, deleteBook, createChapter, updateChapter, moveChapter, deleteChapter
   } = useAppState();
   const cloud = useCloudSync();
+  const profile = useProfile();
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
@@ -97,11 +99,13 @@ export function BookPage() {
     navigate('/moments/' + moment.id);
   };
 
-  const submitNewBook = (values: BookFormValues) => {
+  const submitNewBook = async (values: BookFormValues) => {
     const created = createBook(values, values.firstChapter);
     setParams({}, { replace: true });
     setPanel('none');
     setNotice(`Книга «${created.title}» создана. Добавьте первый момент или ещё главы.`);
+    // The book is not shared yet: this only gives the creator a narrator of their own in it.
+    await cloud.setMyName(created.id, values.myName);
     // With the family storage connected, a new book goes to Google Drive right away.
     if (cloud.connection) {
       cloud.publishBook(created.id).then(
@@ -189,7 +193,7 @@ export function BookPage() {
     <Card className="library-form-card" id="create-book">
       <div className="card-heading"><div><p className="eyebrow">Новая книга</p><h2>Создать книгу</h2><p>Отдельная книга — для бабушки, для поездки, для свадьбы. У каждой свои главы и свой фильм.</p></div>
         <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setPanel('none')}><X size={20} /></button></div>
-      <BookForm mode="create" onSubmit={submitNewBook} onCancel={() => setPanel('none')} />
+      <BookForm mode="create" profileName={profile?.name} onSubmit={submitNewBook} onCancel={() => setPanel('none')} />
     </Card>
   ) : null;
   const noticeLine = notice ? <p className="field-message field-message--success library-notice" role="status">{notice}</p> : null;
@@ -284,7 +288,7 @@ export function BookPage() {
           <label className="search-field"><Search size={20} aria-hidden="true" /><input type="search" value={query} onChange={(event) => setFilter('q', event.target.value)} placeholder="Найти историю, человека или слово" aria-label="Поиск по книге" />
             {query ? <button type="button" onClick={() => setFilter('q', '')} aria-label="Очистить поиск"><X size={18} /></button> : null}
           </label>
-          <label className="book-person-filter"><span className="visually-hidden">Рассказчик</span><Users size={18} aria-hidden="true" /><select value={personId} onChange={(event) => setFilter('person', event.target.value)} aria-label="Рассказчик"><option value="">Все рассказчики</option>{people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
+          <label className="book-person-filter"><span className="visually-hidden">Рассказчик</span><Users size={18} aria-hidden="true" /><select value={personId} onChange={(event) => setFilter('person', event.target.value)} aria-label="Рассказчик"><option value="">Все рассказчики</option>{people.filter((person) => person.id === cloud.myPersonId(book.id) || !cloud.myPersonIds.has(person.id)).map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
           <button type="button" className={'favorite-filter ' + (favoritesOnly ? 'is-active' : '')} aria-pressed={favoritesOnly} onClick={() => setFilter('favorites', favoritesOnly ? '' : '1')}><Heart size={18} fill={favoritesOnly ? 'currentColor' : 'none'} aria-hidden="true" /> Избранное</button>
         </div>
         <div className="chapter-filter" aria-label="Фильтр по главе">

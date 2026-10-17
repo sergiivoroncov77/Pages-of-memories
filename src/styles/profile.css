@@ -1,0 +1,203 @@
+/* ---------- Sign in on the first start ---------- */
+
+.sign-in {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  place-items: center;
+  padding: 24px 16px calc(24px + env(safe-area-inset-bottom));
+  background:
+    radial-gradient(circle at 20% 10%, color-mix(in srgb, var(--primary-soft) 70%, transparent), transparent 55%),
+    var(--bg);
+}
+
+.sign-in__card {
+  display: grid;
+  width: min(100%, 460px);
+  gap: 14px;
+  padding: 28px 24px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+.sign-in__card h1,
+.sign-in__card p {
+  margin: 0;
+}
+
+.sign-in__card h1 {
+  font-family: var(--font-serif);
+  font-size: clamp(1.7rem, 6vw, 2.2rem);
+  line-height: 1.15;
+}
+
+.sign-in__card .brand__mark {
+  width: 52px;
+  height: 52px;
+}
+
+.sign-in__note {
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+/* ---------- Profile in the navigation ---------- */
+
+.profile-chip {
+  display: flex;
+  min-width: 0;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  color: var(--ink);
+  text-decoration: none;
+  background: var(--surface);
+}
+
+.profile-chip.is-active,
+.profile-chip:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-warm);
+}
+
+.profile-chip .avatar {
+  width: 34px;
+  height: 34px;
+  border-width: 2px;
+  font-size: 0.72rem;
+}
+
+.profile-chip__name {
+  display: grid;
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.profile-chip__name small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.profile-chip__name strong {
+  overflow: hidden;
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar__profile {
+  margin-top: auto;
+}
+
+.mobile-topbar__profile {
+  margin-left: auto;
+  padding-left: 10px;
+}
+
+.mobile-topbar__profile .profile-chip {
+  max-width: 44vw;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+}
+
+.mobile-topbar__profile .profile-chip__name {
+  display: none;
+}
+
+/* ---------- Profile page ---------- */
+
+.account-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.account-card__form {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 12px;
+  justify-items: start;
+}
+
+.account-card__form .field {
+  width: 100%;
+}
+
+.profile-books {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  gap: 10px;
+  list-style: none;
+}
+
+.profile-books__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.profile-books__icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--surface-sage);
+  color: var(--sage-dark);
+}
+
+.profile-books__copy {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  gap: 4px;
+}
+
+.profile-books__copy span,
+.profile-books__copy small {
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+.profile-books__copy small {
+  color: var(--muted);
+}
+
+.profile-books__form {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.me-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+@media (max-width: 560px) {
+  .account-card,
+  .profile-books__item {
+    flex-direction: column;
+  }
+}

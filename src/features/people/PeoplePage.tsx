@@ -1,14 +1,20 @@
-import { BookOpen, Send, UserPlus, X } from 'lucide-react';
+import { BookOpen, Send, UserPlus, UserRound, X } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { PageHeader } from '../../components/PageHeader';
+import { Avatar } from '../../components/Avatar';
 import { PersonCard } from '../../components/PersonCard';
+import { useCloudSync } from '../../sync/CloudSync';
 import { PersonForm } from './PersonForm';
 
 export function PeoplePage() {
-  const { people, memories, moments, perspectives, activeBook, createPerson } = useAppState();
+  const { people: everyone, books, memories, moments, perspectives, activeBook, createPerson } = useAppState();
+  const cloud = useCloudSync();
+  // How this phone signs in its books is the profile, not a relative to interview.
+  const people = everyone.filter((person) => !cloud.myPersonIds.has(person.id));
+  const me = everyone.filter((person) => cloud.myPersonIds.has(person.id));
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const adding = params.get('add') === '1';
@@ -81,6 +87,29 @@ export function PeoplePage() {
               <PersonCard key={person.id} person={person} />
             ))}
           </div>
+        </section>
+      ) : null}
+
+      {me.length ? (
+        <section className="section" aria-labelledby="people-me-title">
+          <div className="section__heading">
+            <div>
+              <p className="eyebrow">Это вы</p>
+              <h2 id="people-me-title">Ваши имена в книгах</h2>
+            </div>
+            <Link to="/profile" className="button button--secondary button--small"><UserRound size={17} aria-hidden="true" /> Профиль</Link>
+          </div>
+          <ul className="profile-books">
+            {me.map((person) => (
+              <li key={person.id} className="profile-books__item">
+                <Avatar person={person} size="small" />
+                <div className="profile-books__copy">
+                  <strong>{person.name}<span className="me-badge">вы</span></strong>
+                  <span>{books.filter((book) => cloud.myPersonId(book.id) === person.id).map((book) => `«${book.title}»`).join(', ') || 'Книга удалена с телефона'}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
 

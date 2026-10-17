@@ -9,6 +9,7 @@ import { MemoryPage } from '../features/memories/MemoryPage';
 import { MomentPage } from '../features/moments/MomentPage';
 import { PeoplePage } from '../features/people/PeoplePage';
 import { PersonPage } from '../features/people/PersonPage';
+import { ProfilePage } from '../features/profile/ProfilePage';
 import { QuestionSessionPage } from '../features/session/QuestionSessionPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { AppShell } from './AppShell';
@@ -39,6 +40,7 @@ export function App() {
         <Route path="chapters/:chapterId/film" element={<Suspense fallback={<Loading />}><ChapterFilmPage /></Suspense>} />
         <Route path="export" element={<ExportPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="profile" element={<ProfilePage />} />
         <Route path="join" element={<JoinPage />} />
         <Route path="cloud/setup" element={<Suspense fallback={<Loading />}><CloudSetupPage /></Suspense>} />
         <Route path="*" element={<NotFoundPage />} />

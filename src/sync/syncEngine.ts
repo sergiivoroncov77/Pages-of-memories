@@ -142,6 +142,10 @@ export function createSyncEngine(env: SyncEnvironment) {
     });
   }
 
+  /** The person this phone signs as in the book; they travel with it even before their first story. */
+  const withPerson = (book: CloudBookState, personId: string): CloudBookState =>
+    ({ ...book, personId, people: book.people.includes(personId) ? book.people : [...book.people, personId] });
+
   /** Start the book over from the storage: take everything, send nothing that looks like a deletion. */
   const restart = (book: CloudBookState): CloudBookState => ({ ...book, rev: 0, fingerprints: {}, owners: {} });
 
@@ -426,35 +430,47 @@ export function createSyncEngine(env: SyncEnvironment) {
       return { outcomes, unlinked: [...unlinked, ...outcomes.filter((item) => item.status === 'unlinked').map((item) => item.bookId)], failed };
     }),
 
-    /** Put a book from this phone into the family storage. */
-    publishBook: (bookId: string, personId?: string) => serial(async () => {
+    /** Put a book from this phone into the family storage; `me` is who its creator signs as in it. */
+    publishBook: (bookId: string, me?: { personId: string; name: string }) => serial(async () => {
       const book = env.getSnapshot().books.find((item) => item.id === bookId);
       if (!book) throw new CloudError('bad_request', 'Книга не найдена.');
-      const reply = await call<{ book: RemoteBook }>('createBook', { bookId, title: book.title, personId });
+      const reply = await call<{ book: RemoteBook }>('createBook', { bookId, title: book.title, personId: me?.personId, name: me?.name });
       const existing = env.store.get().books[bookId];
       // A copy of a book that was removed from this phone starts over from the storage.
-      env.store.update((state) => ({ ...state, books: { ...state.books, [bookId]: existing ? returning(existing)
-        : freshBookState({ title: reply.book.title, creatorId: reply.book.creatorId, creatorName: reply.book.creatorName, canManage: reply.book.canManage, personId }) } }));
+      const state = existing ? returning(existing)
+        : freshBookState({ title: reply.book.title, creatorId: reply.book.creatorId, creatorName: reply.book.creatorName, canManage: reply.book.canManage });
+      const personId = reply.book.personId ?? state.personId;
+      env.store.update((current) => ({ ...current, books: { ...current.books, [bookId]: personId ? withPerson(state, personId) : state } }));
       return syncBookNow(bookId);
     }),
 
     previewInvite: (url: string, code: string) => callFamilyServer<InvitePreview>(url, { action: 'previewInvite', code }, env.fetch),
 
-    /** Accept an invitation; switching to another storage keeps old shared books as local copies. */
-    acceptInvite: (url: string, code: string, name: string) => serial(async () => {
+    /**
+     * Accept an invitation; switching to another storage keeps old shared books
+     * as local copies. `name` is how the person signs in this book; `self` is a
+     * new narrator of their own when the invitation names nobody.
+     */
+    acceptInvite: (url: string, code: string, who: { name: string; profileName?: string; self?: Person }) => serial(async () => {
       const existing = env.store.get().connection;
       const sameStorage = existing?.url === url;
       const reply = await callFamilyServer<{ member: { id: string; name: string; admin: boolean }; token?: string; book: RemoteBook }>(url,
-        { action: 'acceptInvite', code, name, token: sameStorage ? existing?.token : undefined }, env.fetch);
+        { action: 'acceptInvite', code, name: who.name, profileName: who.profileName, personId: who.self?.id, token: sameStorage ? existing?.token : undefined }, env.fetch);
+      const self = who.self && reply.book.personId === who.self.id ? who.self : undefined;
+      if (self && !env.commit((snapshot) => (snapshot.people.some((person) => person.id === self.id) ? snapshot
+        : { ...snapshot, people: [...snapshot.people, { ...self, projectId: snapshot.project.id }] }))) {
+        throw new CloudError('local_write', 'Не удалось сохранить книгу на телефоне: не хватает места.');
+      }
       env.store.update((state) => {
         const base = sameStorage ? state : { version: 1 as const, books: {} };
         const connectionState: CloudConnection = reply.token
           ? { url, memberId: reply.member.id, token: reply.token, name: reply.member.name, admin: reply.member.admin, connectedAt: now().toISOString() }
           : state.connection!;
         const current = returning(base.books[reply.book.id]);
-        return { ...base, connection: connectionState, books: { ...base.books, [reply.book.id]: { ...current, title: reply.book.title,
-          creatorId: reply.book.creatorId, creatorName: reply.book.creatorName, canManage: reply.book.canManage,
-          personId: reply.book.personId ?? current.personId } } };
+        const joined: CloudBookState = { ...current, title: reply.book.title,
+          creatorId: reply.book.creatorId, creatorName: reply.book.creatorName, canManage: reply.book.canManage };
+        const personId = reply.book.personId ?? current.personId;
+        return { ...base, connection: connectionState, books: { ...base.books, [reply.book.id]: personId ? withPerson(joined, personId) : joined } };
       });
       const outcome = await syncBookNow(reply.book.id);
       return { book: reply.book, outcome };
@@ -472,6 +488,18 @@ export function createSyncEngine(env: SyncEnvironment) {
     members: (bookId: string) => call<{ members: CloudMember[]; canManage: boolean }>('members', { bookId }),
 
     removeMember: (bookId: string, memberId: string) => serial(() => call('removeMember', { bookId, memberId })),
+
+    /**
+     * A member's name in the book (the creator names anyone, a member only
+     * themselves), or the person this phone signs as when it has none yet.
+     */
+    updateMember: (bookId: string, patch: { memberId?: string; name?: string; personId?: string }) => serial(async () => {
+      const reply = await call<{ book: RemoteBook }>('updateMember', { bookId, ...patch });
+      updateBook(bookId, (book) => {
+        const named = { ...book, creatorName: reply.book.creatorName };
+        return patch.personId && !patch.memberId ? withPerson(named, patch.personId) : named;
+      });
+    }),
 
     /**
      * Delete for everyone (creator), leave (member: coming back takes a new

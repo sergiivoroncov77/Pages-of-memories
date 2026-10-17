@@ -31,6 +31,7 @@ import {
   deleteReflectionFromSnapshot,
   emptySnapshot,
   moveChapterInSnapshot,
+  newSelfPerson,
   setActiveBookInSnapshot,
   setBookCoverInSnapshot,
   updateBookInSnapshot,
@@ -151,6 +152,8 @@ interface AppStateValue {
   deletePerspective: (perspectiveId: string) => void;
   deleteReflection: (reflectionId: string) => void;
   createPerson: (input: PersonInput) => Person;
+  /** The person who uses this phone, as they sign in one book. */
+  createSelfPerson: (name: string, relation: string) => Person;
   updatePerson: (personId: string, patch: Partial<PersonInput>) => void;
   deletePerson: (personId: string) => void;
   /** Replace everything with an empty archive for real use. Display settings stay. */
@@ -592,6 +595,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return person!;
   };
 
+  const createSelfPerson = (name: string, relation: string) => {
+    const person = newSelfPerson(snapshotRef.current, name, relation);
+    commitSnapshot((current) => ({ ...current, people: [...current.people, { ...person, projectId: current.project.id }] }));
+    return person;
+  };
+
   const updatePerson = (personId: string, patch: Partial<PersonInput>) => {
     commitSnapshot((current) => updatePersonInSnapshot(current, personId, patch));
   };
@@ -722,6 +731,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         deletePerspective,
         deleteReflection,
         createPerson,
+        createSelfPerson,
         updatePerson,
         deletePerson,
         startFresh,

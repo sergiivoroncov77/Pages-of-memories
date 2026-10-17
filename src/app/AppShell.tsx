@@ -1,7 +1,11 @@
-import { AlertTriangle, BookOpen, Download, Home, RotateCcw, Settings, ShieldCheck, Users } from 'lucide-react';
+import { AlertTriangle, BookOpen, Download, Home, RotateCcw, Settings, Users } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Avatar } from '../components/Avatar';
+import { SignInPage } from '../features/profile/SignInPage';
+import { useCloudSync } from '../sync/CloudSync';
 import { useAppState } from './AppState';
+import { profileAvatar, useProfile } from './profile';
 
 const navigation = [
   { to: '/', label: 'Главная', icon: Home, end: true },
@@ -14,6 +18,8 @@ export function AppShell() {
   const { settings, project, persistenceError, retryPersistence, exportBackup, recoveryWarning, downloadOriginalData } = useAppState();
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
+  const profile = useProfile();
+  const cloud = useCloudSync();
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
@@ -31,6 +37,17 @@ export function AppShell() {
     media.addEventListener('change', apply);
     return () => media.removeEventListener('change', apply);
   }, [settings.theme]);
+
+  // Who uses the phone comes first; an invitation link asks for the name itself.
+  if (!profile && location.pathname !== '/join') {
+    return <div className={settings.highContrast ? 'is-high-contrast' : ''}><SignInPage suggestedName={cloud.connection?.name} /></div>;
+  }
+  const me = profile ? (
+    <NavLink to="/profile" className={({ isActive }) => `profile-chip ${isActive ? 'is-active' : ''}`} aria-label={`Профиль: ${profile.name}`}>
+      <Avatar person={profileAvatar(profile.name)} size="small" />
+      <span className="profile-chip__name"><small>Профиль</small><strong>{profile.name}</strong></span>
+    </NavLink>
+  ) : null;
 
   return (
     <div className={`app-shell ${settings.highContrast ? 'is-high-contrast' : ''}`}>
@@ -53,13 +70,7 @@ export function AppShell() {
           ))}
         </nav>
 
-        <div className="sidebar__note">
-          <ShieldCheck size={20} aria-hidden="true" />
-          <span>
-            <strong>Демо-режим</strong>
-            <small>Данные остаются только в этом браузере</small>
-          </span>
-        </div>
+        <div className="sidebar__profile">{me}</div>
       </aside>
 
       <header className="mobile-topbar">
@@ -70,6 +81,7 @@ export function AppShell() {
             <small>{project.title}</small>
           </span>
         </NavLink>
+        <span className="mobile-topbar__profile">{me}</span>
       </header>
 
       <main className="app-main" id="main-content" ref={mainRef} tabIndex={-1}>

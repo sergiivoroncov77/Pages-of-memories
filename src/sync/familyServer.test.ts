@@ -239,6 +239,54 @@ describe('family server (Code.gs)', () => {
     expect(folder.trashed).toBe(true);
   });
 
+  it('keeps a display name per book: chosen when creating, joining, and changed by the creator or the person', () => {
+    const server = loadFamilyServer();
+    const ownerToken = server.post({ action: 'claim', name: 'Сергей' }).token as string;
+    server.post({ action: 'createBook', token: ownerToken, bookId: 'book_1', title: 'Книга бабушки', name: 'Серёжа', personId: 'person_me' });
+    const code = server.post({ action: 'createInvite', token: ownerToken, bookId: 'book_1' }).code as string;
+    expect(server.post({ action: 'previewInvite', code })).toMatchObject({ inviterName: 'Серёжа', personName: '', personId: null });
+
+    // An invitation without a name: the relative signs as a new person of her own.
+    const joined = server.post({ action: 'acceptInvite', code, name: 'Тётя Галя', profileName: 'Галина', personId: 'person_galya' });
+    expect(joined).toMatchObject({ ok: true, member: { name: 'Галина' }, book: { personId: 'person_galya', creatorName: 'Серёжа' } });
+    const galyaToken = joined.token as string;
+    const galyaId = (joined.member as { id: string }).id;
+    const list = () => (server.post({ action: 'members', token: ownerToken, bookId: 'book_1' }).members as { id: string; name: string; personId: string | null }[]);
+    expect(list().map((item) => [item.name, item.personId])).toEqual([['Серёжа', 'person_me'], ['Тётя Галя', 'person_galya']]);
+
+    // She renames herself; only the creator renames others.
+    expect(server.post({ action: 'updateMember', token: galyaToken, bookId: 'book_1', name: 'Галя' })).toMatchObject({ ok: true });
+    expect(server.post({ action: 'updateMember', token: galyaToken, bookId: 'book_1', memberId: (server.post({ action: 'me', token: ownerToken }).member as { id: string }).id, name: 'Кто-то' }))
+      .toMatchObject({ ok: false, error: 'forbidden' });
+    expect(server.post({ action: 'updateMember', token: ownerToken, bookId: 'book_1', memberId: galyaId, name: 'Галина Петровна' })).toMatchObject({ ok: true });
+    expect(server.post({ action: 'updateMember', token: ownerToken, bookId: 'book_1', name: 'Сергей' })).toMatchObject({ ok: true, book: { creatorName: 'Сергей' } });
+    expect(list().map((item) => item.name)).toEqual(['Сергей', 'Галина Петровна']);
+    // Nobody signs as someone else's person.
+    expect(server.post({ action: 'updateMember', token: galyaToken, bookId: 'book_1', personId: 'person_me' })).toMatchObject({ ok: false, error: 'forbidden' });
+  });
+
+  it('takes a person’s new name only from the creator, the person, or whoever added them', () => {
+    const { server, ownerToken } = ownerWithBook();
+    server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [
+      { key: 'person:person_mama', data: { id: 'person_mama', name: 'Мама' } },
+      { key: 'person:person_grandpa', data: { id: 'person_grandpa', name: 'Дедушка' } }
+    ] });
+    const mamaToken = server.post({ action: 'acceptInvite', code: invite(server, ownerToken), name: 'Ольга' }).token as string;
+    const renamed = server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 2, changes: [
+      { key: 'person:person_mama', data: { id: 'person_mama', name: 'Ольга' } },
+      { key: 'person:person_grandpa', data: { id: 'person_grandpa', name: 'Дед' } },
+      { key: 'person:person_aunt', data: { id: 'person_aunt', name: 'Тётя' } }
+    ] });
+    expect(renamed.denied).toEqual(['person:person_grandpa']);
+    const names = Object.fromEntries((renamed.entities as { key: string; data: { name: string } }[]).map((item) => [item.key, item.data.name]));
+    expect(names).toEqual({ 'person:person_mama': 'Ольга', 'person:person_grandpa': 'Дедушка', 'person:person_aunt': 'Тётя' });
+    // The aunt is Mama's: she may rename her; the creator renames anyone.
+    expect(server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 4, changes: [
+      { key: 'person:person_aunt', data: { id: 'person_aunt', name: 'Тётя Люба' } }] }).denied).toEqual([]);
+    expect(server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 5, changes: [
+      { key: 'person:person_mama', data: { id: 'person_mama', name: 'Ольга Ивановна' } }] }).denied).toEqual([]);
+  });
+
   it('resetOwner disconnects the lost owner device and allows a new claim', () => {
     const { server, ownerToken } = ownerWithBook();
     server.run('resetOwner');

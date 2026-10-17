@@ -1,6 +1,7 @@
 import { Cloud, CloudOff, LogIn, RefreshCw } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { useProfile } from '../../app/profile';
 import { Card } from '../../components/Card';
 import { pluralize } from '../../lib/format';
 import { cloudErrorMessage, normalizeServerUrl } from '../../sync/cloudApi';
@@ -10,8 +11,9 @@ import { formatSyncTime } from './cloudFormat';
 /** Connect the owner's phone to the family storage on Google Drive, or show its state. */
 export function CloudSettingsCard() {
   const cloud = useCloudSync();
+  const profile = useProfile();
   const [url, setUrl] = useState('');
-  const [name, setName] = useState('');
+  const [name, setName] = useState(profile?.name ?? '');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [joining, setJoining] = useState('');

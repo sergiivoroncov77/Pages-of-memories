@@ -60,7 +60,7 @@ export function initialsOf(name: string): string {
   return (letters.join('') || '?').toLocaleUpperCase('ru');
 }
 
-function avatarColorFor(seed: string): string {
+export function avatarColorFor(seed: string): string {
   let hash = 0;
   for (const char of seed) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return AVATAR_COLORS[hash % AVATAR_COLORS.length];
@@ -317,6 +317,28 @@ export function createPersonInSnapshot(snapshot: AppSnapshot, input: PersonInput
     status: 'invited'
   };
   return { person, snapshot: { ...snapshot, people: [...snapshot.people, person], questions: [...snapshot.questions, ...questions] } };
+}
+
+/**
+ * The person who uses this phone, as they sign in one book: no interview
+ * questions, since they write their stories themselves.
+ */
+export function newSelfPerson(snapshot: AppSnapshot, name: string, relation: string): Person {
+  const clean = requireTitle(name, 'Напишите, как вас подписывать.');
+  const id = createId('person');
+  return {
+    id,
+    projectId: snapshot.project.id,
+    name: clean,
+    relation,
+    initials: initialsOf(clean),
+    avatarColor: avatarColorFor(id),
+    bio: '',
+    answeredCount: 0,
+    totalQuestions: 0,
+    lastActiveAt: now(),
+    status: 'active'
+  };
 }
 
 export function updatePersonInSnapshot(snapshot: AppSnapshot, personId: string, patch: Partial<PersonInput>): AppSnapshot {

@@ -2,6 +2,7 @@ import { BookOpen, Check, Cloud } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
+import { MAX_NAME_LENGTH, profileStore, useProfile } from '../../app/profile';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { PageHeader } from '../../components/PageHeader';
@@ -21,8 +22,10 @@ function Invitation() {
   const { setActiveBook } = useAppState();
   const navigate = useNavigate();
   const [invite] = useState(() => parseInviteHash(window.location.hash));
+  const profile = useProfile();
   const [preview, setPreview] = useState<InvitePreview | null>(null);
-  const [name, setName] = useState('');
+  // Edited by hand, the name stays; until then it follows the invitation and the profile.
+  const [typedName, setTypedName] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [joining, setJoining] = useState(false);
 
@@ -49,7 +52,8 @@ function Invitation() {
   }
 
   const alreadyIn = preview ? Boolean(cloud.connection?.url === invite.url && cloud.books[preview.bookId]) : false;
-  const displayName = preview?.personName || name.trim();
+  const name = typedName ?? (preview?.personName || profile?.name || '');
+  const displayName = name.trim();
 
   const accept = async () => {
     if (!preview) return;
@@ -58,7 +62,9 @@ function Invitation() {
     setJoining(true);
     setError('');
     try {
-      const { bookId, pending } = await cloud.acceptInvite(invite.url, invite.code, displayName || 'Участник');
+      // A first start on this phone: the name becomes the profile too.
+      if (!profileStore.get()) profileStore.setName(displayName);
+      const { bookId, pending } = await cloud.acceptInvite(invite.url, invite.code, displayName, preview.personId);
       setActiveBook(bookId);
       // The code is no longer needed in the address bar or history.
       window.history.replaceState(window.history.state, '', window.location.pathname);
@@ -81,17 +87,18 @@ function Invitation() {
           <span className="join-card__icon"><BookOpen size={28} aria-hidden="true" /></span>
           <div>
             <h2>{preview.inviterName} приглашает вас в книгу</h2>
-            {preview.personName ? <p>Приглашение для: <strong>{preview.personName}</strong>. Ваши рассказы будут подписаны этим именем.</p> : null}
+            {preview.personName ? <p>Приглашение для: <strong>{preview.personName}</strong>.</p> : null}
             <p>Книга появится на этом телефоне. Всё, что вы добавите — рассказы, фото, голос, видео, отклики, — увидят остальные участники. Регистрация не нужна.</p>
-            {!preview.personName ? (
-              <label className="field">
-                <span>Как вас подписать</span>
-                <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Например, тётя Галя" maxLength={80} autoComplete="name" />
-              </label>
-            ) : null}
+            <label className="field">
+              <span>Как вас подписывать в этой книге</span>
+              <input value={name} onChange={(event) => setTypedName(event.target.value)} placeholder="Например, тётя Галя" maxLength={MAX_NAME_LENGTH} autoComplete="name" />
+              <small>{profile
+                ? 'Так вас увидят участники книги и под вашими рассказами. Имя потом можно изменить в профиле.'
+                : 'Так вас увидят участники книги. Это имя станет и именем вашего профиля на этом телефоне — его можно изменить.'}</small>
+            </label>
             {alreadyIn ? <p className="field-message field-message--success"><Check size={16} aria-hidden="true" /> Эта книга уже есть на телефоне — откройте её на полке.</p> : null}
             <div className="page-action-group">
-              <button type="button" className="button button--primary" onClick={() => { void accept(); }} disabled={joining || (!preview.personName && !name.trim())}>
+              <button type="button" className="button button--primary" onClick={() => { void accept(); }} disabled={joining || !displayName}>
                 <Cloud size={18} aria-hidden="true" /> {joining ? 'Загружаем книгу…' : 'Принять приглашение'}
               </button>
               <Link to="/book" className="button button--ghost">Не сейчас</Link>

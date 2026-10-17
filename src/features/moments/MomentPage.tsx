@@ -33,7 +33,7 @@ export function MomentPage() {
 }
 
 function MomentContent({ moment }: { moment: Moment }) {
-  const { chapters, books, perspectivesForMoment, reflectionsForMoment, mediaForPerspective, getPerson, people, addPerspectiveWithMedia, addReflection, toggleMomentFavorite, updateMoment, deleteMoment, deletePerspective, deleteReflection } = useAppState();
+  const { chapters, books, perspectivesForMoment, reflectionsForMoment, mediaForPerspective, getPerson, people: allPeople, addPerspectiveWithMedia, addReflection, toggleMomentFavorite, updateMoment, deleteMoment, deletePerspective, deleteReflection } = useAppState();
   const cloud = useCloudSync();
   const { myPersonId } = cloud;
   const navigate = useNavigate();
@@ -71,8 +71,9 @@ function MomentContent({ moment }: { moment: Moment }) {
   const [showForm, setShowForm] = useState(false);
   const [showReflection, setShowReflection] = useState(false);
   const [type, setType] = useState<PerspectiveType>('text');
-  // On a shared book, stories are signed by whoever this phone belongs to.
+  // Stories are signed by whoever this phone belongs to; their names in other books stay out of the list.
   const me = myPersonId(moment.bookId);
+  const people = allPeople.filter((person) => person.id === me || !cloud.myPersonIds.has(person.id));
   const defaultAuthor = me && people.some((person) => person.id === me) ? me : people[0]?.id ?? '';
   const [authorId, setAuthorId] = useState(defaultAuthor);
   const [content, setContent] = useState('');

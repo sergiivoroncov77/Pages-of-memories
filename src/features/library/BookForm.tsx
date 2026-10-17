@@ -8,6 +8,8 @@ export interface BookFormValues {
   subtitle: string;
   description: string;
   firstChapter: string;
+  /** How the creator signs in the new book. */
+  myName: string;
   coverMediaAssetId?: string;
 }
 
@@ -16,24 +18,28 @@ interface BookFormProps {
   initial?: Book;
   /** Photos of this book that can become its cover (edit mode). */
   photos?: MediaAsset[];
+  /** The profile name: the default signature in a new book. */
+  profileName?: string;
   onSubmit: (values: BookFormValues) => void;
   onCancel: () => void;
   onDelete?: () => void;
 }
 
-export function BookForm({ mode, initial, photos = [], onSubmit, onCancel, onDelete }: BookFormProps) {
+export function BookForm({ mode, initial, photos = [], profileName = '', onSubmit, onCancel, onDelete }: BookFormProps) {
   const [title, setTitle] = useState(initial?.title ?? '');
   const [subtitle, setSubtitle] = useState(initial?.subtitle ?? '');
   const [description, setDescription] = useState(initial?.description ?? '');
   const [firstChapter, setFirstChapter] = useState('Начало');
+  const [myName, setMyName] = useState(profileName);
   const [cover, setCover] = useState(initial?.coverMediaAssetId ?? '');
   const [error, setError] = useState('');
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!title.trim()) { setError('Напишите название книги.'); return; }
+    if (mode === 'create' && !myName.trim()) { setError('Напишите, как вас подписывать в этой книге.'); return; }
     try {
-      onSubmit({ title, subtitle, description, firstChapter, coverMediaAssetId: cover || undefined });
+      onSubmit({ title, subtitle, description, firstChapter, myName, coverMediaAssetId: cover || undefined });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Не удалось сохранить книгу.');
     }
@@ -58,6 +64,13 @@ export function BookForm({ mode, initial, photos = [], onSubmit, onCancel, onDel
           <span>Первая глава</span>
           <input value={firstChapter} onChange={(event) => setFirstChapter(event.target.value)} maxLength={120} placeholder="Например, «Детство»" />
           <small>Главы можно добавить, переименовать и переставить потом.</small>
+        </label>
+      ) : null}
+      {mode === 'create' ? (
+        <label className="field">
+          <span>Как вас подписывать в этой книге</span>
+          <input value={myName} onChange={(event) => setMyName(event.target.value)} maxLength={80} required placeholder="Например, Сергей или папа" />
+          <small>Так близкие увидят вас в книге и под вашими рассказами. По умолчанию — имя из профиля.</small>
         </label>
       ) : null}
       {mode === 'edit' && photos.length ? (

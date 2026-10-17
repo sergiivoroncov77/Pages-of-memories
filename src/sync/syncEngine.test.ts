@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createBookInSnapshot, createPersonInSnapshot, deleteBookFromSnapshot, deleteMomentsFromSnapshot, emptySnapshot } from '../data/library';
+import { createBookInSnapshot, createPersonInSnapshot, deleteBookFromSnapshot, deleteMomentsFromSnapshot, emptySnapshot, newSelfPerson, updatePersonInSnapshot } from '../data/library';
 import {
   addMediaAssetToSnapshot,
   addMomentToSnapshot,
@@ -99,7 +99,7 @@ async function ownerAndMama() {
   const mama = device(server, emptySnapshot(seedSnapshot.settings, 'Мамин телефон'));
   const { code } = await owner.engine.createInvite(setup.bookId, { id: setup.mamaId, name: 'Мама' });
   const preview = await mama.engine.previewInvite(SERVER_URL, code);
-  const joined = await mama.engine.acceptInvite(SERVER_URL, code, preview.personName);
+  const joined = await mama.engine.acceptInvite(SERVER_URL, code, { name: preview.personName });
   return { server, owner, mama, setup, preview, joined, code };
 }
 
@@ -245,9 +245,9 @@ describe('cloud sync engine', () => {
     await owner.engine.syncAll();
     expect(owner.snapshot.moments.some((item) => item.id === setup.momentId)).toBe(true);
     // The old link no longer works; a new invitation brings the book back.
-    await expect(mama.engine.acceptInvite(SERVER_URL, firstCode, 'Мама')).rejects.toMatchObject({ code: 'invite_not_found' });
+    await expect(mama.engine.acceptInvite(SERVER_URL, firstCode, { name: 'Мама' })).rejects.toMatchObject({ code: 'invite_not_found' });
     const { code } = await owner.engine.createInvite(setup.bookId);
-    await mama.engine.acceptInvite(SERVER_URL, code, 'Мама');
+    await mama.engine.acceptInvite(SERVER_URL, code, { name: 'Мама' });
     expect(mama.snapshot.moments.some((item) => item.id === setup.momentId)).toBe(true);
     expect(memberNames()).toContain('Мама');
 
@@ -338,7 +338,7 @@ describe('cloud sync engine', () => {
     expect(mama.store.get().books[created.book.id].canManage).toBe(true);
     const brother = device(server, emptySnapshot(seedSnapshot.settings, 'Брат'));
     const { code } = await mama.engine.createInvite(created.book.id);
-    await brother.engine.acceptInvite(SERVER_URL, code, 'Брат');
+    await brother.engine.acceptInvite(SERVER_URL, code, { name: 'Брат' });
     expect(brother.snapshot.chapters.some((chapter) => chapter.title === 'Школа')).toBe(true);
     // The owner sees the book in the storage but is not a member until he steps in.
     const { books } = await owner.engine.refreshBooks();
@@ -347,12 +347,53 @@ describe('cloud sync engine', () => {
     expect(owner.snapshot.books.some((book) => book.id === created.book.id)).toBe(true);
   });
 
+  it('signs the creator and a relative from a general link as narrators of their own, renamed only by them or the creator', async () => {
+    const server = loadFamilyServer();
+    const setup = ownerSnapshot();
+    const owner = device(server, setup.snapshot);
+    const me = newSelfPerson(owner.snapshot, 'Серёжа', 'Автор книги');
+    owner.edit((snapshot) => ({ ...snapshot, people: [...snapshot.people, me] }));
+    await owner.engine.connectOwner(SERVER_URL, 'Сергей');
+    await owner.engine.publishBook(setup.bookId, { personId: me.id, name: me.name });
+    expect(owner.store.get().books[setup.bookId]).toMatchObject({ personId: me.id, creatorName: 'Серёжа', people: [me.id] });
+
+    const brother = device(server, emptySnapshot(seedSnapshot.settings, 'Брат'));
+    const { code } = await owner.engine.createInvite(setup.bookId);
+    expect(await brother.engine.previewInvite(SERVER_URL, code)).toMatchObject({ inviterName: 'Серёжа', personName: '' });
+    const self = newSelfPerson(brother.snapshot, 'Брат Коля', 'Участник книги');
+    const joined = await brother.engine.acceptInvite(SERVER_URL, code, { name: 'Брат Коля', profileName: 'Николай', self });
+    expect(joined.book.personId).toBe(self.id);
+    expect(brother.snapshot.people.map((person) => person.name).sort()).toEqual(['Брат Коля', 'Серёжа']);
+    await owner.engine.syncBook(setup.bookId);
+    expect(owner.snapshot.people.find((person) => person.id === self.id)?.name).toBe('Брат Коля');
+    const members = await owner.engine.members(setup.bookId);
+    expect(members.members.map((member) => [member.name, member.personId])).toEqual([['Серёжа', me.id], ['Брат Коля', self.id]]);
+
+    // The creator renames him for everyone.
+    owner.edit((snapshot) => updatePersonInSnapshot(snapshot, self.id, { name: 'Николай Сергеевич' }));
+    await owner.engine.syncBook(setup.bookId);
+    await brother.engine.syncBook(setup.bookId);
+    expect(brother.snapshot.people.find((person) => person.id === self.id)?.name).toBe('Николай Сергеевич');
+    // He may not rename the creator: the storage gives the name back.
+    brother.edit((snapshot) => updatePersonInSnapshot(snapshot, me.id, { name: 'Серый' }));
+    const refused = await brother.engine.syncBook(setup.bookId);
+    expect(refused.denied).toBe(1);
+    expect(brother.snapshot.people.find((person) => person.id === me.id)?.name).toBe('Серёжа');
+    // His own name is his to change, here and in the list of members.
+    brother.edit((snapshot) => updatePersonInSnapshot(snapshot, self.id, { name: 'Коля' }));
+    await brother.engine.updateMember(setup.bookId, { name: 'Коля' });
+    expect((await brother.engine.syncBook(setup.bookId)).denied).toBe(0);
+    await owner.engine.syncBook(setup.bookId);
+    expect(owner.snapshot.people.find((person) => person.id === self.id)?.name).toBe('Коля');
+    expect((await owner.engine.members(setup.bookId)).members[1].name).toBe('Коля');
+  });
+
   it('refreshes an expired Drive key and still downloads', async () => {
     const { server, owner, setup } = await ownerAndMama();
     const second = device(server, emptySnapshot(seedSnapshot.settings, 'Второй телефон'));
     const { code } = await owner.engine.createInvite(setup.bookId);
     server.fake.rotateToken();
-    await second.engine.acceptInvite(SERVER_URL, code, 'Сергей');
+    await second.engine.acceptInvite(SERVER_URL, code, { name: 'Сергей' });
     expect(await second.blobs.get('media_photo1')).toBeDefined();
     server.fake.rotateToken();
     owner.edit((snapshot) => addMediaAssetToSnapshot(snapshot, createMediaAsset({ type: 'photo', url: storedMediaUrl('media_new'), mimeType: 'image/png' }, 'media_new')));

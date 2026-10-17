@@ -552,3 +552,22 @@
   color: var(--ink-soft);
   line-height: 1.45;
 }
+
+.cloud-members__rename {
+  display: flex;
+  width: 100%;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 8px 0;
+}
+
+.cloud-members__rename .field {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.cloud-members__note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
