@@ -50,7 +50,7 @@ function fakeFetch(server: FamilyServer, hooks: Hooks): FetchLike {
   };
 }
 
-function device(server: FamilyServer, initial: AppSnapshot) {
+function device(server: FamilyServer, initial: AppSnapshot, makePreview?: (photo: Blob) => Promise<Blob | null>) {
   let snapshot = initial;
   const hooks: Hooks = {};
   const blobs = createMemoryMediaStore();
@@ -61,7 +61,8 @@ function device(server: FamilyServer, initial: AppSnapshot) {
     store, blobs, fetch: fetchImpl, media: createDriveTransfer(fetchImpl),
     getSnapshot: () => snapshot,
     commit: (update) => { snapshot = update(snapshot); return true; },
-    onMediaStored: (id) => stored.push(id)
+    onMediaStored: (id) => stored.push(id),
+    makePreview
   });
   return {
     engine, blobs, store, hooks, stored,
@@ -128,9 +129,73 @@ describe('cloud sync engine', () => {
     expect(mama.store.get().books[setup.bookId].personId).toBe(setup.mamaId);
     const photo = snapshot.mediaAssets.find((asset) => asset.id === 'media_photo1')!;
     expect(photo.url).toBe('idb:media_photo1');
+    expect(mama.engine.hasLocalChanges(setup.bookId)).toBe(false);
+
+    // The photo opens from the cloud: nothing is downloaded until she asks.
+    expect(mama.store.get().books[setup.bookId].keepFiles).toBe(false);
+    expect(await mama.blobs.get('media_photo1')).toBeUndefined();
+    expect(mama.engine.hasFile('media_photo1')).toBe(true);
+    expect([...new Uint8Array(await (await mama.engine.fetchFile('media_photo1', 'view')).arrayBuffer())]).toEqual([7, 7, 7]);
+    const stream = await mama.engine.streamAccess('media_photo1');
+    expect(stream).toMatchObject({ size: 3, mimeType: 'image/jpeg', url: expect.stringContaining('/drive/v3/files/') });
+
+    // «Скачать на устройство»: the whole book comes, and new files will follow with every sync.
+    const progress: number[] = [];
+    expect(await mama.engine.downloadFiles(setup.bookId, (step) => progress.push(step.done))).toMatchObject({ done: 1, total: 1, failed: 0, stopped: false });
+    expect(progress).toEqual([0, 1]);
     expect([...new Uint8Array(await (await mama.blobs.get('media_photo1'))!.arrayBuffer())]).toEqual([7, 7, 7]);
     expect(mama.stored).toEqual(['media_photo1']);
-    expect(mama.engine.hasLocalChanges(setup.bookId)).toBe(false);
+    expect(mama.store.get().books[setup.bookId].keepFiles).toBe(true);
+
+    // «Удалить файлы с устройства»: the book stays, the photo opens from the cloud again.
+    expect(await mama.engine.freeFiles(setup.bookId)).toEqual({ removed: 1, bytes: 3, kept: 0 });
+    expect(await mama.blobs.get('media_photo1')).toBeUndefined();
+    expect(mama.store.get().books[setup.bookId].keepFiles).toBe(false);
+    expect(mama.snapshot.mediaAssets.some((asset) => asset.id === 'media_photo1')).toBe(true);
+  });
+
+  it('keeps on the device a file that is not uploaded yet when its space is freed', async () => {
+    const { owner, setup } = await ownerAndMama();
+    const voice = createMediaAsset({ type: 'audio', url: storedMediaUrl('media_offline'), mimeType: 'audio/webm', sizeBytes: 1 }, 'media_offline');
+    await owner.blobs.put('media_offline', new Blob([new Uint8Array([9])], { type: 'audio/webm' }));
+    owner.edit((snapshot) => addPerspectiveToSnapshot(addMediaAssetToSnapshot(snapshot, voice),
+      createPerspective({ momentId: setup.momentId, type: 'audio', content: '', mediaAssetId: voice.id })));
+    // The creator's own book keeps its files here.
+    expect(owner.store.get().books[setup.bookId].keepFiles).toBe(true);
+    expect(await owner.engine.freeFiles(setup.bookId)).toEqual({ removed: 1, bytes: 3, kept: 1 });
+    expect(await owner.blobs.get('media_photo1')).toBeUndefined();
+    expect(await owner.blobs.get('media_offline')).toBeDefined();
+  });
+
+  it('uploads a light preview next to a photo and shows it from the cloud', async () => {
+    const server = loadFamilyServer();
+    const setup = ownerSnapshot();
+    const owner = device(server, setup.snapshot, async () => new Blob([new Uint8Array([1])], { type: 'image/jpeg' }));
+    await owner.blobs.put('media_photo1', new Blob([new Uint8Array([7, 7, 7])], { type: 'image/jpeg' }));
+    await owner.engine.connectOwner(SERVER_URL, 'Сергей');
+    await owner.engine.publishBook(setup.bookId);
+    const file = owner.store.get().books[setup.bookId].files.media_photo1;
+    expect(file).toMatchObject({ size: 3, previewId: expect.any(String), previewSize: 1 });
+
+    const mama = device(server, emptySnapshot(seedSnapshot.settings, 'Мамин телефон'));
+    const { code } = await owner.engine.createInvite(setup.bookId);
+    await mama.engine.acceptInvite(SERVER_URL, code, { name: 'Мама' });
+    expect(mama.engine.hasPreview('media_photo1')).toBe(true);
+    expect([...new Uint8Array(await (await mama.engine.fetchFile('media_photo1', 'view')).arrayBuffer())]).toEqual([1]);
+    expect([...new Uint8Array(await (await mama.engine.fetchFile('media_photo1', 'full')).arrayBuffer())]).toEqual([7, 7, 7]);
+    // A download takes the original.
+    await mama.engine.downloadFiles(setup.bookId);
+    expect([...new Uint8Array(await (await mama.blobs.get('media_photo1'))!.arrayBuffer())]).toEqual([7, 7, 7]);
+  });
+
+  it('gives an older photo a preview from the device of whoever added it', async () => {
+    const { server, owner, setup } = await ownerAndMama();
+    expect(owner.store.get().books[setup.bookId].files.media_photo1.previewId).toBeUndefined();
+    const later = device(server, owner.snapshot, async () => new Blob([new Uint8Array([2])], { type: 'image/jpeg' }));
+    later.store.update(() => owner.store.get());
+    await later.blobs.put('media_photo1', new Blob([new Uint8Array([7, 7, 7])], { type: 'image/jpeg' }));
+    await later.engine.syncBook(setup.bookId);
+    expect(later.store.get().books[setup.bookId].files.media_photo1).toMatchObject({ previewId: expect.any(String), previewSize: 1 });
   });
 
   it('brings a relative’s new moment, comment and voice back to the owner', async () => {
@@ -165,6 +230,7 @@ describe('cloud sync engine', () => {
 
     // The creator deletes the moment: it goes for everyone, with its photo.
     const fileId = owner.store.get().books[setup.bookId].files.media_photo1.fileId;
+    await mama.engine.downloadFiles(setup.bookId);
     expect(await mama.blobs.get('media_photo1')).toBeDefined();
     owner.edit((snapshot) => deleteMomentsFromSnapshot(snapshot, [setup.momentId]).snapshot);
     await owner.engine.syncBook(setup.bookId);
@@ -183,6 +249,7 @@ describe('cloud sync engine', () => {
     expect(deletionBlocker(owner.snapshot, owner.store.get().books[setup.bookId], owner.store.get().connection!.memberId, { type: 'moment', id: setup.momentId })).toBeNull();
 
     // Deleting the owner's moment anyway (an old app, a race): the storage refuses and it comes back with its photo.
+    await mama.engine.downloadFiles(setup.bookId);
     mama.edit((snapshot) => deleteMomentsFromSnapshot(snapshot, [setup.momentId]).snapshot);
     await mama.blobs.delete('media_photo1');
     const refused = await mama.engine.syncBook(setup.bookId);
@@ -400,6 +467,7 @@ describe('cloud sync engine', () => {
     const { code } = await owner.engine.createInvite(setup.bookId);
     server.fake.rotateToken();
     await second.engine.acceptInvite(SERVER_URL, code, { name: 'Сергей' });
+    expect(await second.engine.downloadFiles(setup.bookId)).toMatchObject({ done: 1, failed: 0 });
     expect(await second.blobs.get('media_photo1')).toBeDefined();
     server.fake.rotateToken();
     owner.edit((snapshot) => addMediaAssetToSnapshot(snapshot, createMediaAsset({ type: 'photo', url: storedMediaUrl('media_new'), mimeType: 'image/png' }, 'media_new')));
@@ -437,6 +505,35 @@ describe('cloud sync engine', () => {
     await expect(mama.engine.syncBook(setup.bookId)).rejects.toMatchObject({ code: 'unauthorized' });
     expect(mama.store.get().connection).toBeUndefined();
     expect(mama.snapshot.books.some((book) => book.id === setup.bookId)).toBe(true);
+  });
+
+  it('signs the same person in on a tablet by a one-time link: same books, same name, equal devices', async () => {
+    const { server, owner, setup } = await ownerAndMama();
+    const { code } = await owner.engine.createDeviceLink();
+    const tablet = device(server, emptySnapshot(seedSnapshot.settings, 'Планшет'));
+    expect(await tablet.engine.previewDeviceLink(SERVER_URL, code)).toMatchObject({ name: 'Сергей', memberId: owner.store.get().connection!.memberId });
+    const member = await tablet.engine.acceptDeviceLink(SERVER_URL, code, 'iPad · Safari');
+    expect(member).toMatchObject({ name: 'Сергей', admin: true });
+    await tablet.engine.syncAll();
+    expect(tablet.store.get().connection).toMatchObject({ memberId: owner.store.get().connection!.memberId, deviceId: expect.stringMatching(/^device_/) });
+    expect(tablet.snapshot.books.map((book) => book.id)).toEqual([setup.bookId]);
+    expect(tablet.store.get().books[setup.bookId]).toMatchObject({ canManage: true, personId: owner.store.get().books[setup.bookId].personId });
+
+    // The profile name is one for both devices.
+    await tablet.engine.updateProfile('Серёжа');
+    await owner.engine.syncAll();
+    expect(owner.store.get().connection!.name).toBe('Серёжа');
+
+    // The tablet disconnects the phone; then signs itself out, keeping the book here.
+    const devices = await tablet.engine.devices();
+    expect(devices.map((item) => [item.name, item.current])).toEqual([['', false], ['iPad · Safari', true]]);
+    await tablet.engine.removeDevice(devices[0].id);
+    await expect(owner.engine.syncAll()).rejects.toMatchObject({ code: 'unauthorized' });
+    expect(owner.store.get().connection).toBeUndefined();
+    await tablet.engine.removeDevice();
+    expect(tablet.store.get()).toEqual({ version: 1, books: {} });
+    expect(tablet.snapshot.books.map((book) => book.id)).toEqual([setup.bookId]);
+    await expect(tablet.engine.acceptDeviceLink(SERVER_URL, code, 'Ещё раз')).rejects.toMatchObject({ code: 'link_not_found' });
   });
 
   it('rejects storage records that point outside the app', async () => {

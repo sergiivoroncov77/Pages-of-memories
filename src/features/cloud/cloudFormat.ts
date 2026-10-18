@@ -14,3 +14,15 @@ export function formatSyncTime(iso: string | undefined, now = new Date()): strin
 export function formatExpiry(iso: string): string {
   return new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
 }
+
+/** «сегодня», «вчера» или «12 октября»: when a device was last used. */
+export function formatDay(iso: string | null | undefined, now = new Date()): string {
+  if (!iso) return 'давно';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'давно';
+  const day = (value: Date) => new Date(value.getFullYear(), value.getMonth(), value.getDate()).getTime();
+  const days = Math.round((day(now) - day(date)) / 86_400_000);
+  if (days <= 0) return 'сегодня';
+  if (days === 1) return 'вчера';
+  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', ...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}) });
+}

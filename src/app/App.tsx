@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { BookPage } from '../features/book/BookPage';
+import { DevicePage } from '../features/cloud/DevicePage';
 import { JoinPage } from '../features/cloud/JoinPage';
 import { ExportPage } from '../features/export/ExportPage';
 import { HomePage } from '../features/home/HomePage';
@@ -42,6 +43,7 @@ export function App() {
         <Route path="settings" element={<SettingsPage />} />
         <Route path="profile" element={<ProfilePage />} />
         <Route path="join" element={<JoinPage />} />
+        <Route path="device" element={<DevicePage />} />
         <Route path="cloud/setup" element={<Suspense fallback={<Loading />}><CloudSetupPage /></Suspense>} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

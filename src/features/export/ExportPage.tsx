@@ -9,6 +9,7 @@ import { Toggle } from '../../components/Toggle';
 import { buildBookHtml } from '../../lib/bookExport';
 import { formatDate, pluralize, truncate } from '../../lib/format';
 import { inlineStoredMedia, mediaStore } from '../../lib/mediaStore';
+import { withCloudOriginals } from '../../lib/cloudMedia';
 
 export function ExportPage() {
   const { activeBook: book, chaptersForBook, momentsForChapter, perspectives, reflections, mediaAssets, people } = useAppState();
@@ -54,11 +55,11 @@ export function ExportPage() {
     let url: string | undefined;
     let anchor: HTMLAnchorElement | undefined;
     try {
-      // Only media used by the selected moments is read from the device and embedded.
+      // Only media used by the selected moments is embedded: from the device, or from the cloud for shared books.
       const selectedIds = new Set(selectedMoments.map((moment) => moment.id));
       const usedAssetIds = new Set(perspectives.filter((item) => selectedIds.has(item.momentId)).map((item) => item.mediaAssetId));
       const portableAssets = withMedia
-        ? (await inlineStoredMedia(mediaAssets.filter((asset) => usedAssetIds.has(asset.id)), mediaStore())).assets
+        ? (await inlineStoredMedia(mediaAssets.filter((asset) => usedAssetIds.has(asset.id)), withCloudOriginals(mediaStore()))).assets
         : mediaAssets;
       const html = buildBookHtml({
         title, dedication, chapters, moments: selectedMoments, perspectives,

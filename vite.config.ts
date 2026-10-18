@@ -31,7 +31,10 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: 'index.html',
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}']
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // Streams voices and videos of shared books from the cloud (public/cloud-media-sw.js).
+        importScripts: ['cloud-media-sw.js'],
+        navigateFallbackDenylist: [/\/cloud-media\//]
       }
     })
   ]

@@ -204,10 +204,13 @@ function AssetPreview({ asset }: { asset: MediaAsset }) {
   const [failed, setFailed] = useState(false);
   const media = useMediaUrl(asset);
   if (media.status === 'loading') return <p className="field-message" role="status">Загружаем материал…</p>;
+  if (media.status === 'missing' && media.offline) return <p className="field-message" role="status">Материал «{asset.fileName ?? 'Файл'}» в облаке: он откроется, когда появится интернет.</p>;
   if (failed || media.status === 'missing') return <p className="field-message" role="status">Не удалось открыть материал «{asset.fileName ?? 'Файл'}». Проверьте его формат или восстановите файл из резервной копии.</p>;
+  // A stream from the cloud that the player refuses comes whole instead.
+  const broken = () => (media.retry ? media.retry() : setFailed(true));
   if (asset.type === 'photo') return <img className="asset-preview asset-preview--image" src={media.url} alt={asset.alt ?? asset.fileName ?? 'Фотография из книги'} loading="lazy" onError={() => setFailed(true)} />;
   if (asset.type === 'audio' && asset.url.startsWith('/demo/')) return <div className="demo-media-note"><FileAudio size={21} aria-hidden="true" /><span>Демонстрационный материал. Настоящая аудиозапись не прикреплена.</span></div>;
-  if (asset.type === 'video') return <video className="asset-preview" src={media.url} controls preload="metadata" aria-label={asset.fileName ?? 'Видео момента'} onError={() => setFailed(true)} />;
-  if (asset.type === 'audio') return <div className="asset-preview asset-preview--audio"><FileAudio size={21} aria-hidden="true" /><audio src={media.url} controls preload="metadata" aria-label={asset.fileName ?? 'Аудиозапись момента'} onError={() => setFailed(true)} /></div>;
+  if (asset.type === 'video') return <video className="asset-preview" src={media.url} controls playsInline preload="metadata" aria-label={asset.fileName ?? 'Видео момента'} onError={broken} />;
+  if (asset.type === 'audio') return <div className="asset-preview asset-preview--audio"><FileAudio size={21} aria-hidden="true" /><audio src={media.url} controls preload="metadata" aria-label={asset.fileName ?? 'Аудиозапись момента'} onError={broken} /></div>;
   return <p className="demo-media-note">Просмотр этого типа материала пока недоступен.</p>;
 }

@@ -108,7 +108,7 @@ export function BookPage() {
     if (cloud.connection) {
       cloud.publishBook(created.id).then(
         () => setNotice(`Книга «${created.title}» создана и сохранена в семейное хранилище. Пригласите близких через «Поделиться».`),
-        (error) => setNotice(`Книга «${created.title}» создана на этом устройстве. В хранилище сохранить не удалось: ${cloudErrorMessage(error)} Нажмите «Сохранить в Google Диск» позже.`)
+        (error) => setNotice(`Книга «${created.title}» создана на этом устройстве. В облако выгрузить не удалось: ${cloudErrorMessage(error)} Нажмите «Выгрузить в облако» позже.`)
       );
     }
   };

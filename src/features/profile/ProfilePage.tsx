@@ -1,8 +1,8 @@
-import { Check, Pencil, Save, UserRound } from 'lucide-react';
+import { Check, MonitorSmartphone, Pencil, Save, UserRound } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
-import { MAX_NAME_LENGTH, profileAvatar, profileStore, useProfile } from '../../app/profile';
+import { cleanName, MAX_NAME_LENGTH, profileAvatar, useProfile } from '../../app/profile';
 import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
 import { PageHeader } from '../../components/PageHeader';
@@ -13,17 +13,19 @@ import { useCloudSync } from '../../sync/CloudSync';
 
 export function ProfilePage() {
   const profile = useProfile();
+  const cloud = useCloudSync();
   const { books } = useAppState();
   const [name, setName] = useState(profile?.name ?? '');
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
   if (!profile) return null;
 
-  const save = (event: FormEvent) => {
+  const save = async (event: FormEvent) => {
     event.preventDefault();
     try {
-      const saved = profileStore.setName(name);
-      setName(saved.name);
-      setMessage({ error: false, text: 'Имя профиля сохранено.' });
+      const { everywhere } = await cloud.saveProfileName(name);
+      setName(cleanName(name));
+      setMessage({ error: false, text: everywhere ? 'Имя профиля сохранено на всех ваших устройствах.'
+        : cloud.connection ? 'Имя сохранено. На другие ваши устройства оно уйдёт, когда появится связь.' : 'Имя профиля сохранено.' });
     } catch (cause) {
       setMessage({ error: true, text: cause instanceof Error ? cause.message : 'Не удалось сохранить имя.' });
     }
@@ -33,11 +35,11 @@ export function ProfilePage() {
   return (
     <div className="page">
       <PageHeader eyebrow="Профиль" title={profile.name}
-        description="Профиль хранится на этом устройстве, пароль не нужен. Его имя — для вас; в каждой книге участники видят имя, которое вы выбрали для неё." />
+        description="Пароль не нужен: на другом своём устройстве вы входите в профиль по QR-коду. Имя профиля — для вас; в каждой книге участники видят имя, которое вы выбрали для неё." />
 
       <Card className="account-card">
         <Avatar person={profileAvatar(profile.name)} size="large" />
-        <form className="account-card__form" onSubmit={save}>
+        <form className="account-card__form" onSubmit={(event) => { void save(event); }}>
           <label className="field">
             <span>Как вас зовут</span>
             <input value={name} onChange={(event) => { setName(event.target.value); setMessage(null); }} maxLength={MAX_NAME_LENGTH} autoComplete="name" required />
@@ -62,6 +64,19 @@ export function ProfilePage() {
         ) : (
           <p className="muted-copy">Книг пока нет. <Link to="/book" className="text-link">Создайте книгу</Link> или откройте ссылку-приглашение от близких.</p>
         )}
+      </section>
+
+      <section className="section" aria-labelledby="profile-devices-title">
+        <div className="section__heading">
+          <div>
+            <p className="eyebrow">Устройства</p>
+            <h2 id="profile-devices-title">Вход с других устройств</h2>
+          </div>
+        </div>
+        <p className="muted-copy">{cloud.connection
+          ? 'Телефон, планшет, компьютер: войдите в этот профиль по QR-коду, и там будут те же общие книги и имена. Все устройства равноправны, любое можно отключить.'
+          : 'Когда устройство подключено к семейному хранилищу (по приглашению в книгу или как у владельца), в профиль можно входить и с других устройств.'}</p>
+        <Link to="/settings#devices" className="button button--secondary"><MonitorSmartphone size={18} aria-hidden="true" /> Устройства и QR-код</Link>
       </section>
     </div>
   );

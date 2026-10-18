@@ -18,6 +18,9 @@ export type EntityMap = Map<string, EntityData>;
 export interface CloudFile {
   fileId: string;
   size?: number;
+  /** A smaller copy of a photo for viewing from the cloud; the original stays for downloads and films. */
+  previewId?: string;
+  previewSize?: number;
 }
 
 export interface CloudChange {
@@ -104,7 +107,7 @@ export function collectBookEntities(snapshot: AppSnapshot, bookId: string, scope
   snapshot.mediaAssets.filter((asset) => mediaIds.has(asset.id)).forEach((asset) => {
     entities.set(entityKey('media', asset.id), withoutUndefined({ ...asset, url: portableMediaUrl(asset) }));
     const file = scope.files[asset.id];
-    if (file) entities.set(entityKey('file', asset.id), withoutUndefined({ fileId: file.fileId, size: file.size }));
+    if (file) entities.set(entityKey('file', asset.id), withoutUndefined({ fileId: file.fileId, size: file.size, previewId: file.previewId, previewSize: file.previewSize }));
   });
   const peopleIds = new Set([...scope.people, ...[...perspectives, ...reflections].map((item) => item.authorId)]
     .filter((id): id is string => Boolean(id)));
@@ -269,7 +272,9 @@ export function applyRemoteEntities(snapshot: AppSnapshot, bookId: string, entit
       }
       case 'file': {
         if (typeof data.fileId !== 'string' || !FILE_ID.test(data.fileId)) { rejected.push(entity.key); break; }
-        files[id] = withoutUndefined({ fileId: data.fileId, size: typeof data.size === 'number' ? data.size : undefined }) as unknown as CloudFile;
+        const preview = typeof data.previewId === 'string' && FILE_ID.test(data.previewId);
+        files[id] = withoutUndefined({ fileId: data.fileId, size: typeof data.size === 'number' ? data.size : undefined,
+          previewId: preview ? data.previewId : undefined, previewSize: preview && typeof data.previewSize === 'number' ? data.previewSize : undefined }) as unknown as CloudFile;
         break;
       }
     }

@@ -1,5 +1,6 @@
 import type { MediaAsset } from '../../data/types';
-import { baseMimeType, isStoredMedia, mediaStore } from '../mediaStore';
+import { originalBlob } from '../cloudMedia';
+import { baseMimeType, isStoredMedia } from '../mediaStore';
 import { publicUrl } from '../publicUrl';
 import { MUSIC_LOOP_SECONDS, renderMusicLoop } from './music';
 import { createCanvas, FilmRenderer, type FilmAssets, type PreparedAudio, type PreparedPhoto } from './renderer';
@@ -47,8 +48,9 @@ export interface FilmPlayerState {
 
 async function assetBlob(asset: MediaAsset): Promise<Blob> {
   if (isStoredMedia(asset)) {
-    const blob = await mediaStore().get(asset.id);
-    if (!blob) throw new Error('Файл не найден на устройстве');
+    // The original, also when the book's files open from the cloud.
+    const blob = await originalBlob(asset.id);
+    if (!blob) throw new Error('Файл не найден ни на устройстве, ни в семейном хранилище');
     return blob;
   }
   const response = await fetch(publicUrl(asset.url));

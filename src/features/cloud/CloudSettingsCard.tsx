@@ -9,7 +9,7 @@ import { cloudErrorMessage, normalizeServerUrl } from '../../sync/cloudApi';
 import { useCloudSync } from '../../sync/CloudSync';
 import { formatSyncTime } from './cloudFormat';
 
-/** Connect the owner's phone to the family storage on Google Drive, or show its state. */
+/** Connect the owner's first device to the family storage on Google Drive, or show its state. */
 export function CloudSettingsCard() {
   const cloud = useCloudSync();
   const profile = useProfile();
@@ -49,7 +49,7 @@ export function CloudSettingsCard() {
         {cloud.error ? <p className="field-message field-message--error" role="alert">{cloud.error}</p> : null}
         <ol className="share-steps">
           <li><strong>Владелец один раз ставит скрипт</strong> <span>в свой Google аккаунт — <Link to="/cloud/setup" className="text-link">пошаговая инструкция</Link>, около 10 минут.</span></li>
-          <li><strong>Вставляет сюда адрес скрипта</strong> <span>и нажимает «Подключить». Это устройство станет устройством владельца.</span></li>
+          <li><strong>Вставляет сюда адрес скрипта</strong> <span>и нажимает «Подключить» — и становится владельцем хранилища. Другие свои устройства он подключит потом по QR-коду в «Устройствах».</span></li>
           <li><strong>Приглашает близких</strong> <span>из книги: «Поделиться» → «Создать ссылку-приглашение».</span></li>
         </ol>
         <form className="cloud-connect" onSubmit={(event) => { void connect(event); }}>
@@ -70,12 +70,6 @@ export function CloudSettingsCard() {
   const { connection } = cloud;
   const shared = Object.keys(cloud.books).length;
   const syncing = cloud.status === 'syncing';
-  const disconnect = () => {
-    const warning = connection.admin
-      ? ' Это устройство владельца: подключиться снова получится, только если запустить в скрипте функцию resetOwner (см. инструкцию).'
-      : ' Чтобы подключиться снова, понадобится новое приглашение.';
-    if (window.confirm(`Отключить это устройство от семейного хранилища? Книги останутся на нём, но перестанут обновляться.${warning}`)) cloud.disconnect();
-  };
   const join = async (bookId: string, back: boolean) => {
     setJoining(bookId);
     setError('');
@@ -95,7 +89,7 @@ export function CloudSettingsCard() {
         <span className="settings-section__icon settings-section__icon--sage"><Cloud size={23} aria-hidden="true" /></span>
         <div>
           <h2>Семейное хранилище подключено</h2>
-          <p>{connection.name}{connection.admin ? ' · владелец хранилища' : ''} · {shared} {pluralize(shared, 'общая книга', 'общие книги', 'общих книг')} на этом устройстве.</p>
+          <p>{profile?.name ?? connection.name}{connection.admin ? ' · владелец хранилища' : ''} · {shared} {pluralize(shared, 'общая книга', 'общие книги', 'общих книг')} на этом устройстве. Отключить устройство — в «Устройствах» ниже.</p>
         </div>
       </div>
       <p role="status">{syncing ? 'Синхронизация…' : cloud.status === 'offline' ? 'Нет связи с хранилищем — изменения уйдут, когда появится интернет.' : `Последняя синхронизация: ${formatSyncTime(cloud.lastSyncAt)}.`}</p>
@@ -106,7 +100,6 @@ export function CloudSettingsCard() {
           <RefreshCw size={18} aria-hidden="true" className={syncing ? 'is-spinning' : undefined} /> Синхронизировать сейчас
         </button>
         {connection.admin ? <Link to="/cloud/setup" className="button button--ghost">Инструкция по скрипту</Link> : null}
-        <button type="button" className="button button--danger-ghost" onClick={disconnect}>Отключить это устройство</button>
       </div>
       {connection.admin && cloud.otherBooks.length ? (
         <div className="cloud-other-books">

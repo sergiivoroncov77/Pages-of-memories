@@ -6,7 +6,7 @@
 export type CloudErrorCode =
   | 'offline' | 'not_script' | 'unauthorized' | 'claimed' | 'not_member' | 'book_not_found' | 'forbidden'
   | 'invite_not_found' | 'invite_expired' | 'busy' | 'drive_error' | 'bad_request' | 'too_large' | 'server_error'
-  | 'exists' | 'media_failed' | 'local_write';
+  | 'exists' | 'media_failed' | 'local_write' | 'device_not_found' | 'link_not_found' | 'link_expired';
 
 export class CloudError extends Error {
   readonly code: CloudErrorCode;
@@ -151,6 +151,16 @@ export function inviteLink(appUrl: string, serverUrl: string, code: string): str
   const base = appUrl.endsWith('/') ? appUrl : `${appUrl}/`;
   return `${base}join#s=${encodeURIComponent(serverUrl)}&c=${encodeURIComponent(code)}`;
 }
+
+/** A one-time sign-in link for another device of the same person; read with `parseInviteHash`. */
+export function deviceLink(appUrl: string, serverUrl: string, code: string): string {
+  const base = appUrl.endsWith('/') ? appUrl : `${appUrl}/`;
+  return `${base}device#s=${encodeURIComponent(serverUrl)}&c=${encodeURIComponent(code)}`;
+}
+
+/** The storage script predates an action: its owner has to deploy the new Code.gs. */
+export const isOutdatedScript = (error: unknown) =>
+  error instanceof CloudError && error.code === 'bad_request' && error.message.startsWith('Неизвестное действие');
 
 export function parseInviteHash(hash: string): { url: string; code: string } | null {
   const params = new URLSearchParams(hash.replace(/^#/, ''));

@@ -4,11 +4,14 @@ import { useAppState } from '../app/AppState';
 import { cleanName, profileStore, useProfile } from '../app/profile';
 import { newSelfPerson } from '../data/library';
 import type { AppSnapshot, Person } from '../data/types';
+import { clearCloudMediaCache, notifyCloudMedia, notifyFilesChanged, setCloudMediaSource, takeCachedOriginal } from '../lib/cloudMedia';
+import { guessDeviceName } from '../lib/deviceName';
 import { mediaStore, notifyMediaStored } from '../lib/mediaStore';
-import { CloudError, cloudErrorMessage, createDriveTransfer, inviteLink } from './cloudApi';
+import { makePhotoPreview } from '../lib/photoPreview';
+import { CloudError, cloudErrorMessage, createDriveTransfer, deviceLink, inviteLink } from './cloudApi';
 import { createCloudStateStore, type CloudBookState, type CloudConnection, type CloudState } from './cloudState';
 import { deletionBlocker, renameBlocker, sharedBooksWithPerson, type DeletionTarget } from './permissions';
-import { createSyncEngine, type CloudMember, type InvitePreview, type RemoteBook } from './syncEngine';
+import { createSyncEngine, type CloudDevice, type CloudMember, type DeviceLinkPreview, type DownloadProgress, type InvitePreview, type RemoteBook } from './syncEngine';
 
 /*
  * The family storage for the whole app: it syncs shared books when the app
@@ -17,6 +20,12 @@ import { createSyncEngine, type CloudMember, type InvitePreview, type RemoteBook
  */
 
 export type CloudStatus = 'idle' | 'syncing' | 'offline' | 'error';
+
+/** A book's files coming to this device at the person's request. */
+export interface BookDownload extends DownloadProgress {
+  running: boolean;
+  error?: string;
+}
 
 export interface DetachedBook {
   id: string;
@@ -75,6 +84,25 @@ interface CloudSyncValue {
   snapshotReplaced: (missing: 'detach' | 'pull') => void;
   /** The storage owner opens a book of the storage, signing in it as `name`. */
   joinBook: (bookId: string, name: string) => Promise<void>;
+  /** Change the profile name here and, when connected, on every device of the person. */
+  saveProfileName: (name: string) => Promise<{ everywhere: boolean }>;
+  /** The person's devices; all of them are equal. */
+  devices: () => Promise<CloudDevice[]>;
+  renameDevice: (deviceId: string, name: string) => Promise<void>;
+  /** Disconnect a device; this one, too (its books stay here, no longer updated). */
+  removeDevice: (device: CloudDevice) => Promise<void>;
+  /** A one-time link (and QR code) to sign in to this profile on another device. */
+  createDeviceLink: () => Promise<{ link: string; expiresAt: string }>;
+  previewDeviceLink: (url: string, code: string) => Promise<DeviceLinkPreview>;
+  /** Sign this device in to the profile behind the link. */
+  acceptDeviceLink: (url: string, code: string, deviceName: string) => Promise<{ name: string }>;
+  /** Downloads of books' files the person started, by book id. */
+  downloads: Record<string, BookDownload>;
+  /** Keep all files of a shared book on this device (now and from now on). */
+  downloadBook: (bookId: string) => Promise<void>;
+  stopDownload: (bookId: string) => void;
+  /** Take a shared book's files off this device; they open from the cloud again. */
+  freeBookFiles: (bookId: string) => Promise<{ removed: number; bytes: number; kept: number }>;
 }
 
 const CloudSyncContext = createContext<CloudSyncValue | null>(null);
@@ -91,6 +119,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [notices, setNotices] = useState<string[]>([]);
   const [otherBooks, setOtherBooks] = useState<RemoteBook[]>([]);
+  const [downloads, setDownloads] = useState<Record<string, BookDownload>>({});
   const lastAttempt = useRef(0);
   const running = useRef(0);
 
@@ -100,8 +129,36 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     blobs: mediaStore(),
     getSnapshot,
     commit: applyCloudUpdate,
-    onMediaStored: notifyMediaStored
+    onMediaStored: (assetId) => { notifyMediaStored(assetId); notifyFilesChanged(); },
+    makePreview: makePhotoPreview,
+    cachedFile: takeCachedOriginal
   }), [getSnapshot, applyCloudUpdate]);
+
+  // Files of shared books not kept here open from the cloud through this engine.
+  useEffect(() => {
+    setCloudMediaSource({
+      has: engine.hasFile,
+      fetch: async (assetId, variant) => ({ blob: await engine.fetchFile(assetId, variant), original: variant === 'full' || !engine.hasPreview(assetId) })
+    });
+    const unsubscribe = cloudStore.subscribe(notifyCloudMedia);
+    return () => { unsubscribe(); setCloudMediaSource(null); };
+  }, [engine]);
+
+  // The service worker streams voices and videos; it asks this page for the Drive key.
+  useEffect(() => {
+    const workers = typeof navigator === 'undefined' ? undefined : navigator.serviceWorker;
+    if (!workers) return;
+    const onMessage = (event: MessageEvent) => {
+      const port = event.ports[0];
+      const data = event.data as { type?: string; assetId?: unknown; refresh?: unknown } | null;
+      if (!port || data?.type !== 'cloud-media-access' || typeof data.assetId !== 'string') return;
+      engine.streamAccess(data.assetId, data.refresh === true).then((access) => port.postMessage({ ok: true, ...access }),
+        (failure) => port.postMessage({ ok: false, error: cloudErrorMessage(failure) }));
+    };
+    workers.addEventListener('message', onMessage);
+    workers.startMessages?.();
+    return () => workers.removeEventListener('message', onMessage);
+  }, [engine]);
 
   const titleOf = useCallback((bookId: string) => getSnapshot().books.find((book) => book.id === bookId)?.title ?? 'без названия', [getSnapshot]);
 
@@ -129,7 +186,14 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
 
   const syncNow = useCallback(async () => {
     if (!cloudStore.get().connection) return;
+    // The profile name follows the person to every device: a change made here
+    // goes out first, a change made elsewhere comes back with the sync.
+    const local = profileStore.get()?.name;
+    let nameSent = true;
+    if (local && local !== cloudStore.get().connection?.name) nameSent = await engine.updateProfile(local).then(() => true, () => false);
     const result = await track(() => engine.syncAll());
+    const remote = cloudStore.get().connection?.name;
+    if (nameSent && remote && profileStore.get() && profileStore.get()?.name !== remote) profileStore.setName(remote);
     if (result.unlinked.length) {
       setNotices((current) => [...current, ...result.unlinked.map((bookId) =>
         `Книга «${titleOf(bookId)}» больше не в семейном хранилище: её удалили или вас исключили. Копия осталась на этом устройстве.`)]);
@@ -256,11 +320,12 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     sharedBooksWithPerson: (personId) => (state.connection ? sharedBooksWithPerson(snapshot, linked, personId) : []),
     syncNow,
     connectOwner: async (url, name) => {
-      await track(() => engine.connectOwner(url, name));
+      await track(() => engine.connectOwner(url, name, guessDeviceName()));
       await syncNow().catch(() => undefined);
     },
     disconnect: () => {
       engine.disconnect();
+      void clearCloudMediaCache();
       setStatus('idle');
       setError(null);
       setOtherBooks([]);
@@ -279,7 +344,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       const clean = requireName(name);
       // Invited without a name: the person signs as a new narrator of their own.
       const self = invitedPersonId ? undefined : newSelfPerson(getSnapshot(), clean, 'Участник книги');
-      const { book, outcome } = await track(() => engine.acceptInvite(url, code, { name: clean, profileName: profileStore.get()?.name, self }));
+      const { book, outcome } = await track(() => engine.acceptInvite(url, code, { name: clean, profileName: profileStore.get()?.name, self, deviceName: guessDeviceName() }));
       if (book.personId) {
         profileStore.setBookPerson(book.id, book.personId);
         // The name the creator wrote in the invitation is theirs to change: it is who they are in the book.
@@ -299,6 +364,70 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       await track(() => engine.joinBook(bookId, { name: clean, self }));
       profileStore.setBookPerson(bookId, self.id);
       setOtherBooks((current) => current.filter((book) => book.id !== bookId));
+    },
+    saveProfileName: async (name) => {
+      const saved = profileStore.setName(name);
+      if (!cloudStore.get().connection) return { everywhere: false };
+      // Offline, the next sync sends it.
+      return engine.updateProfile(saved.name).then(() => ({ everywhere: true }), () => ({ everywhere: false }));
+    },
+    devices: () => engine.devices(),
+    renameDevice: async (deviceId, name) => {
+      const clean = cleanName(name);
+      if (!clean) throw new Error('Напишите название устройства.');
+      await engine.renameDevice(deviceId, clean);
+    },
+    removeDevice: async (device) => {
+      await track(() => engine.removeDevice(device.id));
+      if (device.current) {
+        void clearCloudMediaCache();
+        setStatus('idle');
+        setError(null);
+        setOtherBooks([]);
+      }
+    },
+    createDeviceLink: async () => {
+      const { code, expiresAt } = await engine.createDeviceLink();
+      const appUrl = new URL(import.meta.env.BASE_URL, window.location.origin).href;
+      return { link: deviceLink(appUrl, cloudStore.get().connection!.url, code), expiresAt };
+    },
+    previewDeviceLink: (url, code) => engine.previewDeviceLink(url, code),
+    acceptDeviceLink: async (url, code, deviceName) => {
+      const member = await track(() => engine.acceptDeviceLink(url, code, cleanName(deviceName) || guessDeviceName()));
+      // What someone else looked at on this device is not for this profile.
+      await clearCloudMediaCache();
+      // The profile is the person's own: its name comes from the storage.
+      profileStore.setName(member.name);
+      await syncNow().catch(() => undefined);
+      return { name: member.name };
+    },
+    downloads,
+    downloadBook: async (bookId) => {
+      const report = (progress: Partial<BookDownload>) => setDownloads((current) => ({
+        ...current, [bookId]: { ...(current[bookId] ?? { done: 0, total: 0, failed: 0, running: true }), ...progress } }));
+      report({ running: true, error: undefined, done: 0, total: 0, failed: 0 });
+      try {
+        const result = await engine.downloadFiles(bookId, (progress) => report(progress));
+        report({ ...result, running: false });
+      } catch (failure) {
+        report({ running: false, error: cloudErrorMessage(failure) });
+      } finally {
+        notifyFilesChanged();
+      }
+    },
+    stopDownload: (bookId) => {
+      engine.stopDownload(bookId);
+      setDownloads((current) => (current[bookId] ? { ...current, [bookId]: { ...current[bookId], running: false } } : current));
+    },
+    freeBookFiles: async (bookId) => {
+      const result = await engine.freeFiles(bookId);
+      setDownloads((current) => {
+        const next = { ...current };
+        delete next[bookId];
+        return next;
+      });
+      notifyFilesChanged();
+      return result;
     }
   };
 

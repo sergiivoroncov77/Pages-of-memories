@@ -67,6 +67,15 @@ export function createFakeDrive() {
       const file = files.get(decodeURIComponent(item[1]));
       if (!file || (file.trashed && method === 'GET')) return error(404, 'File not found');
       if (method === 'GET' && url.searchParams.get('alt') === 'media') {
+        // Like Drive, a byte range comes back as 206: video and audio stream piece by piece.
+        const range = /^bytes=(\d+)-(\d*)$/.exec(String(headers.range ?? ''));
+        if (range) {
+          const size = file.content.length;
+          const start = Number(range[1]);
+          if (start >= size) return { status: 416, headers: { 'content-range': `bytes */${size}` }, body: Buffer.alloc(0) };
+          const end = Math.min(range[2] ? Number(range[2]) : size - 1, size - 1);
+          return { status: 206, headers: { 'content-type': file.mimeType, 'content-range': `bytes ${start}-${end}/${size}` }, body: file.content.subarray(start, end + 1) };
+        }
         return { status: 200, headers: { 'content-type': file.mimeType }, body: file.content };
       }
       if (method === 'PATCH') {

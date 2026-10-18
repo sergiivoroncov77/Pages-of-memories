@@ -577,3 +577,188 @@
   width: 100%;
   gap: 10px;
 }
+
+/* ---------- Devices of the profile ---------- */
+
+.devices__list {
+  display: grid;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.devices__item {
+  display: grid;
+  min-height: 56px;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.devices__icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--surface-sage);
+  color: var(--sage-dark);
+}
+
+.devices__copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.devices__copy strong {
+  overflow-wrap: anywhere;
+}
+
+.devices__copy small {
+  color: var(--muted);
+}
+
+.devices__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.devices__rename {
+  display: flex;
+  min-width: 0;
+  grid-column: 2 / -1;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.devices__rename .field {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.device-link {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface-warm);
+}
+
+.device-link h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.device-link__body {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.qr-code {
+  display: block;
+  width: min(220px, 62vw);
+  height: auto;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px var(--line);
+}
+
+.device-link__steps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 1.2em;
+  line-height: 1.45;
+}
+
+.device-link__timer {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 560px) {
+  .device-link__body {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .qr-code {
+    align-self: center;
+  }
+
+  .devices__actions {
+    grid-column: 2 / -1;
+    justify-content: flex-end;
+  }
+}
+
+/* ---------- A book's files on this device ---------- */
+
+.book-files {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.book-files__state,
+.book-files__note {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.book-files__note {
+  color: var(--muted);
+}
+
+.book-files .button__size {
+  white-space: nowrap;
+}
+
+.book-files__progress {
+  width: 100%;
+  height: 8px;
+  accent-color: var(--sage-dark);
+}
+
+.book-files__publish {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.book-files__publish .field {
+  width: 100%;
+}
+
+.device-books {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.device-books__item {
+  display: grid;
+  gap: 2px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.device-books__item > strong {
+  overflow-wrap: anywhere;
+}

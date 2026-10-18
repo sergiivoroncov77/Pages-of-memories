@@ -1,14 +1,19 @@
 import { Bell, BookOpen, Download, Eye, FileJson, HardDrive, Monitor, Moon, ShieldCheck, Sparkles, Sun, Trash2, Upload } from 'lucide-react';
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { Card } from '../../components/Card';
 import { PageHeader } from '../../components/PageHeader';
 import { CloudSettingsCard } from '../cloud/CloudSettingsCard';
+import { DeviceBooksCard } from '../cloud/DeviceBooksCard';
+import { DevicesCard } from '../cloud/DevicesCard';
+import { useStoredMediaIds } from '../cloud/useBookFiles';
 import { Toggle } from '../../components/Toggle';
 import { DEMO_BOOK_ID, demoDependents, hasDemo } from '../../data/demoBook';
 import { parseSnapshotImport } from '../../data/repository';
 import type { AppSnapshot, ThemePreference } from '../../data/types';
 import { formatFileSize, pluralize } from '../../lib/format';
+import { cachedBytes } from '../../lib/cloudMedia';
 import { isStoredMedia, storedMediaUrl } from '../../lib/mediaStore';
 import { estimateStorageBytes, MAX_STORAGE_BYTES } from '../../lib/storage';
 import { cloudErrorMessage } from '../../sync/cloudApi';
@@ -35,6 +40,13 @@ export function SettingsPage() {
   const [demoStatus, setDemoStatus] = useState<{ error: boolean; message: string } | null>(null);
   const cloud = useCloudSync();
   const fileReadVersion = useRef(0);
+  // «/settings#devices» opens right at that section, after the shell scrolled to the top.
+  const { hash } = useLocation();
+  useEffect(() => {
+    if (!hash) return;
+    const frame = window.requestAnimationFrame(() => document.getElementById(hash.slice(1))?.scrollIntoView({ block: 'start' }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [hash]);
   // Shared books on this phone, and those this phone created: only those can go for everyone.
   const sharedHere = snapshot.books.filter((item) => cloud.books[item.id]);
   const createdHere = sharedHere.filter((item) => cloud.books[item.id].creatorId === cloud.connection?.memberId);
@@ -71,7 +83,12 @@ export function SettingsPage() {
   };
   const storageSize = estimateStorageBytes(JSON.stringify(snapshot));
   const storageKb = Math.max(1, Math.round(storageSize / 1024));
-  const deviceMediaBytes = snapshot.mediaAssets.filter(isStoredMedia).reduce((total, asset) => total + (asset.sizeBytes ?? 0), 0);
+  // Only what is really here: files of shared books may open from the cloud instead.
+  const storedIds = useStoredMediaIds();
+  const sizeOf = (assetId: string, fallback = 0) => Object.values(cloud.books).map((item) => item.files[assetId]?.size).find((size) => size !== undefined) ?? fallback;
+  const deviceMediaBytes = snapshot.mediaAssets.filter((asset) => isStoredMedia(asset) && storedIds?.has(asset.id))
+    .reduce((total, asset) => total + (asset.sizeBytes ?? sizeOf(asset.id)), 0);
+  const cloudCacheBytes = storedIds ? cachedBytes() : 0;
 
   const prepareImport = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -112,6 +129,7 @@ export function SettingsPage() {
           <p className="eyebrow">Локальная книга</p>
           <h2>{storageKb} КБ из 4 МБ</h2>
           {deviceMediaBytes > 0 ? <p>Фото, аудио и видео на устройстве: {formatFileSize(deviceMediaBytes)}.</p> : null}
+          {cloudCacheBytes > 0 ? <p>Просмотренное из облака, временно: {formatFileSize(cloudCacheBytes)} — освобождается само.</p> : null}
           <p>{snapshot.books.length > 1 ? `${snapshot.books.length} книги, открыта «${book?.title}»` : book?.title ?? 'Книг пока нет'} · {snapshot.chapters.length} глав · {snapshot.moments.length} моментов · {snapshot.mediaAssets.length} материалов.</p>
           {persistenceError ? <p className="field-message field-message--error">Есть изменения, которые ещё не записаны в браузер. Резервная копия включает их.</p> : null}
         </div>
@@ -119,12 +137,16 @@ export function SettingsPage() {
 
       <CloudSettingsCard />
 
+      <DevicesCard />
+
+      <DeviceBooksCard />
+
       <Card className="settings-section backup-import">
         <div className="settings-section__heading">
           <span className="settings-section__icon"><FileJson size={23} aria-hidden="true" /></span>
           <div>
             <h2>Резервная копия</h2>
-            <p>JSON-файл содержит истории, черновики и добавленные материалы. Сохраните его перед очисткой браузера.</p>
+            <p>JSON-файл содержит истории, черновики и материалы, которые есть на этом устройстве. Фото и видео общих книг, не скачанные сюда, в копию не входят — они хранятся в облаке. Сохраните копию перед очисткой браузера.</p>
           </div>
         </div>
         <div className="settings-actions">
@@ -176,7 +198,7 @@ export function SettingsPage() {
             <p>Истории доступны людям, которые пользуются этим профилем браузера. Общие книги дополнительно хранятся в семейном хранилище на Google Диске владельца и доступны только участникам книги. Без хранилища книгой можно поделиться файлом в разделе «Книга».</p>
           </div>
         </div>
-        <p>Голосовые ответы, фото и видео до 50 МБ хранятся на этом устройстве, а у общих книг — ещё и в папке книги на Google Диске. Резервная копия JSON включает их — скачивайте её, чтобы не потерять записи при очистке браузера.</p>
+        <p>Голосовые ответы, фото и видео до 50 МБ, добавленные здесь, хранятся на этом устройстве, а у общих книг — ещё и в папке книги на Google Диске. Файлы общих книг, пришедших из облака, открываются оттуда, пока вы не скачаете книгу на устройство. Резервная копия JSON включает то, что есть на устройстве, — скачивайте её, чтобы не потерять записи при очистке браузера.</p>
       </Card>
 
       <Card className="settings-section">

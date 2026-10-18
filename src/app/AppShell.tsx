@@ -38,8 +38,9 @@ export function AppShell() {
     return () => media.removeEventListener('change', apply);
   }, [settings.theme]);
 
-  // Who uses the phone comes first, also when they arrive by an invitation link.
-  if (!profile) {
+  // Who uses the device comes first, also when they arrive by an invitation link.
+  // A sign-in link brings the profile along, so it skips the introduction.
+  if (!profile && location.pathname !== '/device') {
     return <div className={settings.highContrast ? 'is-high-contrast' : ''}><SignInPage suggestedName={cloud.connection?.name} invited={location.pathname === '/join'} /></div>;
   }
   const me = profile ? (

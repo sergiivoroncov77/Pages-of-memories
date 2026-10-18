@@ -1,10 +1,11 @@
-import type { AppSnapshot, Person } from '../data/types';
+import type { AppSnapshot, MediaAsset, Person } from '../data/types';
 import { dataUrlToBlob, isStoredMedia, type MediaBlobStore } from '../lib/mediaStore';
 import {
   applyRemoteEntities,
   collectBookEntities,
   diffEntities,
   entityHash,
+  entityKey,
   hasLocalBytes,
   mediaIdsOfBook,
   type CloudChange,
@@ -32,6 +33,10 @@ export interface SyncEnvironment {
   commit(update: (current: AppSnapshot) => AppSnapshot): boolean;
   /** A blob arrived for a media asset (so open screens can show it). */
   onMediaStored?(assetId: string): void;
+  /** A smaller copy of a photo for viewing from the cloud; null when there is nothing to gain. */
+  makePreview?(photo: Blob): Promise<Blob | null>;
+  /** The original of a file already fetched for viewing, so a download does not fetch it again. */
+  cachedFile?(assetId: string): Promise<Blob | undefined>;
   fetch?: FetchLike;
   now?(): Date;
 }
@@ -56,12 +61,43 @@ export interface CloudMember {
   isYou: boolean;
 }
 
+/** One of the person's devices; all of them are equal. */
+export interface CloudDevice {
+  id: string;
+  name: string;
+  createdAt: string | null;
+  lastSeenAt: string | null;
+  current: boolean;
+}
+
+export interface DeviceLinkPreview {
+  memberId: string;
+  /** The profile name: who signs in with the link. */
+  name: string;
+  expiresAt: string;
+}
+
 export interface InvitePreview {
   bookId: string;
   bookTitle: string;
   inviterName: string;
   personName: string;
   personId: string | null;
+}
+
+export interface DownloadProgress {
+  done: number;
+  total: number;
+  failed: number;
+}
+
+/** What the service worker needs to stream a voice or a video from the storage. */
+export interface StreamAccess {
+  url: string;
+  accessToken: string;
+  expiresAt: number;
+  size: number | null;
+  mimeType: string;
 }
 
 export interface BookSyncOutcome {
@@ -269,23 +305,54 @@ export function createSyncEngine(env: SyncEnvironment) {
     return { pulled: incoming.length, denied: reply.denied?.length ?? 0 };
   }
 
+  // Photos for which no smaller copy came out (already small, or a format the browser cannot draw).
+  const noPreview = new Set<string>();
+
+  /** A photo's smaller copy for viewing from the cloud, uploaded next to the original. */
+  async function uploadPreview(bookId: string, asset: MediaAsset, blob: Blob): Promise<{ previewId: string; previewSize: number } | null> {
+    if (asset.type !== 'photo' || !env.makePreview || noPreview.has(asset.id)) return null;
+    const preview = await env.makePreview(blob).catch(() => null);
+    if (!preview) { noPreview.add(asset.id); return null; }
+    const previewId = await withAccess(bookId, (access) => env.media.upload(access, preview, {
+      name: `preview-${asset.id}.jpg`, mimeType: preview.type || 'image/jpeg', assetId: asset.id, bookId
+    }));
+    return { previewId, previewSize: preview.size };
+  }
+
   async function uploadMissing(bookId: string): Promise<{ uploaded: number; pending: number }> {
     const snapshot = env.getSnapshot();
     const ids = mediaIdsOfBook(snapshot, bookId);
+    const me = env.store.get().connection?.memberId;
     let uploaded = 0;
     let pending = 0;
     for (const asset of snapshot.mediaAssets) {
       const book = bookState(bookId);
-      if (!book || !ids.has(asset.id) || book.files[asset.id] || !hasLocalBytes(asset)) continue;
+      if (!book || !ids.has(asset.id) || !hasLocalBytes(asset)) continue;
+      const known = book.files[asset.id];
+      // A photo without a preview (uploaded before previews, or the app closed in between)
+      // gets one from the device of whoever added it.
+      const owner = book.owners[entityKey('file', asset.id)];
+      const backfill = Boolean(known && !known.previewId && asset.type === 'photo' && env.makePreview
+        && !noPreview.has(asset.id) && (owner === undefined || owner === me));
+      if (known && !backfill) continue;
       const blob = isStoredMedia(asset) ? await env.blobs.get(asset.id).catch(() => undefined) : dataUrlToBlob(asset.url) ?? undefined;
       if (!blob) continue;
       try {
+        if (known) {
+          const preview = await uploadPreview(bookId, asset, blob);
+          if (preview) updateBook(bookId, (current) => ({ ...current, files: { ...current.files, [asset.id]: { ...known, ...preview } } }));
+          continue;
+        }
         const mimeType = asset.mimeType.split(';')[0] || blob.type;
         const fileId = await withAccess(bookId, (access) => env.media.upload(access, blob, {
           name: `${asset.type}-${asset.id}.${extensionFor(mimeType)}`, mimeType, assetId: asset.id, bookId
         }));
+        // Remembered at once: an app closed before the preview never uploads the original twice.
         updateBook(bookId, (current) => ({ ...current, files: { ...current.files, [asset.id]: { fileId, size: blob.size } } }));
         uploaded += 1;
+        // Without a preview the original is shown: a failed preview never holds the file back.
+        const preview = await uploadPreview(bookId, asset, blob).catch(() => null);
+        if (preview) updateBook(bookId, (current) => ({ ...current, files: { ...current.files, [asset.id]: { fileId, size: blob.size, ...preview } } }));
       } catch (error) {
         if (error instanceof CloudError && (UNLINK_CODES.has(error.code) || error.code === 'unauthorized')) throw error;
         pending += 1;
@@ -294,19 +361,61 @@ export function createSyncEngine(env: SyncEnvironment) {
     return { uploaded, pending };
   }
 
-  async function downloadMissing(bookId: string): Promise<{ downloaded: number; pending: number }> {
+  /** Where a file of a shared book lives in the storage. */
+  function locate(assetId: string): { bookId: string; file: CloudFile } | undefined {
+    for (const [bookId, book] of Object.entries(env.store.get().books)) {
+      const file = book.detached ? undefined : book.files[assetId];
+      if (file) return { bookId, file };
+    }
+    return undefined;
+  }
+
+  const inflight = new Map<string, Promise<Blob>>();
+
+  /** A file's bytes from the storage, not kept: the photo's preview to look at, or the original. */
+  function fetchFile(assetId: string, variant: 'view' | 'full'): Promise<Blob> {
+    const found = locate(assetId);
+    if (!found) return Promise.reject(new CloudError('media_failed', 'Этого файла нет в семейном хранилище.'));
+    const previewId = variant === 'view' ? found.file.previewId : undefined;
+    const key = `${assetId}|${previewId ? 'view' : 'full'}`;
+    const running = inflight.get(key);
+    if (running) return running;
+    const asset = env.getSnapshot().mediaAssets.find((item) => item.id === assetId);
+    const mimeType = previewId ? 'image/jpeg' : asset?.mimeType.split(';')[0] || 'application/octet-stream';
+    const task = withAccess(found.bookId, (access) => env.media.download(access, previewId ?? found.file.fileId, mimeType))
+      .finally(() => inflight.delete(key));
+    inflight.set(key, task);
+    return task;
+  }
+
+  /** Keep a file's original on this device. */
+  async function storeFile(assetId: string) {
+    const blob = (await env.cachedFile?.(assetId).catch(() => undefined)) ?? await fetchFile(assetId, 'full');
+    await env.blobs.put(assetId, blob);
+    env.onMediaStored?.(assetId);
+  }
+
+  /** Files of the book that are in the storage but not on this device. */
+  async function missingFiles(bookId: string): Promise<string[]> {
     const snapshot = env.getSnapshot();
     const ids = mediaIdsOfBook(snapshot, bookId);
     const stored = new Set(await env.blobs.keys().catch(() => [] as string[]));
+    const book = bookState(bookId);
+    return snapshot.mediaAssets.filter((asset) => ids.has(asset.id) && isStoredMedia(asset) && !stored.has(asset.id) && book?.files[asset.id])
+      .map((asset) => asset.id);
+  }
+
+  // Books being downloaded by the person right now: the sync leaves their files to that download.
+  const downloading = new Map<string, AbortController>();
+
+  async function downloadMissing(bookId: string): Promise<{ downloaded: number; pending: number }> {
+    // Not kept here: files open from the cloud when someone looks at them.
+    if (!bookState(bookId)?.keepFiles || downloading.has(bookId)) return { downloaded: 0, pending: 0 };
     let downloaded = 0;
     let pending = 0;
-    for (const asset of snapshot.mediaAssets) {
-      const file = bookState(bookId)?.files[asset.id];
-      if (!ids.has(asset.id) || !isStoredMedia(asset) || stored.has(asset.id) || !file) continue;
+    for (const assetId of await missingFiles(bookId)) {
       try {
-        const blob = await withAccess(bookId, (access) => env.media.download(access, file.fileId, asset.mimeType.split(';')[0]));
-        await env.blobs.put(asset.id, blob);
-        env.onMediaStored?.(asset.id);
+        await storeFile(assetId);
         downloaded += 1;
       } catch (error) {
         if (error instanceof CloudError && (UNLINK_CODES.has(error.code) || error.code === 'unauthorized')) throw error;
@@ -371,9 +480,9 @@ export function createSyncEngine(env: SyncEnvironment) {
   }
 
   async function refreshBooks(): Promise<{ books: RemoteBook[]; unlinked: string[] }> {
-    const reply = await call<{ member: { id: string; name: string; admin: boolean }; books: RemoteBook[] }>('me');
+    const reply = await call<{ member: { id: string; name: string; admin: boolean }; deviceId?: string; books: RemoteBook[] }>('me');
     env.store.update((state) => (state.connection
-      ? { ...state, connection: { ...state.connection, name: reply.member.name, admin: reply.member.admin } } : state));
+      ? { ...state, connection: { ...state.connection, name: reply.member.name, admin: reply.member.admin, deviceId: reply.deviceId ?? state.connection.deviceId } } : state));
     const available = new Map(reply.books.filter((book) => book.member).map((book) => [book.id, book]));
     const unlinked: string[] = [];
     Object.entries(env.store.get().books).forEach(([bookId, book]) => {
@@ -397,11 +506,11 @@ export function createSyncEngine(env: SyncEnvironment) {
   return {
     hasLocalChanges,
 
-    /** Make this phone the owner's device of a freshly installed script. */
-    connectOwner: (url: string, name: string) => serial(async () => {
+    /** Make this device the first one of the owner of a freshly installed script. */
+    connectOwner: (url: string, name: string, deviceName?: string) => serial(async () => {
       const info = await callFamilyServer<{ app?: string; claimed?: boolean }>(url, { action: 'info' }, env.fetch);
       if (info.app !== 'family-stories') throw new CloudError('not_script', 'По этому адресу работает другой скрипт.');
-      const reply = await callFamilyServer<{ member: { id: string; name: string; admin: boolean }; token: string }>(url, { action: 'claim', name }, env.fetch);
+      const reply = await callFamilyServer<{ member: { id: string; name: string; admin: boolean }; token: string }>(url, { action: 'claim', name, deviceName }, env.fetch);
       env.store.update(() => ({ version: 1, books: {},
         connection: { url, memberId: reply.member.id, token: reply.token, name: reply.member.name, admin: reply.member.admin, connectedAt: now().toISOString() } }));
       return reply.member;
@@ -444,8 +553,9 @@ export function createSyncEngine(env: SyncEnvironment) {
       const reply = await call<{ book: RemoteBook }>('createBook', { bookId, title: book.title, personId: me?.personId, name: me?.name });
       const existing = env.store.get().books[bookId];
       // A copy of a book that was removed from this phone starts over from the storage.
-      const state = existing ? returning(existing)
-        : freshBookState({ title: reply.book.title, creatorId: reply.book.creatorId, creatorName: reply.book.creatorName, canManage: reply.book.canManage });
+      // Its files were made here, so they stay here.
+      const state = existing ? { ...returning(existing), keepFiles: true }
+        : freshBookState({ title: reply.book.title, creatorId: reply.book.creatorId, creatorName: reply.book.creatorName, canManage: reply.book.canManage, keepFiles: true });
       const personId = reply.book.personId ?? state.personId;
       env.store.update((current) => ({ ...current, books: { ...current.books, [bookId]: personId ? withPerson(state, personId) : state } }));
       return syncBookNow(bookId);
@@ -458,11 +568,12 @@ export function createSyncEngine(env: SyncEnvironment) {
      * as local copies. `name` is how the person signs in this book; `self` is a
      * new narrator of their own when the invitation names nobody.
      */
-    acceptInvite: (url: string, code: string, who: { name: string; profileName?: string; self?: Person }) => serial(async () => {
+    acceptInvite: (url: string, code: string, who: { name: string; profileName?: string; self?: Person; deviceName?: string }) => serial(async () => {
       const existing = env.store.get().connection;
       const sameStorage = existing?.url === url;
       const reply = await callFamilyServer<{ member: { id: string; name: string; admin: boolean }; token?: string; book: RemoteBook }>(url,
-        { action: 'acceptInvite', code, name: who.name, profileName: who.profileName, personId: who.self?.id, token: sameStorage ? existing?.token : undefined }, env.fetch);
+        { action: 'acceptInvite', code, name: who.name, profileName: who.profileName, personId: who.self?.id, deviceName: who.deviceName,
+          token: sameStorage ? existing?.token : undefined }, env.fetch);
       if (who.self && reply.book.personId === who.self.id) addSelf(who.self);
       env.store.update((state) => {
         const base = sameStorage ? state : { version: 1 as const, books: {} };
@@ -560,7 +671,137 @@ export function createSyncEngine(env: SyncEnvironment) {
       return syncBookNow(bookId);
     }),
 
-    refreshBooks: () => serial(refreshBooks)
+    refreshBooks: () => serial(refreshBooks),
+
+    /** Whether a file is in the family storage (and so can be opened from the cloud). */
+    hasFile: (assetId: string) => Boolean(locate(assetId)),
+
+    hasPreview: (assetId: string) => Boolean(locate(assetId)?.file.previewId),
+
+    fetchFile,
+
+    streamAccess: async (assetId: string, refresh = false): Promise<StreamAccess> => {
+      const found = locate(assetId);
+      if (!found) throw new CloudError('media_failed', 'Этого файла нет в семейном хранилище.');
+      const access = await mediaAccess(found.bookId, refresh);
+      const asset = env.getSnapshot().mediaAssets.find((item) => item.id === assetId);
+      return { url: `${access.api}/drive/v3/files/${encodeURIComponent(found.file.fileId)}?alt=media`, accessToken: access.accessToken,
+        expiresAt: access.expiresAt, size: found.file.size ?? null, mimeType: asset?.mimeType.split(';')[0] || 'application/octet-stream' };
+    },
+
+    /**
+     * Keep the book's files on this device: what is not here yet comes now,
+     * new files come with every sync. Stopping leaves what already came.
+     */
+    downloadFiles: async (bookId: string, onProgress?: (progress: DownloadProgress) => void): Promise<DownloadProgress & { stopped: boolean }> => {
+      if (!bookState(bookId)) throw new CloudError('not_member', 'Эта книга не в семейном хранилище.');
+      downloading.get(bookId)?.abort();
+      const control = new AbortController();
+      downloading.set(bookId, control);
+      updateBook(bookId, (book) => ({ ...book, keepFiles: true }));
+      const progress: DownloadProgress = { done: 0, total: 0, failed: 0 };
+      try {
+        const todo = await missingFiles(bookId);
+        progress.total = todo.length;
+        onProgress?.({ ...progress });
+        for (const assetId of todo) {
+          if (control.signal.aborted) break;
+          try {
+            await storeFile(assetId);
+            progress.done += 1;
+          } catch (error) {
+            if (error instanceof CloudError && (UNLINK_CODES.has(error.code) || error.code === 'unauthorized' || error.code === 'offline')) throw error;
+            progress.failed += 1;
+          }
+          onProgress?.({ ...progress });
+        }
+        return { ...progress, stopped: control.signal.aborted };
+      } finally {
+        if (downloading.get(bookId) === control) downloading.delete(bookId);
+      }
+    },
+
+    /** Stop downloading: the book goes back to opening its files from the cloud. */
+    stopDownload: (bookId: string) => {
+      downloading.get(bookId)?.abort();
+      updateBook(bookId, (book) => ({ ...book, keepFiles: false }));
+    },
+
+    /**
+     * Take the book's files off this device to free space; they open from the
+     * cloud again. Files not uploaded yet, or kept by another book here, stay.
+     */
+    freeFiles: async (bookId: string): Promise<{ removed: number; bytes: number; kept: number }> => {
+      downloading.get(bookId)?.abort();
+      updateBook(bookId, (book) => ({ ...book, keepFiles: false }));
+      const snapshot = env.getSnapshot();
+      const ids = mediaIdsOfBook(snapshot, bookId);
+      const keptElsewhere = new Set<string>();
+      snapshot.books.forEach((other) => {
+        const state = bookState(other.id);
+        if (other.id !== bookId && (!state || state.keepFiles)) mediaIdsOfBook(snapshot, other.id).forEach((id) => keptElsewhere.add(id));
+      });
+      const files = bookState(bookId)?.files ?? {};
+      const stored = new Set(await env.blobs.keys().catch(() => [] as string[]));
+      const result = { removed: 0, bytes: 0, kept: 0 };
+      for (const asset of snapshot.mediaAssets) {
+        if (!ids.has(asset.id) || !stored.has(asset.id)) continue;
+        if (!files[asset.id] || keptElsewhere.has(asset.id)) { result.kept += 1; continue; }
+        await env.blobs.delete(asset.id);
+        result.removed += 1;
+        result.bytes += files[asset.id].size ?? asset.sizeBytes ?? 0;
+      }
+      return result;
+    },
+
+    /** The profile name, the same on every device of the person. */
+    updateProfile: (name: string) => serial(async () => {
+      const reply = await call<{ member: { id: string; name: string; admin: boolean } }>('updateProfile', { name });
+      env.store.update((state) => (state.connection ? { ...state, connection: { ...state.connection, name: reply.member.name } } : state));
+      return reply.member;
+    }),
+
+    devices: () => call<{ devices: CloudDevice[] }>('devices').then((reply) => reply.devices),
+
+    renameDevice: (deviceId: string, name: string) => serial(() => call('renameDevice', { deviceId, name })),
+
+    /** Disconnect one of the person's devices; this one, too: then its books stay here as local copies. */
+    removeDevice: (deviceId?: string) => serial(async () => {
+      const current = connection();
+      const self = !deviceId || deviceId === current.deviceId;
+      try {
+        await call('removeDevice', { deviceId: deviceId ?? current.deviceId });
+      } catch (error) {
+        if (!(error instanceof CloudError) || (error.code !== 'device_not_found' && !(self && error.code === 'unauthorized'))) throw error;
+      }
+      if (self) {
+        accessCache.clear();
+        env.store.update(() => ({ version: 1, books: {} }));
+      }
+    }),
+
+    createDeviceLink: () => call<{ code: string; expiresAt: string }>('createDeviceLink'),
+
+    previewDeviceLink: (url: string, code: string) => callFamilyServer<DeviceLinkPreview>(url, { action: 'previewDeviceLink', code }, env.fetch),
+
+    /**
+     * Sign this device in to a person's profile. Books shared with them come
+     * with the next sync; shared books of a previous connection stay here as
+     * local copies.
+     */
+    acceptDeviceLink: (url: string, code: string, deviceName: string) => serial(async () => {
+      const existing = env.store.get().connection;
+      const reply = await callFamilyServer<{ member: { id: string; name: string; admin: boolean }; token: string }>(url,
+        { action: 'acceptDeviceLink', code, deviceName }, env.fetch);
+      accessCache.clear();
+      generation += 1;
+      env.store.update((state) => {
+        const same = existing?.url === url && existing.memberId === reply.member.id;
+        return { version: 1, books: same ? state.books : {},
+          connection: { url, memberId: reply.member.id, token: reply.token, name: reply.member.name, admin: reply.member.admin, connectedAt: now().toISOString() } };
+      });
+      return reply.member;
+    })
   };
 }
 

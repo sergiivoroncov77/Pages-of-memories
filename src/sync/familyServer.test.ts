@@ -222,8 +222,11 @@ describe('family server (Code.gs)', () => {
       body: JSON.stringify({ name: 'photo.jpg', parents: [folderId], mimeType: 'image/jpeg' }) });
     const done = server.fake.drive.handle({ method: 'PUT', url: upload.headers.location, body: new Uint8Array([1, 2, 3]) });
     const fileId = JSON.parse(new TextDecoder().decode(done.body)).id as string;
-    server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [{ key: 'file:media_1', data: { fileId } }] });
-    expect(server.fake.drive.liveFilesUnder(folderId)).toHaveLength(1);
+    const preview = server.fake.drive.handle({ method: 'PUT', url: server.fake.drive.handle({ method: 'POST', url: '/upload/drive/v3/files?uploadType=resumable',
+      headers: { authorization: `Bearer ${access.accessToken}` }, body: JSON.stringify({ name: 'preview.jpg', parents: [folderId] }) }).headers.location, body: new Uint8Array([1]) });
+    const previewId = JSON.parse(new TextDecoder().decode(preview.body)).id as string;
+    server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [{ key: 'file:media_1', data: { fileId, previewId } }] });
+    expect(server.fake.drive.liveFilesUnder(folderId)).toHaveLength(2);
     server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 1, changes: [{ key: 'file:media_1', deleted: true }] });
     expect(server.fake.drive.liveFilesUnder(folderId)).toHaveLength(0);
   });
@@ -287,10 +290,84 @@ describe('family server (Code.gs)', () => {
       { key: 'person:person_mama', data: { id: 'person_mama', name: 'Ольга Ивановна' } }] }).denied).toEqual([]);
   });
 
-  it('resetOwner disconnects the lost owner device and allows a new claim', () => {
+  it('signs a person in on another device with a one-time link; every device is equal and can be disconnected', () => {
+    const server = loadFamilyServer();
+    const phone = server.post({ action: 'claim', name: 'Сергей', deviceName: 'Android · Chrome' });
+    const phoneToken = phone.token as string;
+    server.post({ action: 'createBook', token: phoneToken, bookId: 'book_1', title: 'Книга бабушки', name: 'Сын', personId: 'person_me' });
+    const devices = (token: string) => server.post({ action: 'devices', token }).devices as { id: string; name: string; current: boolean; lastSeenAt: string | null }[];
+    expect(devices(phoneToken)).toEqual([expect.objectContaining({ name: 'Android · Chrome', current: true })]);
+
+    const link = server.post({ action: 'createDeviceLink', token: phoneToken });
+    expect(link).toMatchObject({ ok: true });
+    const code = link.code as string;
+    expect(JSON.stringify([...server.fake.properties.entries()])).not.toContain(code);
+    expect(server.post({ action: 'previewDeviceLink', code })).toMatchObject({ ok: true, name: 'Сергей', memberId: (phone.member as { id: string }).id });
+    const tablet = server.post({ action: 'acceptDeviceLink', code, deviceName: 'iPad · Safari' });
+    expect(tablet).toMatchObject({ ok: true, member: { id: (phone.member as { id: string }).id, name: 'Сергей', admin: true } });
+    const tabletToken = tablet.token as string;
+    // One time only.
+    expect(server.post({ action: 'acceptDeviceLink', code, deviceName: 'Чужой' })).toMatchObject({ ok: false, error: 'link_not_found' });
+
+    // The tablet is the same person: the same books, the same rights, the same name in the book.
+    expect(server.post({ action: 'me', token: tabletToken })).toMatchObject({ books: [expect.objectContaining({ id: 'book_1', personId: 'person_me', canManage: true })] });
+    expect(server.post({ action: 'createDeviceLink', token: tabletToken })).toMatchObject({ ok: true });
+    const fromTablet = devices(tabletToken);
+    expect(fromTablet.map((item) => [item.name, item.current])).toEqual([['Android · Chrome', false], ['iPad · Safari', true]]);
+    expect(fromTablet.every((item) => /^device_[0-9a-f]{20}$/.test(item.id) && item.lastSeenAt)).toBe(true);
+
+    expect(server.post({ action: 'renameDevice', token: tabletToken, deviceId: fromTablet[1].id, name: 'Планшет на кухне' })).toMatchObject({ ok: true });
+    // The tablet disconnects the phone: the phone's key no longer opens the storage.
+    expect(server.post({ action: 'removeDevice', token: tabletToken, deviceId: fromTablet[0].id })).toMatchObject({ ok: true });
+    expect(server.post({ action: 'me', token: phoneToken })).toMatchObject({ ok: false, error: 'unauthorized' });
+    expect(devices(tabletToken).map((item) => item.name)).toEqual(['Планшет на кухне']);
+    expect(server.post({ action: 'removeDevice', token: tabletToken, deviceId: fromTablet[0].id })).toMatchObject({ ok: false, error: 'device_not_found' });
+
+    // Someone else's device is out of reach.
+    const mama = server.post({ action: 'acceptInvite', code: server.post({ action: 'createInvite', token: tabletToken, bookId: 'book_1' }).code, name: 'Мама', deviceName: 'iPhone' });
+    const mamaDevice = devices(mama.token as string)[0];
+    expect(server.post({ action: 'removeDevice', token: tabletToken, deviceId: mamaDevice.id })).toMatchObject({ ok: false, error: 'device_not_found' });
+    // Signing out of this device needs no id.
+    expect(server.post({ action: 'removeDevice', token: mama.token })).toMatchObject({ ok: true });
+    expect(server.post({ action: 'me', token: mama.token })).toMatchObject({ ok: false, error: 'unauthorized' });
+  });
+
+  it('rejects an expired sign-in link and keeps older device keys working', () => {
     const { server, ownerToken } = ownerWithBook();
+    const code = server.post({ action: 'createDeviceLink', token: ownerToken }).code as string;
+    const key = [...server.fake.properties.keys()].find((item) => item.startsWith('l:'))!;
+    server.fake.properties.set(key, JSON.stringify({ ...JSON.parse(server.fake.properties.get(key)!), expiresAt: '2000-01-01T00:00:00.000Z' }));
+    expect(server.post({ action: 'previewDeviceLink', code })).toMatchObject({ ok: false, error: 'link_expired' });
+    expect(server.post({ action: 'acceptDeviceLink', code })).toMatchObject({ ok: false, error: 'link_expired' });
+    // A new link clears expired ones.
+    server.post({ action: 'createDeviceLink', token: ownerToken });
+    expect(server.fake.properties.has(key)).toBe(false);
+
+    // A key stored the old way (only the member id) still opens the storage and becomes a device.
+    const tokenKey = [...server.fake.properties.keys()].find((item) => item.startsWith('t:'))!;
+    const memberId = JSON.parse(server.fake.properties.get(tokenKey)!).m as string;
+    server.fake.properties.set(tokenKey, memberId);
+    expect(server.post({ action: 'me', token: ownerToken })).toMatchObject({ ok: true, member: { id: memberId } });
+    expect(JSON.parse(server.fake.properties.get(tokenKey)!)).toMatchObject({ m: memberId });
+    expect(server.post({ action: 'devices', token: ownerToken }).devices).toEqual([expect.objectContaining({ current: true, name: '' })]);
+  });
+
+  it('keeps the profile name with the person, apart from the names in books', () => {
+    const { server, ownerToken } = ownerWithBook();
+    expect(server.post({ action: 'updateProfile', token: ownerToken, name: 'Серёжа' })).toMatchObject({ ok: true, member: { name: 'Серёжа' } });
+    expect(server.post({ action: 'me', token: ownerToken })).toMatchObject({ member: { name: 'Серёжа' } });
+    const members = server.post({ action: 'members', token: ownerToken, bookId: 'book_1' }).members as { name: string }[];
+    expect(members.map((item) => item.name)).toEqual(['Сергей']);
+  });
+
+  it('resetOwner disconnects every lost owner device and allows a new claim', () => {
+    const { server, ownerToken } = ownerWithBook();
+    const tablet = server.post({ action: 'acceptDeviceLink', code: server.post({ action: 'createDeviceLink', token: ownerToken }).code }).token as string;
+    server.post({ action: 'createDeviceLink', token: ownerToken });
     server.run('resetOwner');
     expect(server.post({ action: 'me', token: ownerToken })).toMatchObject({ ok: false, error: 'unauthorized' });
+    expect(server.post({ action: 'me', token: tablet })).toMatchObject({ ok: false, error: 'unauthorized' });
+    expect([...server.fake.properties.keys()].filter((key) => /^[tlm]:/.test(key))).toEqual([]);
     const claim = server.post({ action: 'claim', name: 'Сергей' });
     expect(claim).toMatchObject({ ok: true, member: { admin: true } });
     const books = server.post({ action: 'me', token: claim.token }).books as { id: string; canManage: boolean }[];

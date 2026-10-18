@@ -15,6 +15,8 @@ export interface CloudConnection {
   /** The Google account owner who installed the script. */
   admin: boolean;
   connectedAt: string;
+  /** This device among the person's devices, as the storage names it. */
+  deviceId?: string;
 }
 
 export interface CloudBookState {
@@ -27,6 +29,11 @@ export interface CloudBookState {
   owners: Record<string, string>;
   /** Removed from this phone only: the membership stays, and the book can be brought back. */
   detached?: boolean;
+  /**
+   * Photos, voice and video of the book are kept on this device (downloaded
+   * by the person, or recorded here). Otherwise they open from the cloud.
+   */
+  keepFiles: boolean;
   /** Left on this phone while offline: the storage hears about it on the next sync. */
   leaving?: boolean;
   /** Who this device is in the book, from the invitation. */
@@ -48,8 +55,9 @@ export const CLOUD_STATE_KEY = 'family-stories:cloud:v1';
 
 export const emptyCloudState = (): CloudState => ({ version: 1, books: {} });
 
+/** A book that comes to this device from the storage: its files open from the cloud until downloaded. */
 export function freshBookState(extra: Partial<CloudBookState> = {}): CloudBookState {
-  return { rev: 0, fingerprints: {}, files: {}, people: [], owners: {}, ...extra };
+  return { rev: 0, fingerprints: {}, files: {}, people: [], owners: {}, keepFiles: false, ...extra };
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -58,7 +66,12 @@ function parseBook(value: unknown): CloudBookState | null {
   if (!isRecord(value) || typeof value.rev !== 'number' || !isRecord(value.fingerprints) || !isRecord(value.files)) return null;
   const files: Record<string, CloudFile> = {};
   Object.entries(value.files).forEach(([id, file]) => {
-    if (isRecord(file) && typeof file.fileId === 'string') files[id] = { fileId: file.fileId, size: typeof file.size === 'number' ? file.size : undefined };
+    if (!isRecord(file) || typeof file.fileId !== 'string') return;
+    files[id] = { fileId: file.fileId, size: typeof file.size === 'number' ? file.size : undefined };
+    if (typeof file.previewId === 'string') {
+      files[id].previewId = file.previewId;
+      if (typeof file.previewSize === 'number') files[id].previewSize = file.previewSize;
+    }
   });
   const strings = (record: unknown) => Object.fromEntries(Object.entries(isRecord(record) ? record : {})
     .filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
@@ -70,6 +83,8 @@ function parseBook(value: unknown): CloudBookState | null {
     people: Array.isArray(value.people) ? value.people.filter((id): id is string => typeof id === 'string') : [],
     owners: strings(value.owners),
     detached: value.detached === true ? true : undefined,
+    // Books from before cloud viewing downloaded everything: they go on doing so.
+    keepFiles: value.keepFiles !== false,
     leaving: value.leaving === true ? true : undefined,
     personId: text(value.personId),
     creatorId: text(value.creatorId),
@@ -89,7 +104,8 @@ export function parseCloudState(raw: string | null): CloudState {
     const connection = value.connection;
     if (isRecord(connection) && ['url', 'memberId', 'token', 'name', 'connectedAt'].every((field) => typeof connection[field] === 'string')) {
       state.connection = { url: connection.url as string, memberId: connection.memberId as string, token: connection.token as string,
-        name: connection.name as string, admin: connection.admin === true, connectedAt: connection.connectedAt as string };
+        name: connection.name as string, admin: connection.admin === true, connectedAt: connection.connectedAt as string,
+        deviceId: typeof connection.deviceId === 'string' ? connection.deviceId : undefined };
     }
     if (isRecord(value.books)) {
       Object.entries(value.books).forEach(([id, book]) => {

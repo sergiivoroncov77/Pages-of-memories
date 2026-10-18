@@ -5,6 +5,10 @@
  * «Истории близких» на его Диске. Близким аккаунт Google не нужен: приложение
  * подключается к скрипту по ссылке-приглашению с секретным ключом.
  *
+ * У каждого человека (участника) может быть несколько устройств, все
+ * равноправные: у каждого свой ключ. Новое устройство входит в профиль по
+ * одноразовой ссылке или QR-коду с любого устройства, где человек уже вошёл.
+ *
  * Права скрипта ограничены `drive.file` (см. appsscript.json): он видит только
  * файлы, которые создал сам, а остальной Диск владельца ему недоступен.
  *
@@ -13,10 +17,13 @@
  */
 
 var APP = 'family-stories';
-var VERSION = 1;
+var VERSION = 2;
 var DRIVE = 'https://www.googleapis.com';
 var ROOT_FOLDER_NAME = 'Истории близких — семейное хранилище';
 var INVITE_DAYS = 30;
+var DEVICE_LINK_MINUTES = 15;
+// Когда устройство заходило последний раз, записывается не чаще раза в 12 часов.
+var SEEN_EVERY_MS = 12 * 3600 * 1000;
 var MAX_CHANGES = 5000;
 var MAX_ENTITY_CHARS = 200000;
 var ID_PATTERN = /^[A-Za-z0-9_.:-]{1,160}$/;
@@ -33,12 +40,17 @@ function setup() {
 }
 
 /**
- * Если устройство владельца потеряно или браузер очищен: отключает старое
- * устройство владельца, и приложение сможет подключиться заново по адресу скрипта.
+ * Если потеряны все устройства владельца (или везде очищен браузер): отключает
+ * их, и приложение сможет подключиться заново по адресу скрипта. Пока хоть одно
+ * устройство владельца под рукой, проще войти с него: «Настройки → Устройства».
  */
 function resetOwner() {
   var ownerId = props_().getProperty('owner');
-  if (ownerId) props_().deleteProperty('m:' + ownerId);
+  if (ownerId) {
+    props_().deleteProperty('m:' + ownerId);
+    forEachProperty_('t:', function (key, device) { if (device.m === ownerId) props_().deleteProperty(key); }, parseToken_);
+    forEachProperty_('l:', function (key, link) { if (link.memberId === ownerId) props_().deleteProperty(key); });
+  }
   props_().deleteProperty('owner');
   Logger.log('Владелец отключён. Откройте приложение и подключите хранилище заново — вы снова станете владельцем.');
 }
@@ -72,6 +84,8 @@ function handle_(request) {
   if (action === 'claim') return claim_(request);
   if (action === 'previewInvite') return previewInvite_(request);
   if (action === 'acceptInvite') return acceptInvite_(request);
+  if (action === 'previewDeviceLink') return previewDeviceLink_(request);
+  if (action === 'acceptDeviceLink') return acceptDeviceLink_(request);
   var member = auth_(request);
   switch (action) {
     case 'me': return me_(member);
@@ -85,6 +99,11 @@ function handle_(request) {
     case 'updateMember': return updateMember_(member, request);
     case 'sync': return sync_(member, request);
     case 'mediaAccess': return mediaAccess_(member, request);
+    case 'updateProfile': return updateProfile_(member, request);
+    case 'devices': return devices_(member);
+    case 'renameDevice': return renameDevice_(member, request);
+    case 'removeDevice': return removeDevice_(member, request);
+    case 'createDeviceLink': return createDeviceLink_(member);
     default: throw error_('bad_request', 'Неизвестное действие: ' + action);
   }
 }
@@ -94,30 +113,69 @@ function handle_(request) {
 function claim_(request) {
   return withLock_(function () {
     if (props_().getProperty('owner')) {
-      throw error_('claimed', 'Хранилище уже подключено к устройству владельца. Попросите у создателя книги ссылку-приглашение.');
+      throw error_('claimed', 'Хранилище уже подключено. Если оно ваше, войдите по QR-коду или ссылке с устройства, где вы уже вошли'
+        + ' («Настройки → Устройства»). Если вас пригласили — откройте ссылку-приглашение.');
     }
     ensureRoot_();
-    var created = newMember_(cleanName_(request.name, 'Владелец хранилища'), true);
+    var created = newMember_(cleanName_(request.name, 'Владелец хранилища'), true, request.deviceName);
     props_().setProperty('owner', created.member.id);
     return ok_({ member: publicMember_(created.member), token: created.token });
   });
 }
 
+/** Участник по ключу устройства; `deviceId` — это устройство. */
 function auth_(request) {
   var token = String(request.token || '');
   if (!token) throw error_('unauthorized', 'Это устройство не подключено к хранилищу.');
-  var memberId = props_().getProperty('t:' + hash_(token));
-  var member = memberId ? read_('m:' + memberId) : null;
-  if (!member) throw error_('unauthorized', 'Это устройство отключено от хранилища. Откройте ссылку-приглашение ещё раз.');
+  var key = 't:' + hash_(token);
+  var device = readDevice_(key);
+  var member = device ? read_('m:' + device.m) : null;
+  if (!member) throw error_('unauthorized', 'Это устройство отключено от хранилища. Войдите снова с другого своего устройства или по приглашению.');
+  var now = Date.now();
+  if (!device.s || now - new Date(device.s).getTime() > SEEN_EVERY_MS) {
+    device.s = new Date(now).toISOString();
+    if (!device.c) device.c = member.createdAt;
+    props_().setProperty(key, JSON.stringify(device));
+  }
+  member.deviceId = deviceId_(key);
   return member;
 }
 
-function newMember_(name, admin) {
+function newMember_(name, admin, deviceName) {
   var member = { id: 'member_' + Utilities.getUuid(), name: name, admin: !!admin, createdAt: new Date().toISOString() };
-  var token = secret_();
   write_('m:' + member.id, member);
-  props_().setProperty('t:' + hash_(token), member.id);
-  return { member: member, token: token };
+  return { member: member, token: newDevice_(member.id, deviceName) };
+}
+
+/**
+ * Ключ нового устройства. Хранится только его хэш, а при нём — чьё это
+ * устройство (m), как оно называется (n), когда подключено (c) и заходило (s).
+ */
+function newDevice_(memberId, deviceName) {
+  var token = secret_();
+  var now = new Date().toISOString();
+  props_().setProperty('t:' + hash_(token), JSON.stringify({ m: memberId, n: cleanName_(deviceName, ''), c: now, s: now }));
+  return token;
+}
+
+function readDevice_(key) {
+  var value = props_().getProperty(key);
+  return value ? parseToken_(value) : null;
+}
+
+/** Раньше при ключе хранился только номер участника. */
+function parseToken_(value) {
+  if (String(value).charAt(0) !== '{') return { m: String(value) };
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    return null;
+  }
+}
+
+/** Номер устройства — начало хэша его ключа: по нему ключ не восстановить. */
+function deviceId_(key) {
+  return 'device_' + key.slice(2, 22);
 }
 
 function publicMember_(member) {
@@ -132,7 +190,99 @@ function me_(member) {
     var book = JSON.parse(all[key]);
     if (book.members[member.id] || member.admin) books.push(bookSummary_(book, member));
   });
-  return ok_({ member: publicMember_(member), books: books });
+  return ok_({ member: publicMember_(member), deviceId: member.deviceId, books: books });
+}
+
+/** Имя профиля — то, как человек называет себя сам. В книгах его не видно. */
+function updateProfile_(member, request) {
+  return withLock_(function () {
+    var stored = read_('m:' + member.id);
+    stored.name = cleanName_(request.name, stored.name);
+    write_('m:' + member.id, stored);
+    return ok_({ member: publicMember_(stored) });
+  });
+}
+
+// ---------- Устройства ----------
+
+function devices_(member) {
+  var list = [];
+  forEachProperty_('t:', function (key, device) {
+    if (!device || device.m !== member.id) return;
+    var id = deviceId_(key);
+    list.push({ id: id, name: device.n || '', createdAt: device.c || null, lastSeenAt: device.s || null, current: id === member.deviceId });
+  }, parseToken_);
+  list.sort(function (a, b) { return String(a.createdAt || '').localeCompare(String(b.createdAt || '')); });
+  return ok_({ devices: list });
+}
+
+function findDevice_(member, deviceId) {
+  var id = String(deviceId || '');
+  if (!/^device_[0-9a-f]{20}$/.test(id)) throw error_('bad_request', 'Неверный номер устройства.');
+  var found = null;
+  forEachProperty_('t:' + id.slice(7), function (key, device) {
+    if (!found && device && device.m === member.id) found = { key: key, device: device };
+  }, parseToken_);
+  if (!found) throw error_('device_not_found', 'Это устройство уже отключено.');
+  return found;
+}
+
+function renameDevice_(member, request) {
+  return withLock_(function () {
+    var found = findDevice_(member, request.deviceId);
+    found.device.n = cleanName_(request.name, found.device.n || '');
+    props_().setProperty(found.key, JSON.stringify(found.device));
+    return ok_({});
+  });
+}
+
+/** Отключить своё устройство, в том числе это: его ключ больше не откроет хранилище. */
+function removeDevice_(member, request) {
+  return withLock_(function () {
+    var found = findDevice_(member, request.deviceId || member.deviceId);
+    props_().deleteProperty(found.key);
+    return ok_({});
+  });
+}
+
+/** Одноразовая ссылка (и QR-код), чтобы войти в свой профиль на другом устройстве. */
+function createDeviceLink_(member) {
+  var code = secret_().slice(0, 40);
+  var now = new Date();
+  var link = { memberId: member.id, createdBy: member.deviceId, createdAt: now.toISOString(),
+    expiresAt: new Date(now.getTime() + DEVICE_LINK_MINUTES * 60 * 1000).toISOString() };
+  forEachProperty_('l:', function (key, item) {
+    if (new Date(item.expiresAt).getTime() < now.getTime()) props_().deleteProperty(key);
+  });
+  write_('l:' + hash_(code), link);
+  return ok_({ code: code, expiresAt: link.expiresAt });
+}
+
+function readDeviceLink_(code) {
+  code = String(code || '');
+  var key = code.length >= 20 ? 'l:' + hash_(code) : '';
+  var link = key ? read_(key) : null;
+  if (!link) throw error_('link_not_found', 'Ссылка для входа не найдена или уже использована. Создайте новую на устройстве, где вы уже вошли.');
+  if (new Date(link.expiresAt).getTime() < Date.now()) {
+    throw error_('link_expired', 'Срок ссылки для входа истёк: она действует ' + DEVICE_LINK_MINUTES + ' минут. Создайте новую.');
+  }
+  var member = read_('m:' + link.memberId);
+  if (!member) throw error_('link_not_found', 'Этого профиля больше нет в хранилище.');
+  return { key: key, link: link, member: member };
+}
+
+function previewDeviceLink_(request) {
+  var found = readDeviceLink_(request.code);
+  return ok_({ memberId: found.member.id, name: found.member.name, expiresAt: found.link.expiresAt });
+}
+
+function acceptDeviceLink_(request) {
+  return withLock_(function () {
+    var found = readDeviceLink_(request.code);
+    // Ссылка одноразовая: второе устройство по ней уже не войдёт.
+    props_().deleteProperty(found.key);
+    return ok_({ member: publicMember_(found.member), token: newDevice_(found.member.id, request.deviceName) });
+  });
 }
 
 // ---------- Книги ----------
@@ -276,13 +426,13 @@ function acceptInvite_(request) {
     var member = null;
     var token = null;
     if (request.token) {
-      var memberId = props_().getProperty('t:' + hash_(String(request.token)));
-      member = memberId ? read_('m:' + memberId) : null;
+      var device = readDevice_('t:' + hash_(String(request.token)));
+      member = device ? read_('m:' + device.m) : null;
     }
     // Имя в книге человек выбирает сам; имя профиля — то, как он называет себя вообще.
     var displayName = cleanName_(request.name, found.invite.personName || 'Участник');
     if (!member) {
-      var created = newMember_(cleanName_(request.profileName, displayName), false);
+      var created = newMember_(cleanName_(request.profileName, displayName), false, request.deviceName);
       member = created.member;
       token = created.token;
     }
@@ -407,7 +557,11 @@ function sync_(member, request) {
       var previous = state.entities[change.key];
       if (change.deleted) {
         state.entities[change.key] = { rev: rev, deleted: true, by: member.id, at: now };
-        if (change.key.indexOf('file:') === 0 && previous && previous.data && previous.data.fileId) trash.push(String(previous.data.fileId));
+        if (change.key.indexOf('file:') === 0 && previous && previous.data) {
+          // Сам файл и его уменьшенная копия для просмотра.
+          if (previous.data.fileId) trash.push(String(previous.data.fileId));
+          if (previous.data.previewId) trash.push(String(previous.data.previewId));
+        }
       } else {
         var owner = previous && !previous.deleted ? ownerOf_(previous, book) : member.id;
         state.entities[change.key] = { rev: rev, data: change.data, by: member.id, at: now, owner: owner };
@@ -586,9 +740,13 @@ function cancelInvitesOf_(bookId, memberId) {
 }
 
 function forEachInvite_(fn) {
+  forEachProperty_('i:', fn);
+}
+
+function forEachProperty_(prefix, fn, parse) {
   var all = props_().getProperties();
   Object.keys(all).forEach(function (key) {
-    if (key.indexOf('i:') === 0) fn(key, JSON.parse(all[key]));
+    if (key.indexOf(prefix) === 0) fn(key, (parse || JSON.parse)(all[key]));
   });
 }
 

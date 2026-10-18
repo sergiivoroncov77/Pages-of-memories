@@ -16,7 +16,7 @@ const echoes = new Map();
 const cors = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, PUT, PATCH, OPTIONS',
-  'access-control-allow-headers': 'authorization, content-type, x-upload-content-type, x-upload-content-length',
+  'access-control-allow-headers': 'authorization, content-type, range, x-upload-content-type, x-upload-content-length',
   'access-control-expose-headers': 'location'
 };
 

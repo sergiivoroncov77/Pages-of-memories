@@ -300,6 +300,8 @@ function Fleuron({ className = '' }: { className?: string }) {
 
 function ReaderVideo({ asset }: { asset: MediaAsset }) {
   const media = useMediaUrl(asset);
-  if (media.status !== 'ready') return <p className="muted-copy">{media.status === 'loading' ? 'Загружаем видео…' : 'Видео не найдено на этом устройстве.'}</p>;
-  return <video className="reader-media__video" src={media.url} controls playsInline preload="metadata" />;
+  if (media.status !== 'ready') {
+    return <p className="muted-copy">{media.status === 'loading' ? 'Загружаем видео…' : media.offline ? 'Видео в облаке: оно откроется, когда появится интернет.' : 'Видео не найдено на этом устройстве.'}</p>;
+  }
+  return <video className="reader-media__video" src={media.url} controls playsInline preload="metadata" onError={media.retry} />;
 }

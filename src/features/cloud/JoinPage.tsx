@@ -65,8 +65,8 @@ function Invitation() {
       // The code is no longer needed in the address bar or history.
       window.history.replaceState(window.history.state, '', window.location.pathname);
       navigate('/book', { replace: true, state: { notice: pending
-        ? `Книга «${preview.bookTitle}» на вашей полке. Часть фото и записей ещё загружается — они появятся при следующей синхронизации.`
-        : `Книга «${preview.bookTitle}» на вашей полке. Добавляйте воспоминания — их увидят все участники.` } });
+        ? `Книга «${preview.bookTitle}» на вашей полке. Часть ваших файлов ещё выгружается — они уйдут при следующей синхронизации.`
+        : `Книга «${preview.bookTitle}» на вашей полке. Фото, голос и видео открываются из облака; чтобы смотреть без интернета, нажмите в книге «Скачать на устройство».` } });
     } catch (failure) {
       setError(cloudErrorMessage(failure));
       setJoining(false);
@@ -84,7 +84,7 @@ function Invitation() {
           <div>
             <h2>{preview.inviterName} приглашает вас в книгу</h2>
             {preview.personName ? <p>Приглашение для: <strong>{preview.personName}</strong>.</p> : null}
-            <p>Книга появится на этом устройстве. Всё, что вы добавите — рассказы, фото, голос, видео, отклики, — увидят остальные участники. Регистрация не нужна.</p>
+            <p>Книга появится на этом устройстве: тексты сразу, а фото, голос и видео будут открываться из облака. Всё, что вы добавите — рассказы, фото, голос, видео, отклики, — увидят остальные участники. Регистрация не нужна.</p>
             <BookNameField value={name} onChange={setName} />
             {alreadyIn ? <p className="field-message field-message--success"><Check size={16} aria-hidden="true" /> Эта книга уже есть на этом устройстве — откройте её на полке.</p> : null}
             <div className="page-action-group">

@@ -1,17 +1,12 @@
-import { Cloud, CloudOff, RefreshCw, UploadCloud, X } from 'lucide-react';
-import { useState } from 'react';
+import { Cloud, CloudOff, RefreshCw, X } from 'lucide-react';
 import type { Book } from '../../data/types';
-import { cloudErrorMessage } from '../../sync/cloudApi';
 import { useCloudSync } from '../../sync/CloudSync';
-import { BookNameField } from '../profile/BookNameField';
+import { BookFiles, PublishBook } from './BookFiles';
 import { formatSyncTime } from './cloudFormat';
 
-/** Where the open book lives and a button to sync it right now. */
+/** Where the open book lives, its files on this device, and a button to sync it right now. */
 export function BookCloudBar({ book }: { book: Book }) {
   const cloud = useCloudSync();
-  const [publishing, setPublishing] = useState(false);
-  const [publishError, setPublishError] = useState('');
-  const [myName, setMyName] = useState('');
   if (!cloud.connection) return null;
   const info = cloud.books[book.id];
   const syncing = cloud.status === 'syncing';
@@ -24,17 +19,6 @@ export function BookCloudBar({ book }: { book: Book }) {
   ) : null;
 
   if (!info) {
-    const publish = async () => {
-      setPublishing(true);
-      setPublishError('');
-      try {
-        await cloud.publishBook(book.id, myName);
-      } catch (error) {
-        setPublishError(cloudErrorMessage(error));
-      } finally {
-        setPublishing(false);
-      }
-    };
     return (
       <>
         {notices}
@@ -42,14 +26,9 @@ export function BookCloudBar({ book }: { book: Book }) {
           <span className="cloud-bar__icon"><CloudOff size={22} aria-hidden="true" /></span>
           <div className="cloud-bar__copy">
             <strong>Эта книга только на этом устройстве</strong>
-            <span>Сохраните её в семейное хранилище на Google Диске — тогда близких можно пригласить по ссылке, и все изменения будут приходить сами.</span>
-            {publishError ? <span className="cloud-bar__error" role="alert">{publishError}</span> : null}
-            {/* Books made before names were asked: their creator picks one now. */}
-            {!cloud.myPersonId(book.id) ? <BookNameField value={myName} onChange={setMyName} /> : null}
+            <span>Выгрузите её в облако — семейное хранилище на Google Диске. Тогда близких можно пригласить по ссылке, книга будет на всех ваших устройствах, а изменения будут приходить сами.</span>
+            <PublishBook book={book} />
           </div>
-          <button type="button" className="button button--primary button--small" onClick={() => { void publish(); }} disabled={publishing}>
-            <UploadCloud size={17} aria-hidden="true" /> {publishing ? 'Сохраняем…' : 'Сохранить в Google Диск'}
-          </button>
         </section>
       </>
     );
@@ -65,9 +44,10 @@ export function BookCloudBar({ book }: { book: Book }) {
       <section className={'cloud-bar' + (cloud.status === 'error' ? ' cloud-bar--error' : '')} aria-label="Семейное хранилище">
         <span className="cloud-bar__icon"><Cloud size={22} aria-hidden="true" /></span>
         <div className="cloud-bar__copy">
-          <strong>В семейном хранилище</strong>
+          <strong>В облаке — семейном хранилище</strong>
           <span role="status">{state}</span>
           <span>{info.canManage ? 'Вы создатель книги — приглашайте близких в «Поделиться».' : `Создатель книги — ${info.creatorName ?? 'другой участник'}.`}</span>
+          <BookFiles book={book} />
         </div>
         <button type="button" className="button button--secondary button--small" onClick={() => { void cloud.syncNow().catch(() => undefined); }} disabled={syncing}>
           <RefreshCw size={17} aria-hidden="true" className={syncing ? 'is-spinning' : undefined} /> Синхронизировать
