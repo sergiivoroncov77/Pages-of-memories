@@ -3,9 +3,9 @@ import { useState, type FormEvent } from 'react';
 import { MAX_NAME_LENGTH, profileStore } from '../../app/profile';
 
 /**
- * The first start on a phone: the person says what to call them. The name is
+ * The first start on a device: the person says what to call them. The name is
  * theirs alone — in every book they pick the name others see there. No
- * password: the profile lives on this phone.
+ * password: the profile lives on this device.
  */
 export function SignInPage({ suggestedName = '', invited = false }: { suggestedName?: string; invited?: boolean }) {
   const [name, setName] = useState(suggestedName);
@@ -35,7 +35,7 @@ export function SignInPage({ suggestedName = '', invited = false }: { suggestedN
         </label>
         {error ? <p className="field-message field-message--error" role="alert">{error}</p> : null}
         <button type="submit" className="button button--primary button--large"><LogIn size={20} aria-hidden="true" /> Войти</button>
-        <p className="sign-in__note">Пароль не нужен: профиль хранится на этом телефоне. Имя потом можно изменить в профиле.{invited ? '' : ' Вас пригласили в книгу? Откройте ссылку из сообщения.'}</p>
+        <p className="sign-in__note">Пароль не нужен: профиль хранится на этом устройстве. Имя потом можно изменить в профиле.{invited ? '' : ' Вас пригласили в книгу? Откройте ссылку из сообщения.'}</p>
       </form>
     </main>
   );

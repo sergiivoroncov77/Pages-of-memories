@@ -49,7 +49,7 @@ export function CloudSettingsCard() {
         {cloud.error ? <p className="field-message field-message--error" role="alert">{cloud.error}</p> : null}
         <ol className="share-steps">
           <li><strong>Владелец один раз ставит скрипт</strong> <span>в свой Google аккаунт — <Link to="/cloud/setup" className="text-link">пошаговая инструкция</Link>, около 10 минут.</span></li>
-          <li><strong>Вставляет сюда адрес скрипта</strong> <span>и нажимает «Подключить». Этот телефон станет телефоном владельца.</span></li>
+          <li><strong>Вставляет сюда адрес скрипта</strong> <span>и нажимает «Подключить». Это устройство станет устройством владельца.</span></li>
           <li><strong>Приглашает близких</strong> <span>из книги: «Поделиться» → «Создать ссылку-приглашение».</span></li>
         </ol>
         <form className="cloud-connect" onSubmit={(event) => { void connect(event); }}>
@@ -72,9 +72,9 @@ export function CloudSettingsCard() {
   const syncing = cloud.status === 'syncing';
   const disconnect = () => {
     const warning = connection.admin
-      ? ' Это телефон владельца: подключиться снова получится, только если запустить в скрипте функцию resetOwner (см. инструкцию).'
+      ? ' Это устройство владельца: подключиться снова получится, только если запустить в скрипте функцию resetOwner (см. инструкцию).'
       : ' Чтобы подключиться снова, понадобится новое приглашение.';
-    if (window.confirm(`Отключить этот телефон от семейного хранилища? Книги останутся на телефоне, но перестанут обновляться.${warning}`)) cloud.disconnect();
+    if (window.confirm(`Отключить это устройство от семейного хранилища? Книги останутся на нём, но перестанут обновляться.${warning}`)) cloud.disconnect();
   };
   const join = async (bookId: string, back: boolean) => {
     setJoining(bookId);
@@ -95,7 +95,7 @@ export function CloudSettingsCard() {
         <span className="settings-section__icon settings-section__icon--sage"><Cloud size={23} aria-hidden="true" /></span>
         <div>
           <h2>Семейное хранилище подключено</h2>
-          <p>{connection.name}{connection.admin ? ' · владелец хранилища' : ''} · {shared} {pluralize(shared, 'общая книга', 'общие книги', 'общих книг')} на этом телефоне.</p>
+          <p>{connection.name}{connection.admin ? ' · владелец хранилища' : ''} · {shared} {pluralize(shared, 'общая книга', 'общие книги', 'общих книг')} на этом устройстве.</p>
         </div>
       </div>
       <p role="status">{syncing ? 'Синхронизация…' : cloud.status === 'offline' ? 'Нет связи с хранилищем — изменения уйдут, когда появится интернет.' : `Последняя синхронизация: ${formatSyncTime(cloud.lastSyncAt)}.`}</p>
@@ -106,12 +106,12 @@ export function CloudSettingsCard() {
           <RefreshCw size={18} aria-hidden="true" className={syncing ? 'is-spinning' : undefined} /> Синхронизировать сейчас
         </button>
         {connection.admin ? <Link to="/cloud/setup" className="button button--ghost">Инструкция по скрипту</Link> : null}
-        <button type="button" className="button button--danger-ghost" onClick={disconnect}>Отключить этот телефон</button>
+        <button type="button" className="button button--danger-ghost" onClick={disconnect}>Отключить это устройство</button>
       </div>
       {connection.admin && cloud.otherBooks.length ? (
         <div className="cloud-other-books">
           <h3>Другие книги в хранилище</h3>
-          <p>Их создали близкие и вас пока не пригласили. Как владелец хранилища вы можете открыть любую — например, если создатель потерял телефон.</p>
+          <p>Их создали близкие и вас пока не пригласили. Как владелец хранилища вы можете открыть любую — например, если создатель потерял своё устройство.</p>
           <ul>
             {cloud.otherBooks.map((book) => (
               <li key={book.id}>
@@ -127,7 +127,7 @@ export function CloudSettingsCard() {
                     </div>
                   </form>
                 ) : (
-                  <button type="button" className="button button--secondary button--small" onClick={() => setOpening({ id: book.id, name: '' })}>Открыть на этом телефоне</button>
+                  <button type="button" className="button button--secondary button--small" onClick={() => setOpening({ id: book.id, name: '' })}>Открыть на этом устройстве</button>
                 )}
               </li>
             ))}
@@ -136,14 +136,14 @@ export function CloudSettingsCard() {
       ) : null}
       {cloud.detachedBooks.length ? (
         <div className="cloud-other-books">
-          <h3>Убраны с этого телефона</h3>
+          <h3>Убраны с этого устройства</h3>
           <p>Ваши книги, которые вы убрали только отсюда: у близких они на месте. Вернуть книгу — значит снова скачать её из хранилища со всеми новыми рассказами.</p>
           <ul>
             {cloud.detachedBooks.map((book) => (
               <li key={book.id}>
                 <span><strong>{book.title}</strong>{book.creatorName ? ` · создатель ${book.creatorName}` : ''}</span>
                 <button type="button" className="button button--secondary button--small" disabled={joining === book.id} onClick={() => { void join(book.id, true); }}>
-                  {joining === book.id ? 'Скачиваем…' : 'Вернуть на телефон'}
+                  {joining === book.id ? 'Скачиваем…' : 'Вернуть на это устройство'}
                 </button>
               </li>
             ))}

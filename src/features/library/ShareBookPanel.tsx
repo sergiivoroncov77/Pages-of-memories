@@ -58,7 +58,7 @@ export function ShareBookPanel({ book, person, onClose }: { book: Book; person?:
     <>
       <ol className="share-steps">
         <li><strong>Отправьте файл книги.</strong> <span>Примерный размер: {estimated > 0 ? formatFileSize(estimated) : 'меньше 1 МБ'}. Фото, голос и видео едут внутри.</span></li>
-        <li><strong>Близкий открывает приложение</strong> <span>по ссылке, на телефоне — в Chrome, и может установить его на главный экран.</span></li>
+        <li><strong>Близкий открывает приложение</strong> <span>по ссылке — на телефоне или планшете в Chrome, на компьютере в любом браузере — и может установить его как приложение.</span></li>
         <li><strong>«Книга» → «Открыть файл книги».</strong> <span>Книга появится у него на полке. Когда он пришлёт файл обратно, откройте его так же.</span></li>
       </ol>
 

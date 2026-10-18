@@ -248,7 +248,7 @@ function ChapterFilm({ chapter }: { chapter: Chapter }) {
               {canShare ? <button type="button" className="button button--secondary" onClick={() => { void share(); }}><Share2 size={18} aria-hidden="true" /> Поделиться</button> : null}
               <button type="button" className="button button--ghost" onClick={() => setExportState({ status: 'idle' })}><RotateCcw size={17} aria-hidden="true" /> Собрать заново</button>
             </div>
-            <small className="muted-copy">{formatFileSize(exportState.recording.blob.size)} · {exportState.recording.extension === 'webm' ? 'WebM открывается в браузерах и VLC; для галереи телефона подойдёт Chrome или Safari с поддержкой MP4.' : 'MP4 откроется в галерее и мессенджерах.'}</small>
+            <small className="muted-copy">{formatFileSize(exportState.recording.blob.size)} · {exportState.recording.extension === 'webm' ? 'WebM открывается в браузерах и VLC; для галереи телефона или планшета подойдёт Chrome или Safari с поддержкой MP4.' : 'MP4 откроется в галерее и мессенджерах.'}</small>
           </div> : null}
           {exportState.status === 'error' ? <p className="field-message field-message--error" role="alert">{exportState.message}</p> : null}
           {exportState.status === 'idle' || exportState.status === 'error' ? <div className="film-export__actions">

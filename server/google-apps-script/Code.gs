@@ -33,7 +33,7 @@ function setup() {
 }
 
 /**
- * Если телефон владельца потерян или браузер очищен: отключает старое
+ * Если устройство владельца потеряно или браузер очищен: отключает старое
  * устройство владельца, и приложение сможет подключиться заново по адресу скрипта.
  */
 function resetOwner() {
@@ -94,7 +94,7 @@ function handle_(request) {
 function claim_(request) {
   return withLock_(function () {
     if (props_().getProperty('owner')) {
-      throw error_('claimed', 'Хранилище уже подключено к телефону владельца. Попросите у создателя книги ссылку-приглашение.');
+      throw error_('claimed', 'Хранилище уже подключено к устройству владельца. Попросите у создателя книги ссылку-приглашение.');
     }
     ensureRoot_();
     var created = newMember_(cleanName_(request.name, 'Владелец хранилища'), true);
@@ -217,7 +217,7 @@ function leaveBook_(member, request) {
   });
 }
 
-/** Владелец хранилища может вернуться в любую книгу, например если телефон создателя потерян. */
+/** Владелец хранилища может вернуться в любую книгу, например если создатель потерял своё устройство. */
 function joinBook_(member, request) {
   if (!member.admin) throw error_('forbidden', 'Войти в книгу без приглашения может только владелец хранилища.');
   return withLock_(function () {
@@ -379,7 +379,7 @@ function claimablePerson_(book, personId, memberId) {
  * присланная правка, удаления хранятся отметками. У каждой записи помнится
  * автор (owner): участник удаляет только своё и меняет только своё имя,
  * создатель книги — что угодно. Отклонённые удаления и правки возвращаются
- * телефону, и он восстанавливает записи.
+ * устройству, и оно восстанавливает записи.
  */
 function sync_(member, request) {
   var book = requireBook_(member, request.bookId);
@@ -479,7 +479,7 @@ function deniedDeletions_(entities, changes, memberId, creatorId, manager) {
 
 /**
  * Имена в книге: участник меняет только своё имя и рассказчиков, которых
- * добавил сам. Чужие правки не принимаются, и телефон получает имя обратно.
+ * добавил сам. Чужие правки не принимаются, и устройство получает имя обратно.
  */
 function deniedRenames_(entities, changes, memberId, book) {
   var membership = book.members[memberId];

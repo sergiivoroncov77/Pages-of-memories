@@ -33,7 +33,7 @@ export function ProfilePage() {
   return (
     <div className="page">
       <PageHeader eyebrow="Профиль" title={profile.name}
-        description="Профиль хранится на этом телефоне, пароль не нужен. Его имя — для вас; в каждой книге участники видят имя, которое вы выбрали для неё." />
+        description="Профиль хранится на этом устройстве, пароль не нужен. Его имя — для вас; в каждой книге участники видят имя, которое вы выбрали для неё." />
 
       <Card className="account-card">
         <Avatar person={profileAvatar(profile.name)} size="large" />

@@ -49,7 +49,7 @@ export function SettingsPage() {
       try {
         await cloud.removeBook(item.id, 'leave');
       } catch (error) {
-        setResetStatus({ error: true, message: `Не удалось выйти из книги «${item.title}»: ${cloudErrorMessage(error)} Телефон не очищен.` });
+        setResetStatus({ error: true, message: `Не удалось выйти из книги «${item.title}»: ${cloudErrorMessage(error)} Устройство не очищено.` });
         return false;
       }
     }
@@ -219,7 +219,7 @@ export function SettingsPage() {
           <Sparkles size={23} aria-hidden="true" />
           <div>
             <h2>Начать с чистого листа</h2>
-            <p>Все книги, близкие, ответы и материалы на этом телефоне удалятся, останутся только настройки оформления. Сначала скачайте копию, если хотите что-то сохранить.</p>
+            <p>Все книги, близкие, ответы и материалы на этом устройстве удалятся, останутся только настройки оформления. Сначала скачайте копию, если хотите что-то сохранить.</p>
           </div>
         </div>
         {sharedHere.length ? (
@@ -229,7 +229,7 @@ export function SettingsPage() {
                 <legend>Ваши общие книги: {quoted(createdHere)}</legend>
                 <label className="fresh-shared__option">
                   <input type="radio" name="fresh-shared" checked={sharedOnFresh === 'local'} onChange={() => setSharedOnFresh('local')} />
-                  <span><strong>Убрать только с этого телефона</strong><small>У близких всё останется. Вернуть книги сюда можно в «Семейном хранилище» выше.</small></span>
+                  <span><strong>Убрать только с этого устройства</strong><small>У близких всё останется. Вернуть книги сюда можно в «Семейном хранилище» выше.</small></span>
                 </label>
                 <label className="fresh-shared__option">
                   <input type="radio" name="fresh-shared" checked={sharedOnFresh === 'everyone'} onChange={() => setSharedOnFresh('everyone')} />
@@ -250,7 +250,7 @@ export function SettingsPage() {
           const everyone = createdHere.length > 0 && sharedOnFresh === 'everyone';
           const createdNote = !createdHere.length ? '' : everyone
             ? ` ${createdHere.length === 1 ? 'Книга' : 'Книги'} ${quoted(createdHere)} ${createdHere.length === 1 ? 'удалится' : 'удалятся'} и у всех участников.`
-            : ' Ваши общие книги уберутся только с этого телефона.';
+            : ' Ваши общие книги уберутся только с этого устройства.';
           const keptNote = sharedHere.length && !everyone ? ' У близких ничего не удалится.' : '';
           if (!window.confirm(`Удалить все книги, близких, ответы и материалы на этом устройстве и начать заново?${createdNote}${leavingNote}${keptNote} Это нельзя отменить.`)) return;
           setIsRestoring(true);
@@ -261,7 +261,7 @@ export function SettingsPage() {
                 await cloud.removeBook(item.id, 'delete');
               } catch (error) {
                 setIsRestoring(false);
-                setResetStatus({ error: true, message: `Не удалось удалить у всех «${item.title}»: ${cloudErrorMessage(error)} Телефон не очищен — попробуйте ещё раз, когда будет связь.` });
+                setResetStatus({ error: true, message: `Не удалось удалить у всех «${item.title}»: ${cloudErrorMessage(error)} Устройство не очищено — попробуйте ещё раз, когда будет связь.` });
                 return;
               }
             }

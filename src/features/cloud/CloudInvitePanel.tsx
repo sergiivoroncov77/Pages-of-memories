@@ -29,7 +29,7 @@ function MembersList({ bookId, canManage }: { bookId: string; canManage: boolean
   const nameOf = (member: CloudMember) => (member.personId ? getPerson(member.personId)?.name : undefined) ?? member.name;
 
   const remove = async (member: CloudMember) => {
-    if (!window.confirm(`Убрать из книги: ${nameOf(member)}? Обновления перестанут приходить на телефон этого человека, а ссылка, по которой он вошёл, перестанет действовать. Уже скачанная копия книги останется у него.`)) return;
+    if (!window.confirm(`Убрать из книги: ${nameOf(member)}? Обновления перестанут приходить на устройства этого человека, а ссылка, по которой он вошёл, перестанет действовать. Уже скачанная копия книги останется у него.`)) return;
     try {
       await cloud.removeMember(bookId, member.id);
       load();
@@ -158,7 +158,7 @@ export function CloudInvitePanel({ book, person }: { book: Book; person?: Person
       setBusy(false);
     }
   };
-  const text = invite ? `${invite.name ? invite.name + ', приглашаю' : 'Приглашаю'} тебя в нашу семейную книгу «${book.title}» в приложении «Истории близких». Открой ссылку — книга появится у тебя на телефоне, и можно будет дописывать свои воспоминания:` : '';
+  const text = invite ? `${invite.name ? invite.name + ', приглашаю' : 'Приглашаю'} тебя в нашу семейную книгу «${book.title}» в приложении «Истории близких». Открой ссылку — книга появится у тебя на телефоне, планшете или компьютере, и можно будет дописывать свои воспоминания:` : '';
   const send = async () => {
     if (!invite) return;
     const outcome = await shareLink({ title: `Книга «${book.title}»`, text, url: invite.link });

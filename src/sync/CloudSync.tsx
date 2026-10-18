@@ -119,7 +119,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       const offline = failure instanceof CloudError && failure.code === 'offline';
       setStatus(offline ? 'offline' : 'error');
       setError(failure instanceof CloudError && failure.code === 'unauthorized'
-        ? 'Это устройство отключено от семейного хранилища. Книги остались на телефоне; чтобы снова получать изменения, откройте приглашение ещё раз.'
+        ? 'Это устройство отключено от семейного хранилища. Книги остались на нём; чтобы снова получать изменения, откройте приглашение ещё раз.'
         : cloudErrorMessage(failure));
       throw failure;
     } finally {
@@ -132,7 +132,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const result = await track(() => engine.syncAll());
     if (result.unlinked.length) {
       setNotices((current) => [...current, ...result.unlinked.map((bookId) =>
-        `Книга «${titleOf(bookId)}» больше не в семейном хранилище: её удалили или вас исключили. Копия осталась на этом телефоне.`)]);
+        `Книга «${titleOf(bookId)}» больше не в семейном хранилище: её удалили или вас исключили. Копия осталась на этом устройстве.`)]);
     }
     const refused = result.outcomes.filter((outcome) => outcome.denied > 0);
     if (refused.length) {

@@ -41,7 +41,7 @@ export function BookCloudBar({ book }: { book: Book }) {
         <section className="cloud-bar cloud-bar--local" aria-label="Семейное хранилище">
           <span className="cloud-bar__icon"><CloudOff size={22} aria-hidden="true" /></span>
           <div className="cloud-bar__copy">
-            <strong>Эта книга только на этом телефоне</strong>
+            <strong>Эта книга только на этом устройстве</strong>
             <span>Сохраните её в семейное хранилище на Google Диске — тогда близких можно пригласить по ссылке, и все изменения будут приходить сами.</span>
             {publishError ? <span className="cloud-bar__error" role="alert">{publishError}</span> : null}
             {/* Books made before names were asked: their creator picks one now. */}
@@ -56,7 +56,7 @@ export function BookCloudBar({ book }: { book: Book }) {
   }
 
   const state = syncing ? 'Синхронизация…'
-    : cloud.status === 'offline' ? 'Нет связи — изменения сохранены на телефоне и уйдут позже'
+    : cloud.status === 'offline' ? 'Нет связи — изменения сохранены на устройстве и уйдут позже'
     : cloud.status === 'error' && cloud.error ? cloud.error
     : `Обновлено ${formatSyncTime(info.lastSyncAt)}`;
   return (

@@ -105,7 +105,7 @@ export function PeoplePage() {
                 <Avatar person={person} size="small" />
                 <div className="profile-books__copy">
                   <strong>{person.name}<span className="me-badge">вы</span></strong>
-                  <span>{books.filter((book) => cloud.myPersonId(book.id) === person.id).map((book) => `«${book.title}»`).join(', ') || 'Книга удалена с телефона'}</span>
+                  <span>{books.filter((book) => cloud.myPersonId(book.id) === person.id).map((book) => `«${book.title}»`).join(', ') || 'Книга удалена с этого устройства'}</span>
                 </div>
               </li>
             ))}

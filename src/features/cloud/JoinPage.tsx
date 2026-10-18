@@ -56,7 +56,7 @@ function Invitation() {
   const accept = async () => {
     if (!preview) return;
     if (cloud.connection && cloud.connection.url !== invite.url && !window.confirm(
-      'Это приглашение из другого семейного хранилища. Подключить телефон к нему? Книги из нынешнего хранилища останутся на телефоне, но перестанут обновляться.')) return;
+      'Это приглашение из другого семейного хранилища. Подключить это устройство к нему? Книги из нынешнего хранилища останутся на устройстве, но перестанут обновляться.')) return;
     setJoining(true);
     setError('');
     try {
@@ -84,9 +84,9 @@ function Invitation() {
           <div>
             <h2>{preview.inviterName} приглашает вас в книгу</h2>
             {preview.personName ? <p>Приглашение для: <strong>{preview.personName}</strong>.</p> : null}
-            <p>Книга появится на этом телефоне. Всё, что вы добавите — рассказы, фото, голос, видео, отклики, — увидят остальные участники. Регистрация не нужна.</p>
+            <p>Книга появится на этом устройстве. Всё, что вы добавите — рассказы, фото, голос, видео, отклики, — увидят остальные участники. Регистрация не нужна.</p>
             <BookNameField value={name} onChange={setName} />
-            {alreadyIn ? <p className="field-message field-message--success"><Check size={16} aria-hidden="true" /> Эта книга уже есть на телефоне — откройте её на полке.</p> : null}
+            {alreadyIn ? <p className="field-message field-message--success"><Check size={16} aria-hidden="true" /> Эта книга уже есть на этом устройстве — откройте её на полке.</p> : null}
             <div className="page-action-group">
               <button type="button" className="button button--primary" onClick={() => { void accept(); }} disabled={joining || !displayName}>
                 <Cloud size={18} aria-hidden="true" /> {joining ? 'Загружаем книгу…' : 'Принять приглашение'}

@@ -150,7 +150,7 @@ export function createSyncEngine(env: SyncEnvironment) {
   function addSelf(self: Person) {
     const saved = env.commit((snapshot) => (snapshot.people.some((person) => person.id === self.id) ? snapshot
       : { ...snapshot, people: [...snapshot.people, { ...self, projectId: snapshot.project.id }] }));
-    if (!saved) throw new CloudError('local_write', 'Не удалось сохранить книгу на телефоне: не хватает места.');
+    if (!saved) throw new CloudError('local_write', 'Не удалось сохранить книгу на этом устройстве: не хватает места.');
   }
 
   /** Start the book over from the storage: take everything, send nothing that looks like a deletion. */
@@ -241,7 +241,7 @@ export function createSyncEngine(env: SyncEnvironment) {
       applied = applyRemoteEntities(snapshot, bookId, incoming, now().toISOString());
       return applied.snapshot;
     });
-    if (!saved) throw new CloudError('local_write', 'Не удалось сохранить книгу на телефоне: не хватает места.');
+    if (!saved) throw new CloudError('local_write', 'Не удалось сохранить книгу на этом устройстве: не хватает места.');
 
     const files: Record<string, CloudFile> = { ...afterReply.files };
     Object.entries(applied?.files ?? {}).forEach(([id, file]) => {

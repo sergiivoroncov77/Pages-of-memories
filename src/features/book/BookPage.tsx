@@ -108,7 +108,7 @@ export function BookPage() {
     if (cloud.connection) {
       cloud.publishBook(created.id).then(
         () => setNotice(`Книга «${created.title}» создана и сохранена в семейное хранилище. Пригласите близких через «Поделиться».`),
-        (error) => setNotice(`Книга «${created.title}» создана на телефоне. В хранилище сохранить не удалось: ${cloudErrorMessage(error)} Нажмите «Сохранить в Google Диск» позже.`)
+        (error) => setNotice(`Книга «${created.title}» создана на этом устройстве. В хранилище сохранить не удалось: ${cloudErrorMessage(error)} Нажмите «Сохранить в Google Диск» позже.`)
       );
     }
   };
@@ -134,7 +134,7 @@ export function BookPage() {
     setNotice(message);
   };
 
-  const leftMessage = (title: string, pending: boolean) => `Книга «${title}» удалена с этого телефона, и вы больше не участник. `
+  const leftMessage = (title: string, pending: boolean) => `Книга «${title}» удалена с этого устройства, и вы больше не участник. `
     + (sharedBook?.canManage ? 'Открыть её снова можно в «Настройки → Семейное хранилище».' : 'Чтобы получить её снова, попросите создателя прислать новое приглашение.')
     + (pending ? ' Хранилище узнает об этом, когда появится связь.' : '');
 
@@ -144,7 +144,7 @@ export function BookPage() {
     if (sharedBook && (isCreator || sharedBook.canManage)) { setBookRemoval({ busy: false, error: '' }); return; }
     if (sharedBook) {
       const creator = sharedBook.creatorName ? ` (${sharedBook.creatorName})` : '';
-      if (!window.confirm(`Удалить книгу «${book.title}» с этого телефона? Вы перестанете быть участником книги: чтобы получить её снова, создатель${creator} должен прислать новое приглашение. У создателя и остальных участников ничего не удалится.`)) return;
+      if (!window.confirm(`Удалить книгу «${book.title}» с этого устройства? Вы перестанете быть участником книги: чтобы получить её снова, создатель${creator} должен прислать новое приглашение. У создателя и остальных участников ничего не удалится.`)) return;
       try {
         const { pending } = await cloud.removeBook(book.id, 'leave');
         dropLocalCopy(leftMessage(book.title, pending));
@@ -170,7 +170,7 @@ export function BookPage() {
     setBookRemoval(null);
     dropLocalCopy(mode === 'delete' ? `Книга «${book.title}» удалена у всех участников.`
       : mode === 'leave' ? leftMessage(book.title, pending)
-        : `Книга «${book.title}» убрана с этого телефона. У остальных участников она осталась; вернуть её сюда можно в «Настройки → Семейное хранилище».`);
+        : `Книга «${book.title}» убрана с этого устройства. У остальных участников она осталась; вернуть её сюда можно в «Настройки → Семейное хранилище».`);
   };
 
   const removeChapter = (chapterId: string) => {
@@ -342,9 +342,9 @@ export function BookPage() {
           onCancel={() => setBookRemoval(null)} onChoose={(mode) => { void finishBookRemoval(mode as 'local' | 'delete' | 'leave'); }}
           choices={[
             isCreator
-              ? { id: 'local', label: 'Только с этого телефона', description: 'У остальных участников книга останется и будет обновляться. Вернуть её сюда можно в «Настройки → Семейное хранилище».' }
-              : { id: 'leave', label: 'Только с этого телефона', description: 'Вы перестанете быть участником, у остальных книга останется. Как владелец хранилища вы сможете снова открыть её в «Настройки → Семейное хранилище».' },
-            { id: 'delete', label: 'У всех участников', danger: true, description: 'Папка книги уйдёт в корзину Google Диска хранилища (там она хранится 30 дней), участники перестанут получать изменения. Уже скачанные копии останутся на их телефонах.' }
+              ? { id: 'local', label: 'Только с этого устройства', description: 'У остальных участников книга останется и будет обновляться. Вернуть её сюда можно в «Настройки → Семейное хранилище».' }
+              : { id: 'leave', label: 'Только с этого устройства', description: 'Вы перестанете быть участником, у остальных книга останется. Как владелец хранилища вы сможете снова открыть её в «Настройки → Семейное хранилище».' },
+            { id: 'delete', label: 'У всех участников', danger: true, description: 'Папка книги уйдёт в корзину Google Диска хранилища (там она хранится 30 дней), участники перестанут получать изменения. Уже скачанные копии останутся на их устройствах.' }
           ]}>
           <p>В книге {bookContents}. Она хранится в семейном хранилище{sharedBook.creatorName ? `, создатель — ${sharedBook.creatorName}` : ''}.</p>
         </ChoiceDialog>
