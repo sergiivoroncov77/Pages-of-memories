@@ -1,9 +1,9 @@
-import { Check, Copy, Laptop, MonitorSmartphone, Pencil, QrCode as QrIcon, Send, Smartphone, Tablet, Unplug, X } from 'lucide-react';
+import { Check, Copy, Laptop, MonitorSmartphone, Pencil, QrCode as QrIcon, Smartphone, Tablet, Unplug, X } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { MAX_NAME_LENGTH } from '../../app/profile';
 import { Card } from '../../components/Card';
 import { QrCode } from '../../components/QrCode';
-import { copyText, shareLink } from '../../lib/shareFile';
+import { copyText } from '../../lib/shareFile';
 import { CloudError, cloudErrorMessage, isOutdatedScript } from '../../sync/cloudApi';
 import { useCloudSync } from '../../sync/CloudSync';
 import type { CloudDevice } from '../../sync/syncEngine';
@@ -36,7 +36,7 @@ export function DevicesCard() {
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [link, setLink] = useState<{ link: string; expiresAt: string; known: number } | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [sent, setSent] = useState('');
+  const [copied, setCopied] = useState('');
 
   const fail = useCallback((failure: unknown) => {
     if (isOutdatedScript(failure)) setOutdated(true);
@@ -98,7 +98,7 @@ export function DevicesCard() {
   const openLink = async () => {
     setBusy('link');
     setNotice('');
-    setSent('');
+    setCopied('');
     try {
       const created = await cloud.createDeviceLink();
       setNow(Date.now());
@@ -157,15 +157,9 @@ export function DevicesCard() {
     }
   };
 
-  const text = 'Ссылка для входа в мой профиль «Истории близких». Открывать только на своём устройстве.';
-  const share = async () => {
-    if (!link) return;
-    const outcome = await shareLink({ title: 'Вход в профиль', text, url: link.link });
-    setSent(outcome === 'shared' ? 'Ссылка отправлена.' : outcome === 'copied' ? 'Ссылка скопирована.' : outcome === 'failed' ? 'Не удалось открыть меню «Поделиться». Скопируйте ссылку вручную.' : '');
-  };
   const copy = async () => {
     if (!link) return;
-    setSent((await copyText(link.link)) ? 'Ссылка скопирована.' : 'Не удалось скопировать. Выделите ссылку и скопируйте вручную.');
+    setCopied((await copyText(link.link)) ? 'Ссылка скопирована.' : 'Не удалось скопировать. Выделите ссылку и скопируйте вручную.');
   };
   const left = link ? remaining(link.expiresAt, now) : 0;
 
@@ -240,9 +234,8 @@ export function DevicesCard() {
                 <input readOnly value={link.link} aria-label="Ссылка для входа" onFocus={(event) => event.currentTarget.select()} />
                 <div className="page-action-group">
                   <button type="button" className="button button--secondary button--small" onClick={() => { void copy(); }}><Copy size={16} aria-hidden="true" /> Скопировать ссылку</button>
-                  <button type="button" className="button button--secondary button--small" onClick={() => { void share(); }}><Send size={16} aria-hidden="true" /> Отправить себе</button>
                 </div>
-                {sent ? <p className="field-message" role="status">{sent}</p> : null}
+                {copied ? <p className="field-message" role="status">{copied}</p> : null}
               </div>
             </>
           ) : (
