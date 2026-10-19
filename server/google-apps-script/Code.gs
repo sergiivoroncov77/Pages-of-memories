@@ -11,6 +11,8 @@
  *
  * Права скрипта ограничены `drive.file` (см. appsscript.json): он видит только
  * файлы, которые создал сам, а остальной Диск владельца ему недоступен.
+ * Сервис «Drive» в манифесте нужен только затем, чтобы Google включил Drive API
+ * в проекте скрипта: к Диску код обращается сам, через UrlFetchApp.
  *
  * Как установить — docs/GOOGLE_DRIVE_SETUP.md или «Настройки → Семейное
  * хранилище → пошаговая инструкция» в приложении.
@@ -685,8 +687,18 @@ function drive_(method, path, body, contentType) {
   var response = UrlFetchApp.fetch(DRIVE + path, options);
   var code = response.getResponseCode();
   var text = response.getContentText('UTF-8');
-  if (code >= 300) throw error_('drive_error', 'Google Диск ответил ошибкой ' + code + ': ' + text.slice(0, 300));
+  if (code >= 300) throw driveError_(code, text);
   return text;
+}
+
+function driveError_(code, text) {
+  if (code === 403 && /SERVICE_DISABLED|accessNotConfigured|has not been used in project/.test(text)) {
+    var link = /https:\/\/console\.developers\.google\.com\/apis\/api\/drive\.googleapis\.com\/overview\?project=\d+/.exec(text);
+    return error_('drive_error', 'В проекте скрипта выключен Google Drive API. Включите его: в редакторе скрипта слева «Сервисы» → «+» → «Drive API» → «Добавить»'
+      + (link ? ' (если «Drive» там уже есть — откройте ' + link[0] + ' и нажмите «Включить»)' : '')
+      + '. Через пару минут запустите setup ещё раз.');
+  }
+  return error_('drive_error', 'Google Диск ответил ошибкой ' + code + ': ' + text.slice(0, 300));
 }
 
 function driveCreateFolder_(name, parentId) {

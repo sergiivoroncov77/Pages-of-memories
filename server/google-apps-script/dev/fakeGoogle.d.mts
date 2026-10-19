@@ -28,6 +28,8 @@ export interface FakeDrive {
   handle(request: FakeHttpRequest): FakeHttpResponse;
   issueToken(): string;
   revokeTokens(): void;
+  /** Answers like Google while the Drive API is off in the script's Cloud project. */
+  turnApiOff(project?: string): void;
   liveFilesUnder(folderId: string): FakeDriveFile[];
 }
 

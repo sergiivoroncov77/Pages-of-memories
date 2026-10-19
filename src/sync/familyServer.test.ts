@@ -380,4 +380,11 @@ describe('family server (Code.gs)', () => {
     expect(server.fake.logs.join('\n')).toContain('Веб-приложение');
     expect(server.fake.properties.get('root')).toBeTruthy();
   });
+
+  it('tells the owner how to turn on the Drive API when Google has it off for the script', () => {
+    const server = loadFamilyServer();
+    server.fake.drive.turnApiOff('707687405673');
+    expect(() => server.run('setup')).toThrow(/«Сервисы» → «\+» → «Drive API».*overview\?project=707687405673/);
+    expect(server.post({ action: 'claim', name: 'Сергей' })).toMatchObject({ ok: false, error: 'drive_error', message: expect.stringContaining('Drive API') });
+  });
 });

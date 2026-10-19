@@ -12,6 +12,7 @@ export function createFakeDrive() {
   const files = new Map();
   const sessions = new Map();
   const tokens = new Set();
+  let apiOff = null;
   let counter = 0;
   const newId = () => `file${(counter += 1).toString(36)}${randomUUID().slice(0, 8)}`;
 
@@ -35,6 +36,7 @@ export function createFakeDrive() {
     const headers = Object.fromEntries(Object.entries(request.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]));
     const path = url.pathname;
     const sessionId = url.searchParams.get('upload_id');
+    if (apiOff) return error(403, `Google Drive API has not been used in project ${apiOff} before or it is disabled. Enable it by visiting https://console.developers.google.com/apis/api/drive.googleapis.com/overview?project=${apiOff} then retry.`);
 
     if (path === '/upload/drive/v3/files' && sessionId && method === 'PUT') {
       const meta = sessions.get(sessionId);
@@ -99,6 +101,8 @@ export function createFakeDrive() {
     handle,
     issueToken() { const token = `ya29.fake-${randomUUID()}`; tokens.add(token); return token; },
     revokeTokens() { tokens.clear(); },
+    /** Answers like Google while the Drive API is off in the script's Cloud project. */
+    turnApiOff(project = '707687405673') { apiOff = project; },
     /** Live (not trashed) files inside a folder, recursively. */
     liveFilesUnder(folderId) {
       const result = [];
