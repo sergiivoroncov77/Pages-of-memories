@@ -1,4 +1,6 @@
 import type { Chapter, MediaAsset, Moment, Person, Perspective, Reflection } from '../../data/types';
+
+export { chronologicalMoments } from '../../data/library';
 import { formatDate, truncate } from '../format';
 import { chapterLabel, paginateText, readingSeconds } from './text';
 
@@ -169,12 +171,6 @@ const TEXT_PAGE_CHARS = 260;
 /** Demo audio and video in the seed data point at files that are not shipped. */
 export function isAttachedMedia(asset: MediaAsset | undefined): asset is MediaAsset {
   return Boolean(asset) && !(asset!.type !== 'photo' && asset!.url.startsWith('/demo/'));
-}
-
-/** The film tells a chapter from its earliest moment to its latest. */
-export function chronologicalMoments<T extends Pick<Moment, 'occurredAt' | 'createdAt'>>(moments: readonly T[]): T[] {
-  const time = (moment: T) => new Date(moment.occurredAt ?? moment.createdAt).getTime() || 0;
-  return [...moments].sort((a, b) => time(a) - time(b));
 }
 
 /** Every asset the film may need, so toggling options never requires loading again. */

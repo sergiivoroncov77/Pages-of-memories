@@ -7,6 +7,22 @@ export interface DeletionTarget {
   id: string;
 }
 
+/** Who added a record of a shared book, as far as this device knows. */
+function ownerOf(book: CloudBookState, memberId: string, type: EntityType, id: string): string {
+  const key = entityKey(type, id);
+  // A record this phone never exchanged is its own; an exchanged one without a known author is the creator's.
+  return book.owners[key] ?? (key in book.fingerprints ? book.creatorId : memberId);
+}
+
+/**
+ * Whether this device may change a story or a reflection. In a shared book only
+ * whoever added it changes the words; on a book of this device alone, anything.
+ */
+export function canEdit(book: CloudBookState | undefined, memberId: string | undefined, target: { type: 'perspective' | 'reflection'; id: string }): boolean {
+  if (!book || book.detached || !memberId) return true;
+  return ownerOf(book, memberId, target.type, target.id) === memberId;
+}
+
 /**
  * Why this phone may not delete a record of a shared book, or null when it may.
  * It mirrors the storage: a member deletes only what they added, and a moment
@@ -16,12 +32,7 @@ export interface DeletionTarget {
 export function deletionBlocker(snapshot: AppSnapshot, book: CloudBookState | undefined, memberId: string | undefined, target: DeletionTarget): string | null {
   if (!book || book.detached || !memberId || book.canManage) return null;
   const who = `только создатель книги${book.creatorName ? ` — ${book.creatorName}` : ''}`;
-  const mine = (type: EntityType, id: string) => {
-    const key = entityKey(type, id);
-    // A record this phone never exchanged is its own; an exchanged one without a known author is the creator's.
-    const owner = book.owners[key] ?? (key in book.fingerprints ? book.creatorId : memberId);
-    return owner === memberId;
-  };
+  const mine = (type: EntityType, id: string) => ownerOf(book, memberId, type, id) === memberId;
   const othersInside = (momentId: string) =>
     snapshot.perspectives.some((item) => item.momentId === momentId && !mine('perspective', item.id))
     || snapshot.reflections.some((item) => item.momentId === momentId && !mine('reflection', item.id));

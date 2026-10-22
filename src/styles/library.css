@@ -238,9 +238,78 @@
   margin-top: 12px;
 }
 
-.chapter-actions__edit {
-  width: 40px;
-  height: 40px;
+/* The chapter's own edit button sits right after its title. */
+.chapter-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chapter-title h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chapter-title__edit {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--surface-strong);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.chapter-title__edit:hover,
+.chapter-title__edit:focus-visible {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+}
+
+/* «Добавить момент» at the end of every chapter. */
+.moment-add {
+  display: flex;
+  min-height: 120px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--primary-dark);
+  text-align: center;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.moment-add:hover,
+.moment-add:focus-visible {
+  border-color: var(--primary);
+  background: var(--surface-warm);
+}
+
+.moment-add span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.moment-add strong {
+  color: var(--ink);
+}
+
+.moment-add small {
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
 }
 
 .chapter-empty {
@@ -405,4 +474,129 @@
   margin-top: 18px;
   padding-top: 16px;
   border-top: 1px solid var(--line);
+}
+
+/* ---------- Moment: who signs, telling aloud, changing one's words ---------- */
+
+.author-choice .segmented {
+  margin: 0;
+}
+
+.segmented--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.field-note {
+  margin-top: -6px;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.voice-field {
+  gap: 12px;
+}
+
+.voice-recorder {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+
+.voice-recorder__start {
+  justify-self: start;
+}
+
+.voice-recorder.is-live,
+.voice-recorder--take {
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  background: var(--surface-warm);
+}
+
+.voice-recorder audio {
+  width: 100%;
+}
+
+.voice-recorder__state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.voice-recorder__actions,
+.moment-aside-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.voice-field__file {
+  display: grid;
+  gap: 6px;
+  font-size: 0.9rem;
+}
+
+.voice-field__file > span {
+  color: var(--ink-soft);
+}
+
+.voice-field__file input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface-strong);
+  font-size: 0.86rem;
+}
+
+/* Change and delete on a story or a reflection: quiet round buttons. */
+.card-tools {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.card-tool {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.card-tool:hover,
+.card-tool:focus-visible {
+  background: var(--bg-deep);
+  color: var(--ink);
+}
+
+.card-tool--danger:hover,
+.card-tool--danger:focus-visible {
+  color: var(--danger);
+}
+
+.reflection-card .card-tools {
+  margin: -6px -6px 0 0;
+}
+
+.reflection-card--editing {
+  display: block;
+}
+
+.perspective-editor {
+  margin-top: 4px;
 }

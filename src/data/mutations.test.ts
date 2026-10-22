@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { addPerspectiveToSnapshot, createMemoryDraft, ensureMemoryMoments, publishMemoryToSnapshot,
   removeUnusedMediaAsset, saveDraftToSnapshot, setMomentNarrationInSnapshot, toggleMemoryFavorite, toggleMomentFavorite,
-  updateMomentInSnapshot } from './mutations';
+  updateMomentInSnapshot, updatePerspectiveInSnapshot, updateReflectionInSnapshot } from './mutations';
 import { loadSnapshot, persistSnapshot } from './repository';
 import { seedSnapshot } from './seed';
 
@@ -227,5 +227,33 @@ describe('moment narration', () => {
 
   it('rejects a voice-over that is not an audio asset', () => {
     expect(() => setMomentNarrationInSnapshot(structuredClone(seedSnapshot), 'moment_summer', 'asset_porch')).toThrow();
+  });
+});
+
+describe('changing a story after it was added', () => {
+  it('changes the words and the signature of a story, keeping its file and moment', () => {
+    const base = structuredClone(seedSnapshot);
+    const photo = base.perspectives.find((item) => item.type === 'photo' && item.mediaAssetId)!;
+    const changed = updatePerspectiveInSnapshot(base, photo.id, { content: '  Новое описание ', caption: '', authorId: undefined });
+    const after = changed.perspectives.find((item) => item.id === photo.id)!;
+    expect(after).toMatchObject({ content: 'Новое описание', caption: undefined, authorId: undefined, mediaAssetId: photo.mediaAssetId, momentId: photo.momentId });
+    expect(changed.perspectives).toHaveLength(base.perspectives.length);
+  });
+
+  it('keeps a written story from going empty and an author from pointing nowhere', () => {
+    const base = structuredClone(seedSnapshot);
+    const text = base.perspectives.find((item) => item.type === 'text')!;
+    expect(() => updatePerspectiveInSnapshot(base, text.id, { content: '   ' })).toThrow();
+    expect(() => updatePerspectiveInSnapshot(base, text.id, { authorId: 'person_nobody' })).toThrow();
+    // Without authorId in the change, the signature stays.
+    expect(updatePerspectiveInSnapshot(base, text.id, { content: 'Ещё раз' }).perspectives.find((item) => item.id === text.id)?.authorId).toBe(text.authorId);
+  });
+
+  it('changes a reflection and can take the name off it', () => {
+    const base = structuredClone(seedSnapshot);
+    const reflection = base.reflections[0];
+    const changed = updateReflectionInSnapshot(base, reflection.id, { text: 'Другие слова', authorId: undefined });
+    expect(changed.reflections.find((item) => item.id === reflection.id)).toMatchObject({ text: 'Другие слова', authorId: undefined });
+    expect(() => updateReflectionInSnapshot(base, reflection.id, { text: ' ' })).toThrow();
   });
 });

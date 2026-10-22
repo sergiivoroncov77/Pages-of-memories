@@ -176,7 +176,10 @@ function Reader({ source, bookTitle, assets }: { source: ReaderSource; bookTitle
         {leaves.map((leaf, index) => {
           if (index < turned - 3 || index > turned + 2) return null;
           const isTurned = index < turned;
-          return <div key={leaf.key + (spread ? ':s' : ':p')} className={'reader-leaf ' + (isTurned ? 'is-turned' : '')}
+          // Only the open pages stay drawn once a turn ends: on some phones pages lying
+          // on top of each other in 3D show through as stripes.
+          const away = spread ? index !== turned - 1 && index !== turned : index !== turned;
+          return <div key={leaf.key + (spread ? ':s' : ':p')} className={'reader-leaf' + (isTurned ? ' is-turned' : '') + (away ? ' is-away' : '')}
             style={{ zIndex: isTurned ? index + 1 : leaves.length - index + 1 }}>
             <div className="reader-leaf__face reader-leaf__face--front" aria-hidden={!visibleKeys.has(leaf.front.page.key)} inert={!visibleKeys.has(leaf.front.page.key)}>
               <PageView page={leaf.front.page} number={leaf.front.logical} assets={assetsById} chapterTitles={chapterTitles} total={pages.length} onJump={turnTo} />

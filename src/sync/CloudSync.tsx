@@ -10,7 +10,7 @@ import { mediaStore, notifyMediaStored } from '../lib/mediaStore';
 import { makePhotoPreview } from '../lib/photoPreview';
 import { CloudError, cloudErrorMessage, createDriveTransfer, deviceLink, inviteLink } from './cloudApi';
 import { createCloudStateStore, type CloudBookState, type CloudConnection, type CloudState } from './cloudState';
-import { deletionBlocker, renameBlocker, sharedBooksWithPerson, type DeletionTarget } from './permissions';
+import { canEdit, deletionBlocker, renameBlocker, sharedBooksWithPerson, type DeletionTarget } from './permissions';
 import { createSyncEngine, type CloudDevice, type CloudMember, type DeviceLinkPreview, type DownloadProgress, type InvitePreview, type RemoteBook } from './syncEngine';
 
 /*
@@ -52,14 +52,16 @@ interface CloudSyncValue {
   myPersonId: (bookId: string | undefined) => string | undefined;
   /** Everyone this phone signs as, in any book. */
   myPersonIds: Set<string>;
-  /** Sign as this name in a book: renames this phone's narrator there, or creates one. */
-  setMyName: (bookId: string, name: string) => Promise<void>;
+  /** Sign as this name in a book: renames this phone's narrator there, or creates one. Gives the narrator's id. */
+  setMyName: (bookId: string, name: string) => Promise<string>;
   /** The creator renames a member of a shared book for everyone (or anyone renames themselves). */
   renameMember: (bookId: string, member: CloudMember, name: string) => Promise<void>;
   /** Why this phone may not rename a person of a shared book, or null. */
   renameBlocker: (personId: string) => string | null;
   /** Why this phone may not delete a record of a shared book, or null. */
   deletionBlocker: (bookId: string | undefined, target: DeletionTarget) => string | null;
+  /** Whether this phone may change the words of a story or a reflection: in a shared book, only its author's. */
+  canEdit: (bookId: string, target: { type: 'perspective' | 'reflection'; id: string }) => boolean;
   /** Shared books on this phone where the person tells or is invited. */
   sharedBooksWithPerson: (personId: string) => string[];
   syncNow: () => Promise<void>;
@@ -281,9 +283,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     const known = myPersonIn(bookId);
     if (known && known.name !== clean) updatePerson(known.id, { name: clean });
     const person = known ?? ensureMe(bookId, clean);
-    if (!book || book.detached) return;
+    if (!book || book.detached) return person.id;
     // A phone that has no narrator in the book yet tells the storage who it is.
     await track(() => engine.updateMember(bookId, book.personId === person.id ? { name: clean } : { name: clean, personId: person.id }));
+    return person.id;
   };
 
   const myPersonIds = new Set([
@@ -308,7 +311,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     myPersonIds,
     setMyName,
     renameMember: async (bookId, member, name) => {
-      if (member.isYou) return setMyName(bookId, name);
+      if (member.isYou) { await setMyName(bookId, name); return; }
       const clean = requireName(name);
       await track(() => engine.updateMember(bookId, { memberId: member.id, name: clean }));
       const person = member.personId ? getSnapshot().people.find((item) => item.id === member.personId) : undefined;
@@ -317,6 +320,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     renameBlocker: (personId) => (state.connection ? renameBlocker(linked, state.connection.memberId, personId) : null),
     deletionBlocker: (bookId, target) => (bookId && state.connection
       ? deletionBlocker(snapshot, linked[bookId], state.connection.memberId, target) : null),
+    canEdit: (bookId, target) => canEdit(state.connection ? linked[bookId] : undefined, state.connection?.memberId, target),
     sharedBooksWithPerson: (personId) => (state.connection ? sharedBooksWithPerson(snapshot, linked, personId) : []),
     syncNow,
     connectOwner: async (url, name) => {

@@ -164,7 +164,13 @@
   transform-origin: left center;
   transform-style: preserve-3d;
   /* z-index flips halfway, when the page stands on its spine. */
-  transition: transform var(--turn-time) var(--turn-ease), z-index 0s calc(var(--turn-time) / 2);
+  transition: transform var(--turn-time) var(--turn-ease), z-index 0s calc(var(--turn-time) / 2), visibility 0s;
+}
+
+/* Pages under the open ones hide when the turn ends. */
+.reader-leaf.is-away {
+  visibility: hidden;
+  transition: transform var(--turn-time) var(--turn-ease), z-index 0s calc(var(--turn-time) / 2), visibility 0s var(--turn-time);
 }
 
 .reader-stage--single .reader-leaf {

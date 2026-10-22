@@ -33,6 +33,8 @@ export function BookPage() {
   const [params, setParams] = useSearchParams();
   const [panel, setPanel] = useState<Panel>('none');
   const [momentChapterId, setMomentChapterId] = useState('');
+  // The new-moment form opens where it was asked for: at the top or inside a chapter.
+  const [momentInChapter, setMomentInChapter] = useState(false);
   const [editingChapterId, setEditingChapterId] = useState('');
   // The creator removes a shared book through a choice: from this phone only or for everyone.
   const [bookRemoval, setBookRemoval] = useState<{ busy: boolean; error: string } | null>(null);
@@ -86,6 +88,7 @@ export function BookPage() {
 
   const openMomentForm = (chapterId = '') => {
     setMomentChapterId(chapterId || chapters.find((item) => item.id === activeChapterId)?.id || chapters[0]?.id || '');
+    setMomentInChapter(Boolean(chapterId));
     setNotice('');
     setPanel('moment');
     reveal('create-moment');
@@ -222,11 +225,21 @@ export function BookPage() {
     </Card>
   ) : (
     <div className="chapter-section__heading"><span className="chapter-numeral" aria-hidden="true">{toRoman(chapter.order)}</span>
-      <div><p className="eyebrow">{chapterLabel(chapter.order)}</p><h2>{chapter.title}</h2>{chapter.description ? <p>{chapter.description}</p> : null}</div>
+      <div><p className="eyebrow">{chapterLabel(chapter.order)}</p>
+        <div className="chapter-title"><h2>{chapter.title}</h2>
+          <button type="button" className="chapter-title__edit" title="Изменить главу" aria-label={'Изменить главу «' + chapter.title + '»'} onClick={() => { setEditingChapterId(chapter.id); setNotice(''); }}><Pencil size={16} aria-hidden="true" /></button></div>
+        {chapter.description ? <p>{chapter.description}</p> : null}</div>
       <div className="chapter-actions"><span className="chapter-count">{count} {pluralize(count, 'момент', 'момента', 'моментов')}</span>
         {count ? <Link to={'/read?chapter=' + chapter.id} className="button button--ghost button--small"><BookOpen size={17} aria-hidden="true" /> Листать</Link> : null}
-        {count ? <Link to={'/chapters/' + chapter.id + '/film'} className="button button--secondary button--small"><Clapperboard size={17} aria-hidden="true" /> Фильм главы</Link> : null}
-        <button type="button" className="icon-button chapter-actions__edit" aria-label={'Изменить главу «' + chapter.title + '»'} onClick={() => { setEditingChapterId(chapter.id); setNotice(''); }}><Pencil size={18} /></button></div></div>
+        {count ? <Link to={'/chapters/' + chapter.id + '/film'} className="button button--secondary button--small"><Clapperboard size={17} aria-hidden="true" /> Фильм главы</Link> : null}</div></div>
+  );
+
+  const momentForm = (
+    <Card className="create-moment-card" id="create-moment">
+      <div className="card-heading"><div><p className="eyebrow">Новая страница</p><h2>Создать момент</h2><p>Начните с названия. Рассказы и материалы можно добавить следом.</p></div>
+        <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setPanel('none')}><X size={20} /></button></div>
+      <MomentDetailsForm key={momentChapterId} chapters={chapters} initial={{ title: '', summary: '', chapterId: momentChapterId }} submitLabel="Создать и открыть" onSubmit={submitMoment} onCancel={() => setPanel('none')} />
+    </Card>
   );
 
   return (
@@ -234,7 +247,7 @@ export function BookPage() {
       <PageHeader eyebrow="Ваша книга воспоминаний" title={book.title} description={book.description}
         action={<div className="page-action-group">
           <Link to="/export" className="button button--ghost button--small"><BookOpen size={18} aria-hidden="true" /> Собрать книгу</Link>
-          <button type="button" className="button button--primary button--small" onClick={() => panel === 'moment' ? setPanel('none') : openMomentForm()} disabled={!chapters.length} aria-expanded={panel === 'moment'} aria-controls="create-moment"><Plus size={18} aria-hidden="true" /> Добавить момент</button>
+          <button type="button" className="button button--primary button--small" onClick={() => panel === 'moment' && !momentInChapter ? setPanel('none') : openMomentForm()} disabled={!chapters.length} aria-expanded={panel === 'moment' && !momentInChapter} aria-controls="create-moment"><Plus size={18} aria-hidden="true" /> Добавить момент</button>
         </div>}
       />
 
@@ -275,11 +288,7 @@ export function BookPage() {
       {panel === 'share' ? <div id="share-book"><ShareBookPanel book={book} onClose={() => setPanel('none')} /></div> : null}
       <div className="library-import"><ImportBookButton className="text-button" label="Открыть файл книги от близких" onImported={imported} /></div>
 
-      {panel === 'moment' ? <Card className="create-moment-card" id="create-moment">
-        <div className="card-heading"><div><p className="eyebrow">Новая страница</p><h2>Создать момент</h2><p>Начните с названия. Рассказы и материалы можно добавить следом.</p></div>
-          <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setPanel('none')}><X size={20} /></button></div>
-        <MomentDetailsForm key={momentChapterId} chapters={chapters} initial={{ title: '', summary: '', chapterId: momentChapterId }} submitLabel="Создать и открыть" onSubmit={submitMoment} onCancel={() => setPanel('none')} />
-      </Card> : null}
+      {panel === 'moment' && !momentInChapter ? momentForm : null}
 
       {allMoments.length ? <section className="book-toolbar" aria-label="Поиск и фильтры книги">
         <div className="book-search-row">
@@ -301,6 +310,7 @@ export function BookPage() {
         {chapters.map((chapter, index) => {
           const moments = filteredMoments.filter((moment) => moment.chapterId === chapter.id);
           if (hasFilters && !moments.length) return null;
+          const formHere = panel === 'moment' && momentInChapter && momentChapterId === chapter.id;
           return <section className="chapter-section" key={chapter.id}>
             {chapterHeading(chapter, momentsForChapter(chapter.id).length, index)}
             {moments.length ? <div className="moment-grid">{moments.map((moment, momentIndex) => {
@@ -320,10 +330,15 @@ export function BookPage() {
                 </Link>
                 <button type="button" className={'moment-card__favorite ' + (moment.favorite ? 'is-active' : '')} aria-label={moment.favorite ? 'Убрать из избранного: ' + moment.title : 'Добавить в избранное: ' + moment.title} aria-pressed={moment.favorite} onClick={() => toggleMomentFavorite(moment.id)}><Heart size={18} fill={moment.favorite ? 'currentColor' : 'none'} /></button>
               </article>;
-            })}</div> : <div className="chapter-empty">
+            })}
+              {!hasFilters && !formHere ? <button type="button" className="moment-add" style={{ '--i': moments.length } as CSSProperties} onClick={() => openMomentForm(chapter.id)}>
+                <Plus size={22} aria-hidden="true" /><span><strong>Добавить момент</strong><small>в главу «{chapter.title}»</small></span>
+              </button> : null}
+            </div> : formHere ? null : <div className="chapter-empty">
               <p>В этой главе пока нет моментов. Начните с одного воспоминания — рассказ, фото, голос или видео можно добавить потом.</p>
               <button type="button" className="button button--secondary button--small" onClick={() => openMomentForm(chapter.id)}><Plus size={17} aria-hidden="true" /> Добавить момент сюда</button>
             </div>}
+            {formHere ? momentForm : null}
           </section>;
         })}
       </div>}

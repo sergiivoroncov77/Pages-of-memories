@@ -1,5 +1,5 @@
 import { createId } from '../lib/id';
-import type { AppSettings, AppSnapshot, Book, Chapter, Person, Question } from './types';
+import type { AppSettings, AppSnapshot, Book, Chapter, Moment, Person, Question } from './types';
 
 /*
  * Library editing: books, chapters and the people a family shares the book
@@ -71,6 +71,16 @@ function validBirthYear(year: number | undefined): number | undefined {
   const current = new Date().getFullYear();
   if (!Number.isInteger(year) || year < 1850 || year > current) throw new Error(`Год рождения — число от 1850 до ${current}.`);
   return year;
+}
+
+/**
+ * A chapter reads from the earliest moment to the latest. Moments without a
+ * date come after the dated ones, in the order they were added.
+ */
+export function chronologicalMoments<T extends Pick<Moment, 'occurredAt' | 'createdAt'>>(moments: readonly T[]): T[] {
+  const time = (value: string | undefined) => (value ? new Date(value).getTime() || 0 : 0);
+  return [...moments].sort((a, b) => (a.occurredAt ? 0 : 1) - (b.occurredAt ? 0 : 1)
+    || time(a.occurredAt) - time(b.occurredAt) || time(a.createdAt) - time(b.createdAt));
 }
 
 /** The book the home, book, reader and export screens show. */

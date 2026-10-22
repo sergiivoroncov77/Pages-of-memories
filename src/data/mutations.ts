@@ -407,6 +407,39 @@ export function addReflectionToSnapshot(snapshot: AppSnapshot, reflection: Refle
   return { ...snapshot, reflections };
 }
 
+export interface PerspectiveEdit {
+  content?: string;
+  caption?: string;
+  /** Undefined signs the story without a name. */
+  authorId?: string;
+}
+
+/** New words for a story (and, for a file, its caption); its file and moment stay. */
+export function updatePerspectiveInSnapshot(snapshot: AppSnapshot, perspectiveId: string, patch: PerspectiveEdit): AppSnapshot {
+  const perspective = snapshot.perspectives.find((item) => item.id === perspectiveId);
+  if (!perspective) return snapshot;
+  const content = patch.content === undefined ? perspective.content : patch.content.trim();
+  if (perspective.type === 'text' && !content) throw new Error('Напишите хотя бы несколько слов о том, что помните.');
+  if ('authorId' in patch && patch.authorId && !snapshot.people.some((person) => person.id === patch.authorId)) {
+    throw new Error('Не найден автор рассказа.');
+  }
+  const caption = patch.caption === undefined ? perspective.caption : patch.caption.trim() || undefined;
+  const next: Perspective = { ...perspective, content, caption, authorId: 'authorId' in patch ? patch.authorId : perspective.authorId };
+  return { ...snapshot, perspectives: snapshot.perspectives.map((item) => (item.id === perspectiveId ? next : item)) };
+}
+
+export function updateReflectionInSnapshot(snapshot: AppSnapshot, reflectionId: string, patch: { text?: string; authorId?: string }): AppSnapshot {
+  const reflection = snapshot.reflections.find((item) => item.id === reflectionId);
+  if (!reflection) return snapshot;
+  const text = patch.text === undefined ? reflection.text : patch.text.trim();
+  if (!text) throw new Error('Добавьте текст отклика.');
+  if ('authorId' in patch && patch.authorId && !snapshot.people.some((person) => person.id === patch.authorId)) {
+    throw new Error('Не найден автор отклика.');
+  }
+  const next: Reflection = { ...reflection, text, authorId: 'authorId' in patch ? patch.authorId : reflection.authorId };
+  return { ...snapshot, reflections: snapshot.reflections.map((item) => (item.id === reflectionId ? next : item)) };
+}
+
 export type NewMediaAssetInput = Omit<MediaAsset, 'id' | 'createdAt'>;
 
 export function createMediaAsset(

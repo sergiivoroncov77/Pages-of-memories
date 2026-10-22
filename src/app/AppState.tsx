@@ -20,6 +20,7 @@ import type { StorageError, StorageWriteResult } from '../lib/storage';
 import { bookPackageFileName, bookPackageToHtml, buildBookPackage, mergeBookPackage, parseBookPackage, type MergeSummary } from '../data/bookPackage';
 import {
   activeBookOf,
+  chronologicalMoments,
   createBookInSnapshot,
   createChapterInSnapshot,
   createPersonInSnapshot,
@@ -60,7 +61,9 @@ import {
   setMomentNarrationInSnapshot,
   toggleMomentFavorite,
   toggleMemoryFavorite,
-  updateMomentInSnapshot
+  updateMomentInSnapshot,
+  updatePerspectiveInSnapshot,
+  updateReflectionInSnapshot
 } from '../data/mutations';
 import type {
   AppSettings,
@@ -121,6 +124,8 @@ interface AppStateValue {
   addMemory: (input: NewMemoryInput) => Memory;
   addMoment: (input: Parameters<typeof createMoment>[0]) => Moment;
   updateMoment: (id: string, patch: Parameters<typeof updateMomentInSnapshot>[2]) => void;
+  updatePerspective: (id: string, patch: Parameters<typeof updatePerspectiveInSnapshot>[2]) => void;
+  updateReflection: (id: string, patch: Parameters<typeof updateReflectionInSnapshot>[2]) => void;
   addPerspective: (input: Parameters<typeof createPerspective>[0]) => Perspective;
   addPerspectiveWithMedia: (
     input: Parameters<typeof createPerspective>[0],
@@ -328,9 +333,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const chaptersForBook = (bookId: string) =>
     snapshot.chapters.filter((chapter) => chapter.bookId === bookId).sort((a, b) => a.order - b.order);
   const momentsForChapter = (chapterId: string) =>
-    snapshot.moments
-      .filter((moment) => moment.chapterId === chapterId)
-      .sort((a, b) => new Date(b.occurredAt ?? b.createdAt).getTime() - new Date(a.occurredAt ?? a.createdAt).getTime());
+    chronologicalMoments(snapshot.moments.filter((moment) => moment.chapterId === chapterId));
   const perspectivesForMoment = (momentId: string) =>
     snapshot.perspectives
       .filter((perspective) => perspective.momentId === momentId)
@@ -388,6 +391,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const updateMoment = (id: string, patch: Parameters<typeof updateMomentInSnapshot>[2]) => {
     commitSnapshot((current) => updateMomentInSnapshot(current, id, patch));
+  };
+
+  const updatePerspective = (id: string, patch: Parameters<typeof updatePerspectiveInSnapshot>[2]) => {
+    commitSnapshot((current) => updatePerspectiveInSnapshot(current, id, patch));
+  };
+
+  const updateReflection = (id: string, patch: Parameters<typeof updateReflectionInSnapshot>[2]) => {
+    commitSnapshot((current) => updateReflectionInSnapshot(current, id, patch));
   };
 
   const addPerspective = (input: Parameters<typeof createPerspective>[0]) => {
@@ -706,6 +717,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         addMemory,
         addMoment,
         updateMoment,
+        updatePerspective,
+        updateReflection,
         addPerspective,
         addPerspectiveWithMedia,
         storeMedia,

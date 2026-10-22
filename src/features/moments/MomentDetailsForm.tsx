@@ -57,7 +57,7 @@ export function MomentDetailsForm({ chapters, initial, submitLabel, onSubmit, on
         <label className="field">
           <span>Дата события <small>необязательно</small></span>
           <input type="date" name="occurredAt" value={occurredAt} onChange={(event) => setOccurredAt(event.target.value)} min="0001-01-01" max="9999-12-31" />
-          <small>Если не помните точную дату, оставьте поле пустым.</small>
+          <small>Моменты с датой идут в главе по порядку, от ранних к поздним. Если не помните точную дату, оставьте поле пустым.</small>
         </label>
       </div>
       {error ? <p className="field-message field-message--error" role="alert">{error}</p> : null}

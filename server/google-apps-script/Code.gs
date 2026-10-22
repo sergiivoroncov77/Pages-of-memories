@@ -529,8 +529,8 @@ function claimablePerson_(book, personId, memberId) {
  * Каждое устройство присылает свои изменения и получает всё, что поменялось
  * с прошлого раза. Записи хранятся по ключам «тип:id»; побеждает последняя
  * присланная правка, удаления хранятся отметками. У каждой записи помнится
- * автор (owner): участник удаляет только своё и меняет только своё имя,
- * создатель книги — что угодно. Отклонённые удаления и правки возвращаются
+ * автор (owner): участник удаляет только своё, меняет только своё имя и
+ * слова только своих рассказов и откликов; создатель книги — что угодно. Отклонённые удаления и правки возвращаются
  * устройству, и оно восстанавливает записи.
  */
 function sync_(member, request) {
@@ -552,7 +552,7 @@ function sync_(member, request) {
     var trash = [];
     var manager = book.creatorId === member.id || !!member.admin;
     var denied = deniedDeletions_(state.entities, clean, member.id, book.creatorId, manager);
-    if (!manager) deniedRenames_(state.entities, clean, member.id, book).forEach(function (key) { denied[key] = true; });
+    if (!manager) deniedEdits_(state.entities, clean, member.id, book).forEach(function (key) { denied[key] = true; });
     var accepted = clean.filter(function (change) { return !denied[change.key]; });
     accepted.forEach(function (change) {
       rev += 1;
@@ -634,14 +634,15 @@ function deniedDeletions_(entities, changes, memberId, creatorId, manager) {
 }
 
 /**
- * Имена в книге: участник меняет только своё имя и рассказчиков, которых
- * добавил сам. Чужие правки не принимаются, и устройство получает имя обратно.
+ * Чужие правки: участник меняет только своё имя и рассказчиков, которых
+ * добавил сам, и слова только своих рассказов и откликов. Чужие правки не
+ * принимаются, и устройство получает запись обратно.
  */
-function deniedRenames_(entities, changes, memberId, book) {
+function deniedEdits_(entities, changes, memberId, book) {
   var membership = book.members[memberId];
   var own = membership && membership.personId ? 'person:' + membership.personId : '';
   return changes.filter(function (change) {
-    if (change.deleted || change.key.indexOf('person:') !== 0 || change.key === own) return false;
+    if (change.deleted || change.key === own || !/^(person|perspective|reflection):/.test(change.key)) return false;
     var entry = entities[change.key];
     return !!entry && !entry.deleted && ownerOf_(entry, book) !== memberId;
   }).map(function (change) { return change.key; });

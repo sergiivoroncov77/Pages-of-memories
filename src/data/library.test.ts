@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   activeBookOf,
+  chronologicalMoments,
   createBookInSnapshot,
   createChapterInSnapshot,
   createPersonInSnapshot,
@@ -107,6 +108,18 @@ describe('chapters', () => {
 });
 
 describe('moments', () => {
+  it('reads a chapter from the earliest date to the latest, undated moments after them in the order added', () => {
+    const moment = (id: string, occurredAt: string | undefined, createdAt: string) => ({ id, occurredAt, createdAt });
+    const ordered = chronologicalMoments([
+      moment('undated-late', undefined, '2026-03-02T10:00:00Z'),
+      moment('wedding', '1996-01-20', '2026-03-01T10:00:00Z'),
+      moment('undated-early', undefined, '2026-01-05T10:00:00Z'),
+      moment('summer', '1950-07-15', '2026-03-03T10:00:00Z'),
+      moment('same-day-second', '1996-01-20', '2026-03-04T10:00:00Z')
+    ]);
+    expect(ordered.map((item) => item.id)).toEqual(['summer', 'wedding', 'same-day-second', 'undated-early', 'undated-late']);
+  });
+
   it('reopens the interview question of a deleted interview moment', () => {
     const snapshot = demo();
     const moment = snapshot.moments.find((item) => item.sourceMemoryId === 'memory_summer')!;

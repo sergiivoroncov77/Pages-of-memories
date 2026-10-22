@@ -290,6 +290,28 @@ describe('family server (Code.gs)', () => {
       { key: 'person:person_mama', data: { id: 'person_mama', name: 'Ольга Ивановна' } }] }).denied).toEqual([]);
   });
 
+  it('changes the words of a story or a reflection only for whoever added it, and for the creator', () => {
+    const { server, ownerToken } = ownerWithBook();
+    const mama = server.post({ action: 'acceptInvite', code: invite(server, ownerToken), name: 'Ольга' });
+    const mamaToken = mama.token as string;
+    const story = (content: string) => ({ id: 'perspective_mama', momentId: 'moment_1', type: 'text', content, createdAt: '2026-01-01T00:00:00Z', isPrimary: false });
+    const note = (text: string) => ({ id: 'reflection_owner', momentId: 'moment_1', text, createdAt: '2026-01-01T00:00:00Z' });
+    expect(server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 0, changes: [{ key: 'perspective:perspective_mama', data: story('Мой рассказ') }] }).denied).toEqual([]);
+    expect(server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [{ key: 'reflection:reflection_owner', data: note('Отклик') }] }).denied).toEqual([]);
+    // Mama edits her own story, not the creator's reflection: that one comes back unchanged.
+    const edited = server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 2, changes: [
+      { key: 'perspective:perspective_mama', data: story('Мой рассказ, дополненный') },
+      { key: 'reflection:reflection_owner', data: note('Чужие слова') }
+    ] });
+    expect(edited.denied).toEqual(['reflection:reflection_owner']);
+    const texts = Object.fromEntries((edited.entities as { key: string; data: { content?: string; text?: string } }[]).map((item) => [item.key, item.data.content ?? item.data.text]));
+    expect(texts).toEqual({ 'perspective:perspective_mama': 'Мой рассказ, дополненный', 'reflection:reflection_owner': 'Отклик' });
+    // The creator manages the book; the story stays Mama's.
+    const byCreator = server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 3, changes: [{ key: 'perspective:perspective_mama', data: { ...story('Мой рассказ, дополненный'), isPrimary: true } }] });
+    expect(byCreator.denied).toEqual([]);
+    expect((byCreator.entities as { key: string; owner: string }[]).find((item) => item.key === 'perspective:perspective_mama')?.owner).toBe((mama.member as { id: string }).id);
+  });
+
   it('signs a person in on another device with a one-time link; every device is equal and can be disconnected', () => {
     const server = loadFamilyServer();
     const phone = server.post({ action: 'claim', name: 'Сергей', deviceName: 'Android · Chrome' });
