@@ -104,7 +104,8 @@
 }
 
 :root[data-theme='dark'] .search-field input,
-:root[data-theme='dark'] .book-person-filter select {
+:root[data-theme='dark'] .book-person-filter select,
+:root[data-theme='dark'] .reader-jump select {
   background-color: transparent;
 }
 
