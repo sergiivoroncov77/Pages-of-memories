@@ -6,6 +6,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { MediaImage } from '../../components/MediaImage';
 import { StoredAudio } from '../../components/StoredAudio';
 import type { MediaAsset } from '../../data/types';
+import { clothStyle } from '../../lib/cloth';
 import { chronologicalMoments } from '../../lib/film/timeline';
 import { pluralize } from '../../lib/format';
 import { useMediaQuery } from '../../lib/useMediaQuery';
@@ -41,7 +42,7 @@ export function BookReaderPage() {
   if (!book || !source) {
     return <div className="page"><EmptyState title="Книги пока нет" description="Создайте книгу или откройте файл книги, который прислали близкие." action={<Link to="/book" className="button button--primary">К книгам</Link>} /></div>;
   }
-  return <Reader key={book.id} source={source} bookTitle={book.title} assets={mediaAssets} />;
+  return <Reader key={book.id} source={source} bookTitle={book.title} assets={mediaAssets} cloth={clothStyle(book, books)} />;
 }
 
 function initialPage(pages: ReaderPage[], params: URLSearchParams): number {
@@ -53,7 +54,7 @@ function initialPage(pages: ReaderPage[], params: URLSearchParams): number {
   return Math.max(0, index);
 }
 
-function Reader({ source, bookTitle, assets }: { source: ReaderSource; bookTitle: string; assets: MediaAsset[] }) {
+function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bookTitle: string; assets: MediaAsset[]; cloth: CSSProperties }) {
   const [params, setParams] = useSearchParams();
   const spread = useMediaQuery('(min-width: 900px)');
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -172,7 +173,7 @@ function Reader({ source, bookTitle, assets }: { source: ReaderSource; bookTitle
 
     <div ref={stageRef} className={'reader-stage ' + (spread ? 'reader-stage--spread' : 'reader-stage--single')} onPointerDown={onPointerDown} onPointerUp={onPointerUp}
       onPointerCancel={() => { pointer.current = null; }} aria-roledescription="книга" aria-label={bookTitle}>
-      {size.width > 0 ? <div className={'reader-book ' + closed + (hasTurned ? ' has-turned' : '')} style={{ '--page-w': pageWidth + 'px', '--page-h': pageHeight + 'px' } as CSSProperties}>
+      {size.width > 0 ? <div className={'reader-book ' + closed + (hasTurned ? ' has-turned' : '')} style={{ ...cloth, '--page-w': pageWidth + 'px', '--page-h': pageHeight + 'px' } as CSSProperties}>
         {leaves.map((leaf, index) => {
           if (index < turned - 3 || index > turned + 2) return null;
           const isTurned = index < turned;

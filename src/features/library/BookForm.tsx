@@ -1,6 +1,8 @@
 import { Trash2 } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useState, type CSSProperties, type FormEvent } from 'react';
+import { useAppState } from '../../app/AppState';
 import { MediaImage } from '../../components/MediaImage';
+import { COVER_COLORS, coverColorOf } from '../../data/coverColors';
 import type { Book, MediaAsset } from '../../data/types';
 import { BookNameField } from '../profile/BookNameField';
 
@@ -12,6 +14,7 @@ export interface BookFormValues {
   /** How the creator signs in the new book. */
   myName: string;
   coverMediaAssetId?: string;
+  coverColor: string;
 }
 
 interface BookFormProps {
@@ -31,6 +34,9 @@ export function BookForm({ mode, initial, photos = [], onSubmit, onCancel, onDel
   const [firstChapter, setFirstChapter] = useState('Начало');
   const [myName, setMyName] = useState('');
   const [cover, setCover] = useState(initial?.coverMediaAssetId ?? '');
+  const { books } = useAppState();
+  // The colour the book has now; a new book starts with the one its shelf place would give.
+  const [coverColor, setCoverColor] = useState(() => (initial ? coverColorOf(initial, books) : coverColorOf({ id: 'new' }, [...books, { id: 'new' }])).id);
   const [error, setError] = useState('');
 
   const submit = (event: FormEvent) => {
@@ -38,7 +44,7 @@ export function BookForm({ mode, initial, photos = [], onSubmit, onCancel, onDel
     if (!title.trim()) { setError('Напишите название книги.'); return; }
     if (mode === 'create' && !myName.trim()) { setError('Напишите, как вас подписывать в этой книге.'); return; }
     try {
-      onSubmit({ title, subtitle, description, firstChapter, myName, coverMediaAssetId: cover || undefined });
+      onSubmit({ title, subtitle, description, firstChapter, myName, coverMediaAssetId: cover || undefined, coverColor });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Не удалось сохранить книгу.');
     }
@@ -66,6 +72,17 @@ export function BookForm({ mode, initial, photos = [], onSubmit, onCancel, onDel
         </label>
       ) : null}
       {mode === 'create' ? <BookNameField value={myName} onChange={setMyName} /> : null}
+      <fieldset className="color-picker">
+        <legend>Цвет обложки</legend>
+        <div className="color-picker__options">
+          {COVER_COLORS.map((color) => (
+            <label key={color.id} className={'color-picker__option ' + (coverColor === color.id ? 'is-selected' : '')} title={color.name} style={{ '--swatch': color.cloth } as CSSProperties}>
+              <input type="radio" name="cover-color" value={color.id} checked={coverColor === color.id} onChange={() => setCoverColor(color.id)} aria-label={color.name} />
+            </label>
+          ))}
+        </div>
+        <small>{COVER_COLORS.find((color) => color.id === coverColor)?.name} — так книга выглядит на полке и когда её листаешь.</small>
+      </fieldset>
       {mode === 'edit' && photos.length ? (
         <fieldset className="cover-picker">
           <legend>Фото на обложке</legend>

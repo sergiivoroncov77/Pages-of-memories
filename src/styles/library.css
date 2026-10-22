@@ -600,3 +600,64 @@
 .perspective-editor {
   margin-top: 4px;
 }
+
+/* ---------- Cover colour: small cloth swatches ---------- */
+
+.color-picker {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.color-picker legend {
+  margin-bottom: 8px;
+  color: var(--ink);
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+.color-picker__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.color-picker__option {
+  position: relative;
+  width: 40px;
+  height: 52px;
+  border: 2px solid transparent;
+  border-radius: 4px 7px 7px 4px;
+  background: linear-gradient(150deg, color-mix(in srgb, var(--swatch) 80%, #fff), var(--swatch) 45%, color-mix(in srgb, var(--swatch) 62%, #000));
+  box-shadow: inset 4px 0 0 rgba(0, 0, 0, 0.22), 0 2px 5px rgba(40, 25, 10, 0.22);
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.color-picker__option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.color-picker__option:hover {
+  transform: translateY(-2px);
+}
+
+.color-picker__option.is-selected {
+  border-color: var(--surface-strong);
+  box-shadow: inset 4px 0 0 rgba(0, 0, 0, 0.22), 0 0 0 3px var(--primary);
+}
+
+.color-picker__option:has(input:focus-visible) {
+  outline: 3px solid var(--focus, var(--primary));
+  outline-offset: 3px;
+}
+
+.color-picker small {
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}

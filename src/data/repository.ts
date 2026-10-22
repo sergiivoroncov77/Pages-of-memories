@@ -216,7 +216,9 @@ function normalizeBook(value: unknown, fallback?: Book): Book | null {
     description: stringValue(value.description, fallback?.description ?? ''),
     createdAt,
     updatedAt,
-    coverMediaAssetId: optionalString(value.coverMediaAssetId, fallback?.coverMediaAssetId)
+    coverMediaAssetId: optionalString(value.coverMediaAssetId, fallback?.coverMediaAssetId),
+    // An unknown colour (from a newer app) is kept as it is: the shelf falls back to its own.
+    coverColor: optionalString(value.coverColor, fallback?.coverColor)
   };
 }
 
@@ -625,7 +627,7 @@ export const entityFields: Record<string, FieldSchema> = {
     durationSeconds: 'number', transcript: 'text', tags: 'strings', photoUrl: 'text', photoAlt: 'text', source: MEMORY_SOURCES, favorite: 'boolean' },
   drafts: { id: 'id', personId: 'id', questionId: 'id', transcript: 'text', durationSeconds: 'number', tags: optional('strings'),
     photoUrl: optional('text'), photoAlt: optional('text'), audioMediaAssetId: optional('id'), createdAt: 'date', status: DRAFT_STATUSES },
-  books: { id: 'id', projectId: 'id', title: 'id', subtitle: 'text', description: 'text', createdAt: 'date', updatedAt: 'date', coverMediaAssetId: optional('id') },
+  books: { id: 'id', projectId: 'id', title: 'id', subtitle: 'text', description: 'text', createdAt: 'date', updatedAt: 'date', coverMediaAssetId: optional('id'), coverColor: optional('id') },
   chapters: { id: 'id', bookId: 'id', title: 'id', description: 'text', order: 'number', createdAt: 'date', updatedAt: 'date' },
   moments: { id: 'id', sourceMemoryId: optional('id'), bookId: 'id', chapterId: 'id', title: 'id', summary: 'text',
     occurredAt: optional('date'), tags: 'strings', primaryPerspectiveId: optional('id'), narrationMediaAssetId: optional('id'),

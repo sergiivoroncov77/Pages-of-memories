@@ -63,6 +63,14 @@ export function sharedBooksWithPerson(snapshot: AppSnapshot, books: Record<strin
 }
 
 /**
+ * Whether the storage takes this device's new name for a person of the book:
+ * a member renames only themselves and people they added; the creator anyone.
+ */
+export function mayRename(book: CloudBookState, memberId: string, personId: string): boolean {
+  return book.canManage || book.personId === personId || ownerOf(book, memberId, 'person', personId) === memberId;
+}
+
+/**
  * Why this phone may not rename a person of a shared book, or null. Like the
  * storage: a member renames only themselves and people they added; the
  * creator renames anyone.
@@ -70,11 +78,9 @@ export function sharedBooksWithPerson(snapshot: AppSnapshot, books: Record<strin
 export function renameBlocker(books: Record<string, CloudBookState>, memberId: string, personId: string): string | null {
   const key = entityKey('person', personId);
   for (const book of Object.values(books)) {
-    if (book.detached || book.canManage || book.personId === personId) continue;
-    const exchanged = key in book.fingerprints;
-    if (!exchanged && !book.people.includes(personId)) continue;
-    const owner = book.owners[key] ?? (exchanged ? book.creatorId : memberId);
-    if (owner !== memberId) {
+    if (book.detached) continue;
+    if (!(key in book.fingerprints) && !book.people.includes(personId)) continue;
+    if (!mayRename(book, memberId, personId)) {
       return `Этот человек есть в общей книге «${book.title ?? 'без названия'}». Его имя может изменить он сам или создатель книги${book.creatorName ? ` — ${book.creatorName}` : ''}.`;
     }
   }

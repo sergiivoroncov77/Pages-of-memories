@@ -8,6 +8,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { PersonCard } from '../../components/PersonCard';
 import { clothStyle } from '../../lib/cloth';
 import { formatDate, pluralize, truncate } from '../../lib/format';
+import { useCloudSync } from '../../sync/CloudSync';
 
 export function HomePage() {
   const { project, people, books, activeBook: book, mediaAssets, chaptersForBook, momentsForChapter, perspectivesForMoment, nextQuestion, getPerson } = useAppState();
@@ -17,7 +18,7 @@ export function HomePage() {
   const moments = bookChapters.flatMap((chapter) => momentsForChapter(chapter.id));
   const recentMoments = [...moments].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 3);
   const voiceCount = new Set(moments.flatMap((moment) => perspectivesForMoment(moment.id).map((item) => item.authorId).filter(Boolean))).size;
-  const invitePerson = people.find((item) => item.status === 'invited') ?? people[0];
+  const cloud = useCloudSync();
 
   return <div className="page page--home">
     <header className="home-greeting"><div><p className="eyebrow">Истории, которые остаются с нами</p><h1>{project.title}</h1><p>Сохраняйте голоса, детали и воспоминания близких. По одной истории за раз.</p></div>{book ? <Book3D title={book.title} cover={mediaAssets.find((asset) => asset.id === book.coverMediaAssetId)} to="/read" size="small" style={clothStyle(book, books)} label={'Читать книгу «' + book.title + '»'} /> : null}</header>
@@ -37,6 +38,8 @@ export function HomePage() {
     </section>
 
     <section className="section"><div className="section__heading"><div><p className="eyebrow">За каждой историей — человек</p><h2>Близкие</h2></div><Link to="/people" className="text-link">Все близкие <ArrowRight size={18} aria-hidden="true" /></Link></div><div className="people-list">{people.slice(0, 3).map((item) => <PersonCard key={item.id} person={item} />)}</div>{!people.length ? <p className="muted-copy">Добавьте бабушку, папу или сестру — для каждого появятся вопросы для разговора. <Link to="/people?add=1" className="text-link">Добавить близкого</Link></p> : null}</section>
-    {book ? <Card tone="warm" className="home-invite"><div><span className="home-invite__icon"><Users size={25} aria-hidden="true" /></span><h2>У каждого есть своя часть истории</h2><p>Отправьте книгу близким одним файлом — через MAX или почту, без регистрации. Они допишут свои воспоминания и пришлют обратно.</p></div><Link to={invitePerson ? '/invite/' + invitePerson.id : '/people?add=1'} className="button button--secondary">{invitePerson ? 'Пригласить близких' : 'Добавить близкого'}</Link></Card> : null}
+    {book ? <Card tone="warm" className="home-invite"><div><span className="home-invite__icon"><Users size={25} aria-hidden="true" /></span><h2>У каждого есть своя часть истории</h2><p>{cloud.connection
+      ? 'Пригласите близких в книгу по ссылке — без регистрации и без аккаунта Google. Они допишут свои воспоминания, и всё новое появится у всех участников.'
+      : 'Подключите семейное хранилище на Google Диске, и близкие вступят в книгу по ссылке — без регистрации. Их воспоминания будут появляться у всех участников.'}</p></div><Link to={cloud.connection ? '/book?share=1' : '/settings#cloud'} className="button button--secondary">{cloud.connection ? 'Пригласить близких' : 'Подключить хранилище'}</Link></Card> : null}
   </div>;
 }

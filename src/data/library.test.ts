@@ -12,18 +12,36 @@ import {
   emptySnapshot,
   initialsOf,
   moveChapterInSnapshot,
+  resignInBook,
   STARTER_QUESTIONS,
   updateBookInSnapshot,
   updateChapterInSnapshot,
   updatePersonInSnapshot
 } from './library';
 import { addMomentToSnapshot, createMoment, ensureMemoryMoments, publishMemoryToSnapshot } from './mutations';
+import { coverColorOf } from './coverColors';
 import { normalizeSnapshotValue } from './repository';
 import { seedSnapshot } from './seed';
 
 const demo = () => ensureMemoryMoments(structuredClone(seedSnapshot));
 
 describe('books', () => {
+  it('keeps the cover colour chosen for a book; without one the shelf place gives it', () => {
+    const start = emptySnapshot(seedSnapshot.settings);
+    const first = createBookInSnapshot(start, { title: 'Первая' });
+    const second = createBookInSnapshot(first.snapshot, { title: 'Вторая', coverColor: 'red' });
+    expect(second.book.coverColor).toBe('red');
+    expect(coverColorOf(first.book, second.snapshot.books).id).toBe('green');
+    expect(coverColorOf(second.book, second.snapshot.books)).toMatchObject({ id: 'red', name: 'Красная' });
+    const recoloured = updateBookInSnapshot(second.snapshot, first.book.id, { coverColor: 'ochre' });
+    expect(recoloured.books.find((book) => book.id === first.book.id)?.coverColor).toBe('ochre');
+    // Not a colour of the palette: the book keeps its own.
+    expect(updateBookInSnapshot(recoloured, first.book.id, { coverColor: 'pink' }).books.find((book) => book.id === first.book.id)?.coverColor).toBe('ochre');
+    expect(normalizeSnapshotValue(recoloured).books.find((book) => book.id === first.book.id)?.coverColor).toBe('ochre');
+    // An unknown colour from a newer app falls back to the shelf's.
+    expect(coverColorOf({ id: first.book.id, coverColor: 'silver' }, second.snapshot.books).id).toBe('green');
+  });
+
   it('creates a book with a first chapter and makes it the active one', () => {
     const { snapshot, book } = createBookInSnapshot(demo(), { title: '  Книга бабушки ', subtitle: 'Лето в деревне' }, 'Детство');
     expect(book).toMatchObject({ title: 'Книга бабушки', subtitle: 'Лето в деревне', projectId: seedSnapshot.project.id });
@@ -138,6 +156,26 @@ describe('moments', () => {
     const { removedMediaIds, snapshot: next } = deleteMomentsFromSnapshot({ ...snapshot, perspectives: [...snapshot.perspectives, twin] }, [used.momentId]);
     expect(removedMediaIds).not.toContain(used.mediaAssetId);
     expect(next.mediaAssets.some((asset) => asset.id === used.mediaAssetId)).toBe(true);
+  });
+});
+
+describe('a name of its own in one book', () => {
+  it('moves only the person\'s own words in that book to the new narrator', () => {
+    const snapshot = demo();
+    const book = snapshot.books[0];
+    const other = createBookInSnapshot(snapshot, { title: 'Вторая книга' }, 'Глава').snapshot;
+    const otherBook = other.books.at(-1)!;
+    const momentHere = other.moments.find((moment) => moment.bookId === book.id)!;
+    const chapterThere = other.chapters.find((chapter) => chapter.bookId === otherBook.id)!;
+    const momentThere = { ...momentHere, id: 'moment_there', bookId: otherBook.id, chapterId: chapterThere.id };
+    const story = (id: string, momentId: string) => ({ id, momentId, authorId: 'person_anna', type: 'text' as const, content: id, createdAt: '2026-01-01T00:00:00.000Z', isPrimary: false });
+    const base = { ...other, moments: [...other.moments, momentThere],
+      perspectives: [story('mine_here', momentHere.id), story('theirs_here', momentHere.id), story('mine_there', momentThere.id)],
+      reflections: [{ id: 'note_here', momentId: momentHere.id, authorId: 'person_anna', text: 'Отклик', createdAt: '2026-01-01T00:00:00.000Z' }] };
+    const next = resignInBook(base, book.id, 'person_anna', 'person_anna_2', (_type, id) => id !== 'theirs_here');
+    const author = (id: string) => [...next.perspectives, ...next.reflections].find((item) => item.id === id)?.authorId;
+    expect([author('mine_here'), author('note_here'), author('theirs_here'), author('mine_there')])
+      .toEqual(['person_anna_2', 'person_anna_2', 'person_anna', 'person_anna']);
   });
 });
 

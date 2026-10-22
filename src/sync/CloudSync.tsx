@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useAppState } from '../app/AppState';
 import { cleanName, profileStore, useProfile } from '../app/profile';
-import { newSelfPerson } from '../data/library';
+import { newSelfPerson, resignInBook } from '../data/library';
 import type { AppSnapshot, Person } from '../data/types';
 import { clearCloudMediaCache, notifyCloudMedia, notifyFilesChanged, setCloudMediaSource, takeCachedOriginal } from '../lib/cloudMedia';
 import { guessDeviceName } from '../lib/deviceName';
@@ -276,11 +276,40 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     return person;
   };
 
+  /** Whether the person signs another book on this device with the same narrator. */
+  const signsElsewhere = (personId: string, bookId: string) =>
+    Object.entries(cloudStore.get().books).some(([id, book]) => id !== bookId && !book.detached && book.personId === personId)
+    || Object.entries(profileStore.get()?.books ?? {}).some(([id, mapped]) => id !== bookId && mapped === personId);
+
+  /**
+   * A narrator shared by several books (the creator invited the same person
+   * into each) gets its own name in this book: a new narrator signs this book
+   * from now on, taking the person's own stories and reflections here.
+   */
+  const signSeparately = async (bookId: string, known: Person, name: string): Promise<string> => {
+    const state = cloudStore.get();
+    const book = state.connection && !state.books[bookId]?.detached ? state.books[bookId] : undefined;
+    const person = createSelfPerson(name, known.relation);
+    if (book) {
+      try {
+        await track(() => engine.updateMember(bookId, { name, personId: person.id }));
+      } catch (failure) {
+        applyCloudUpdate((current) => ({ ...current, people: current.people.filter((item) => item.id !== person.id) }));
+        throw failure;
+      }
+    }
+    profileStore.setBookPerson(bookId, person.id);
+    applyCloudUpdate((current) => resignInBook(current, bookId, known.id, person.id,
+      (type, id) => canEdit(book, state.connection?.memberId, { type, id })));
+    return person.id;
+  };
+
   const setMyName = async (bookId: string, name: string) => {
     const clean = requireName(name);
+    const known = myPersonIn(bookId);
+    if (known && known.name !== clean && signsElsewhere(known.id, bookId)) return signSeparately(bookId, known, clean);
     const state = cloudStore.get();
     const book = state.connection ? state.books[bookId] : undefined;
-    const known = myPersonIn(bookId);
     if (known && known.name !== clean) updatePerson(known.id, { name: clean });
     const person = known ?? ensureMe(bookId, clean);
     if (!book || book.detached) return person.id;
@@ -353,7 +382,10 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
         profileStore.setBookPerson(book.id, book.personId);
         // The name the creator wrote in the invitation is theirs to change: it is who they are in the book.
         const person = getSnapshot().people.find((item) => item.id === book.personId);
-        if (person && person.name !== clean) updatePerson(person.id, { name: clean });
+        // Invited by a name this device already signs another book with: this book gets a name of its own.
+        if (person && person.name !== clean && signsElsewhere(person.id, book.id)) {
+          await signSeparately(book.id, person, clean).catch(() => undefined);
+        } else if (person && person.name !== clean) updatePerson(person.id, { name: clean });
       }
       return { bookId: book.id, pending: outcome.mediaPending };
     },

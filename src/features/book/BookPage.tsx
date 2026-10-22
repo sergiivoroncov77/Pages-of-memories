@@ -1,5 +1,5 @@
 import { ArrowRight, BookOpen, CalendarDays, Clapperboard, Heart, Pencil, Plus, Search, Share2, Users, X } from 'lucide-react';
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { Book3D } from '../../components/Book3D';
@@ -31,7 +31,8 @@ export function BookPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
-  const [panel, setPanel] = useState<Panel>('none');
+  // «Пригласить близких» on the home screen opens sharing right away.
+  const [panel, setPanel] = useState<Panel>(() => (params.get('share') === '1' ? 'share' : 'none'));
   const [momentChapterId, setMomentChapterId] = useState('');
   // The new-moment form opens where it was asked for: at the top or inside a chapter.
   const [momentInChapter, setMomentInChapter] = useState(false);
@@ -53,6 +54,12 @@ export function BookPage() {
     && allMoments.some((moment) => perspectivesForMoment(moment.id).some((item) => item.mediaAssetId === asset.id)));
 
   const reveal = (id: string) => window.requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  // Opened from «Пригласить близких»: the sharing panel is open; the address forgets the request.
+  useEffect(() => {
+    if (params.get('share') !== '1') return;
+    setParams((current) => { const next = new URLSearchParams(current); next.delete('share'); return next; }, { replace: true });
+    window.requestAnimationFrame(() => document.getElementById('share-book')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  }, [params, setParams]);
   const toggle = (next: Panel) => {
     setNotice('');
     setPanel((current) => current === next ? 'none' : next);

@@ -353,14 +353,14 @@
   opacity: 0.45;
 }
 
-/* Cover and back cover: cloth-bound board with gilt frame. */
+/* Cover and back cover: cloth-bound board with gilt frame, in the book's own colour from the shelf. */
 .reader-page--cover,
 .reader-page--end {
   padding: 0;
   background:
     var(--paper-grain),
     radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.1), transparent 55%),
-    linear-gradient(140deg, var(--leather), var(--leather-deep));
+    linear-gradient(140deg, var(--cloth, var(--leather)), var(--cloth-deep, var(--leather-deep)));
   color: #f2e4c4;
 }
 

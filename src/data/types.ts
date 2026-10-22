@@ -76,6 +76,8 @@ export interface Book {
   createdAt: string;
   updatedAt: string;
   coverMediaAssetId?: string;
+  /** Cloth colour of the cover (`COVER_COLORS` id); without it, the shelf picks one. */
+  coverColor?: string;
 }
 
 export interface Chapter {

@@ -266,6 +266,10 @@ describe('family server (Code.gs)', () => {
     expect(list().map((item) => item.name)).toEqual(['Сергей', 'Галина Петровна']);
     // Nobody signs as someone else's person.
     expect(server.post({ action: 'updateMember', token: galyaToken, bookId: 'book_1', personId: 'person_me' })).toMatchObject({ ok: false, error: 'forbidden' });
+    // A name of her own for this book only: a new narrator she created herself.
+    expect(server.post({ action: 'updateMember', token: galyaToken, bookId: 'book_1', name: 'Бабушка Галя', personId: 'person_galya_2' }))
+      .toMatchObject({ ok: true, book: { personId: 'person_galya_2' } });
+    expect(list().map((item) => [item.name, item.personId])).toEqual([['Сергей', 'person_me'], ['Бабушка Галя', 'person_galya_2']]);
   });
 
   it('takes a person’s new name only from the creator, the person, or whoever added them', () => {

@@ -499,9 +499,11 @@ function updateMember_(member, request) {
     if (request.personId !== undefined && request.personId !== null) {
       if (targetId !== member.id) throw error_('forbidden', 'Выбрать, кем подписываться, участник может только сам.');
       var personId = optionalId_(request.personId);
-      if (target.personId && target.personId !== personId) throw error_('forbidden', 'У вас уже есть имя в этой книге — его можно изменить.');
-      if (!target.personId && !claimablePerson_(book, personId, member.id)) throw error_('forbidden', 'Этим именем в книге уже подписывается другой участник.');
-      target.personId = personId;
+      // Новое имя только для этой книги — новый рассказчик, которого участник создал сам.
+      if (personId !== target.personId) {
+        if (!claimablePerson_(book, personId, member.id)) throw error_('forbidden', 'Этим именем в книге уже подписывается другой участник.');
+        target.personId = personId;
+      }
     }
     if (typeof request.name === 'string' && request.name.trim()) {
       target.name = cleanName_(request.name, target.name);

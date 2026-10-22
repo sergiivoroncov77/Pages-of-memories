@@ -32,7 +32,7 @@ export function ShareBookPanel({ book, person, onClose }: { book: Book; person?:
     ...perspectives.filter((item) => momentIds.has(item.momentId)).map((item) => item.mediaAssetId)
   ]);
   const estimated = mediaAssets.filter((asset) => mediaIds.has(asset.id)).reduce((total, asset) => total + (asset.sizeBytes ?? 0), 0) * 1.37;
-  const message = `${personName ? personName + ', это' : 'Это'} наша семейная книга «${book.title}». Откройте приложение «Истории близких»: ${address} — затем «Книга» → «Открыть файл книги» и выберите файл из этого сообщения. Добавьте свои воспоминания и пришлите файл обратно.`;
+  const message = `${personName ? personName + ', это' : 'Это'} наша семейная книга «${book.title}». Откройте приложение «Истории близких»: ${address} — затем «Библиотека» → «Открыть файл книги» и выберите файл из этого сообщения. Добавьте свои воспоминания и пришлите файл обратно.`;
 
   const send = async () => {
     setStatus({ kind: 'packing' });
@@ -59,7 +59,7 @@ export function ShareBookPanel({ book, person, onClose }: { book: Book; person?:
       <ol className="share-steps">
         <li><strong>Отправьте файл книги.</strong> <span>Примерный размер: {estimated > 0 ? formatFileSize(estimated) : 'меньше 1 МБ'}. Фото, голос и видео едут внутри.</span></li>
         <li><strong>Близкий открывает приложение</strong> <span>по ссылке — на телефоне или планшете в Chrome, на компьютере в любом браузере — и может установить его как приложение.</span></li>
-        <li><strong>«Книга» → «Открыть файл книги».</strong> <span>Книга появится у него на полке. Когда он пришлёт файл обратно, откройте его так же.</span></li>
+        <li><strong>«Библиотека» → «Открыть файл книги».</strong> <span>Книга появится у него на полке. Когда он пришлёт файл обратно, откройте его так же.</span></li>
       </ol>
 
       <div className="share-book__actions">

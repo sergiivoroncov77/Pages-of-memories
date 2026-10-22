@@ -23,6 +23,7 @@ import {
   type MediaTransfer
 } from './cloudApi';
 import { freshBookState, type CloudBookState, type CloudConnection, type CloudStateStore } from './cloudState';
+import { mayRename } from './permissions';
 
 export interface SyncEnvironment {
   store: CloudStateStore;
@@ -305,6 +306,20 @@ export function createSyncEngine(env: SyncEnvironment) {
     return { pulled: incoming.length, denied: reply.denied?.length ?? 0 };
   }
 
+  /**
+   * A person this device may not rename in this book, but may in another of its
+   * books (the creator invited the same person to both): the new name belongs
+   * to the other book. Sent here, it would be turned back, and with it the
+   * name in the other book; any other refused rename is sent and given back.
+   */
+  function renamedElsewhere(bookId: string, personId: string): boolean {
+    const memberId = env.store.get().connection?.memberId ?? '';
+    const books = env.store.get().books;
+    if (!books[bookId] || mayRename(books[bookId], memberId, personId)) return false;
+    return Object.entries(books).some(([id, other]) => id !== bookId && !other.detached
+      && (other.personId === personId || other.people.includes(personId)) && mayRename(other, memberId, personId));
+  }
+
   // Photos for which no smaller copy came out (already small, or a format the browser cannot draw).
   const noPreview = new Set<string>();
 
@@ -450,7 +465,8 @@ export function createSyncEngine(env: SyncEnvironment) {
         const snapshot = env.getSnapshot();
         const local = collectBookEntities(snapshot, bookId, scopeOf(book));
         // Without the book on this phone, nothing is sent: an empty archive must never erase the shared one.
-        const changes = snapshot.books.some((item) => item.id === bookId) ? diffEntities(local, book.fingerprints) : [];
+        const changes = (snapshot.books.some((item) => item.id === bookId) ? diffEntities(local, book.fingerprints) : [])
+          .filter((change) => change.deleted || !change.key.startsWith('person:') || !renamedElsewhere(bookId, change.key.slice('person:'.length)));
         outcome.pushed = changes.length;
         const result = await exchange(bookId, changes, local);
         outcome.pulled += result.pulled;

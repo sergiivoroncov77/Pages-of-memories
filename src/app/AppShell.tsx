@@ -10,7 +10,7 @@ import { profileAvatar, useProfile } from './profile';
 const navigation = [
   { to: '/', label: 'Главная', icon: Home, end: true },
   { to: '/people', label: 'Близкие', icon: Users, end: false },
-  { to: '/book', label: 'Книга', icon: BookOpen, end: false },
+  { to: '/book', label: 'Библиотека', icon: BookOpen, end: false },
   { to: '/settings', label: 'Настройки', icon: Settings, end: false }
 ];
 

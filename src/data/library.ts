@@ -1,4 +1,5 @@
 import { createId } from '../lib/id';
+import { isCoverColor } from './coverColors';
 import type { AppSettings, AppSnapshot, Book, Chapter, Moment, Person, Question } from './types';
 
 /*
@@ -11,6 +12,8 @@ export interface BookInput {
   title: string;
   subtitle?: string;
   description?: string;
+  /** `COVER_COLORS` id; anything else leaves the colour as it was. */
+  coverColor?: string;
 }
 
 export interface ChapterInput {
@@ -74,6 +77,22 @@ function validBirthYear(year: number | undefined): number | undefined {
 }
 
 /**
+ * The person's own stories and reflections in one book move to another
+ * narrator of theirs; whatever `mayChange` refuses keeps its signature.
+ */
+export function resignInBook(snapshot: AppSnapshot, bookId: string, fromId: string, toId: string,
+  mayChange: (type: 'perspective' | 'reflection', id: string) => boolean): AppSnapshot {
+  const moments = new Set(snapshot.moments.filter((moment) => moment.bookId === bookId).map((moment) => moment.id));
+  const moves = (type: 'perspective' | 'reflection', item: { id: string; momentId: string; authorId?: string }) =>
+    item.authorId === fromId && moments.has(item.momentId) && mayChange(type, item.id);
+  return {
+    ...snapshot,
+    perspectives: snapshot.perspectives.map((item) => (moves('perspective', item) ? { ...item, authorId: toId } : item)),
+    reflections: snapshot.reflections.map((item) => (moves('reflection', item) ? { ...item, authorId: toId } : item))
+  };
+}
+
+/**
  * A chapter reads from the earliest moment to the latest. Moments without a
  * date come after the dated ones, in the order they were added.
  */
@@ -101,6 +120,7 @@ export function createBookInSnapshot(snapshot: AppSnapshot, input: BookInput, fi
     title: requireTitle(input.title, 'Добавьте название книги.'),
     subtitle: input.subtitle?.trim() ?? '',
     description: input.description?.trim() ?? '',
+    ...(isCoverColor(input.coverColor) ? { coverColor: input.coverColor } : {}),
     createdAt,
     updatedAt: createdAt
   };
@@ -128,6 +148,7 @@ export function updateBookInSnapshot(snapshot: AppSnapshot, bookId: string, patc
       title: title ?? book.title,
       subtitle: patch.subtitle?.trim() ?? book.subtitle,
       description: patch.description?.trim() ?? book.description,
+      coverColor: isCoverColor(patch.coverColor) ? patch.coverColor : book.coverColor,
       updatedAt: now()
     } : book)
   };
