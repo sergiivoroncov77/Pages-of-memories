@@ -39,6 +39,11 @@ export function driveApiBase(serverUrl: string): string {
   return LOCAL_DEV_URL.test(serverUrl) ? new URL(serverUrl).origin : 'https://www.googleapis.com';
 }
 
+/** The Apps Script API that updates the script; the local mock serves it too. */
+export function scriptApiBase(serverUrl: string): string {
+  return LOCAL_DEV_URL.test(serverUrl) ? new URL(serverUrl).origin : 'https://script.googleapis.com';
+}
+
 export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 const defaultFetch: FetchLike = (input, init) => fetch(input, init);

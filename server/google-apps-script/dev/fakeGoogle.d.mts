@@ -50,6 +50,8 @@ export interface FamilyServer {
 }
 
 export const SCRIPT_PATH: URL;
+export const MANIFEST_PATH: URL;
+export const FAKE_SCRIPT_ID: string;
 export function createFakeDrive(): FakeDrive;
 export function createFakeAppsScript(drive?: FakeDrive): FakeAppsScript;
 export function loadFamilyServer(fake?: FakeAppsScript, source?: string): FamilyServer;

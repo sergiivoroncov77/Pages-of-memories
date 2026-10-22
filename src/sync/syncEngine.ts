@@ -496,9 +496,11 @@ export function createSyncEngine(env: SyncEnvironment) {
   }
 
   async function refreshBooks(): Promise<{ books: RemoteBook[]; unlinked: string[] }> {
-    const reply = await call<{ member: { id: string; name: string; admin: boolean }; deviceId?: string; books: RemoteBook[] }>('me');
+    const reply = await call<{ member: { id: string; name: string; admin: boolean }; deviceId?: string; books: RemoteBook[];
+      script?: { release?: number; id?: string } }>('me');
     env.store.update((state) => (state.connection
-      ? { ...state, connection: { ...state.connection, name: reply.member.name, admin: reply.member.admin, deviceId: reply.deviceId ?? state.connection.deviceId } } : state));
+      ? { ...state, connection: { ...state.connection, name: reply.member.name, admin: reply.member.admin, deviceId: reply.deviceId ?? state.connection.deviceId,
+        scriptRelease: Number(reply.script?.release) || 0, scriptId: typeof reply.script?.id === 'string' ? reply.script.id : undefined } } : state));
     const available = new Map(reply.books.filter((book) => book.member).map((book) => [book.id, book]));
     const unlinked: string[] = [];
     Object.entries(env.store.get().books).forEach(([bookId, book]) => {

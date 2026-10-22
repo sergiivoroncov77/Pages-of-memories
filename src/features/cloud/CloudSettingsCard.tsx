@@ -8,6 +8,7 @@ import { pluralize } from '../../lib/format';
 import { cloudErrorMessage, normalizeServerUrl } from '../../sync/cloudApi';
 import { useCloudSync } from '../../sync/CloudSync';
 import { formatSyncTime } from './cloudFormat';
+import { ScriptUpdate } from './ScriptUpdate';
 
 /** Connect the owner's first device to the family storage on Google Drive, or show its state. */
 export function CloudSettingsCard() {
@@ -101,6 +102,7 @@ export function CloudSettingsCard() {
         </button>
         {connection.admin ? <Link to="/cloud/setup" className="button button--ghost">Инструкция по скрипту</Link> : null}
       </div>
+      {connection.admin ? <ScriptUpdate connection={connection} /> : null}
       {connection.admin && cloud.otherBooks.length ? (
         <div className="cloud-other-books">
           <h3>Другие книги в хранилище</h3>

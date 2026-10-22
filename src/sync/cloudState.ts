@@ -17,6 +17,10 @@ export interface CloudConnection {
   connectedAt: string;
   /** This device among the person's devices, as the storage names it. */
   deviceId?: string;
+  /** The storage script's release, once the storage told it; 0 for a script older than releases. */
+  scriptRelease?: number;
+  /** The script's Apps Script project, told to the storage owner only: the app updates it there. */
+  scriptId?: string;
 }
 
 export interface CloudBookState {
@@ -105,7 +109,9 @@ export function parseCloudState(raw: string | null): CloudState {
     if (isRecord(connection) && ['url', 'memberId', 'token', 'name', 'connectedAt'].every((field) => typeof connection[field] === 'string')) {
       state.connection = { url: connection.url as string, memberId: connection.memberId as string, token: connection.token as string,
         name: connection.name as string, admin: connection.admin === true, connectedAt: connection.connectedAt as string,
-        deviceId: typeof connection.deviceId === 'string' ? connection.deviceId : undefined };
+        deviceId: typeof connection.deviceId === 'string' ? connection.deviceId : undefined,
+        scriptRelease: typeof connection.scriptRelease === 'number' ? connection.scriptRelease : undefined,
+        scriptId: typeof connection.scriptId === 'string' ? connection.scriptId : undefined };
     }
     if (isRecord(value.books)) {
       Object.entries(value.books).forEach(([id, book]) => {

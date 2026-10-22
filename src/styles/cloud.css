@@ -258,6 +258,17 @@
   gap: 8px;
 }
 
+.script-update .field {
+  margin-top: 10px;
+}
+
+.script-update__hint {
+  display: block;
+  margin-top: 10px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 .setup-steps {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

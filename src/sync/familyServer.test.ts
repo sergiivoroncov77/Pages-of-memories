@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadFamilyServer } from '../../server/google-apps-script/dev/fakeGoogle.mjs';
+import { FAKE_SCRIPT_ID, loadFamilyServer } from '../../server/google-apps-script/dev/fakeGoogle.mjs';
 
 function ownerWithBook() {
   const server = loadFamilyServer();
@@ -26,6 +26,19 @@ describe('family server (Code.gs)', () => {
     expect(typeof claim.token).toBe('string');
     expect(server.post({ action: 'info' })).toMatchObject({ claimed: true });
     expect(server.post({ action: 'claim', name: 'Чужой' })).toMatchObject({ ok: false, error: 'claimed' });
+  });
+
+  it('tells its release to everyone and its Apps Script project to the storage owner only', () => {
+    const { server, ownerToken } = ownerWithBook();
+    const release = server.context.RELEASE as number;
+    expect(release).toBeGreaterThan(0);
+    expect(server.get()).toMatchObject({ release });
+    expect(server.post({ action: 'info' })).toMatchObject({ release });
+    expect(server.post({ action: 'me', token: ownerToken })).toMatchObject({ script: { release, id: FAKE_SCRIPT_ID } });
+    const joined = server.post({ action: 'acceptInvite', code: invite(server, ownerToken) });
+    const relative = server.post({ action: 'me', token: joined.token });
+    expect(relative).toMatchObject({ ok: true, script: { release } });
+    expect((relative.script as Record<string, unknown>).id).toBeUndefined();
   });
 
   it('keeps only hashes of device keys and invite codes', () => {

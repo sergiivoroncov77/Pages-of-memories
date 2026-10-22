@@ -6,6 +6,9 @@ import { readFileSync } from 'node:fs';
 import { createContext, runInContext } from 'node:vm';
 
 export const SCRIPT_PATH = new URL('../Code.gs', import.meta.url);
+export const MANIFEST_PATH = new URL('../appsscript.json', import.meta.url);
+/** What ScriptApp.getScriptId() answers in the fake. */
+export const FAKE_SCRIPT_ID = '1mockScriptId_0123456789abcdefghijklmnopqrstuvwxyz-ABCDEF';
 
 /** Drive v3 subset used by Code.gs (through UrlFetchApp) and by the app (through fetch). */
 export function createFakeDrive() {
@@ -143,7 +146,7 @@ export function createFakeAppsScript(drive = createFakeDrive()) {
       MimeType: { JSON: 'application/json' },
       createTextOutput: (content) => ({ content, mimeType: 'text/plain', setMimeType(type) { this.mimeType = type; return this; }, getContent() { return this.content; } })
     },
-    ScriptApp: { getOAuthToken: () => currentToken },
+    ScriptApp: { getOAuthToken: () => currentToken, getScriptId: () => FAKE_SCRIPT_ID },
     UrlFetchApp: {
       fetch: (url, options = {}) => {
         const headers = { ...(options.headers ?? {}) };

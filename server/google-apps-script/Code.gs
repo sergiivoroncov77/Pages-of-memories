@@ -15,11 +15,15 @@
  * в проекте скрипта: к Диску код обращается сам, через UrlFetchApp.
  *
  * Как установить — docs/GOOGLE_DRIVE_SETUP.md или «Настройки → Семейное
- * хранилище → пошаговая инструкция» в приложении.
+ * хранилище → пошаговая инструкция» в приложении. Дальше владелец обновляет
+ * скрипт из приложения: «Настройки → Семейное хранилище → Обновить скрипт».
  */
 
 var APP = 'family-stories';
 var VERSION = 2;
+// Выпуск кода. Приложение сравнивает его со своим и предлагает владельцу обновить скрипт.
+// Увеличивайте при каждом изменении этого файла или appsscript.json.
+var RELEASE = 1;
 var DRIVE = 'https://www.googleapis.com';
 var ROOT_FOLDER_NAME = 'Истории близких — семейное хранилище';
 var INVITE_DAYS = 30;
@@ -60,7 +64,7 @@ function resetOwner() {
 // ---------- Веб-приложение ----------
 
 function doGet() {
-  return json_({ ok: true, app: APP, version: VERSION,
+  return json_({ ok: true, app: APP, version: VERSION, release: RELEASE,
     message: 'Семейное хранилище работает. Скопируйте адрес этой страницы в приложение «Истории близких».' });
 }
 
@@ -82,7 +86,7 @@ function doPost(e) {
 
 function handle_(request) {
   var action = String(request.action || '');
-  if (action === 'info') return ok_({ app: APP, version: VERSION, claimed: !!props_().getProperty('owner') });
+  if (action === 'info') return ok_({ app: APP, version: VERSION, release: RELEASE, claimed: !!props_().getProperty('owner') });
   if (action === 'claim') return claim_(request);
   if (action === 'previewInvite') return previewInvite_(request);
   if (action === 'acceptInvite') return acceptInvite_(request);
@@ -192,7 +196,10 @@ function me_(member) {
     var book = JSON.parse(all[key]);
     if (book.members[member.id] || member.admin) books.push(bookSummary_(book, member));
   });
-  return ok_({ member: publicMember_(member), deviceId: member.deviceId, books: books });
+  // ID проекта нужен владельцу: по нему приложение обновляет скрипт через Apps Script API.
+  var script = { release: RELEASE };
+  if (member.admin) script.id = ScriptApp.getScriptId();
+  return ok_({ member: publicMember_(member), deviceId: member.deviceId, books: books, script: script });
 }
 
 /** Имя профиля — то, как человек называет себя сам. В книгах его не видно. */
