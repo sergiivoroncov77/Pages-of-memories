@@ -124,7 +124,8 @@ interface AppStateValue {
   addMemory: (input: NewMemoryInput) => Memory;
   addMoment: (input: Parameters<typeof createMoment>[0]) => Moment;
   updateMoment: (id: string, patch: Parameters<typeof updateMomentInSnapshot>[2]) => void;
-  updatePerspective: (id: string, patch: Parameters<typeof updatePerspectiveInSnapshot>[2]) => void;
+  /** Change a story and, with `media`, give it a new recording; a recording no longer used is removed. Throws on a wrong change. */
+  updatePerspectiveWithMedia: (id: string, patch: Parameters<typeof updatePerspectiveInSnapshot>[2], media?: MediaUploadWithBlob) => Promise<StorageWriteResult>;
   updateReflection: (id: string, patch: Parameters<typeof updateReflectionInSnapshot>[2]) => void;
   addPerspective: (input: Parameters<typeof createPerspective>[0]) => Perspective;
   addPerspectiveWithMedia: (
@@ -393,10 +394,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     commitSnapshot((current) => updateMomentInSnapshot(current, id, patch));
   };
 
-  const updatePerspective = (id: string, patch: Parameters<typeof updatePerspectiveInSnapshot>[2]) => {
-    commitSnapshot((current) => updatePerspectiveInSnapshot(current, id, patch));
-  };
-
   const updateReflection = (id: string, patch: Parameters<typeof updateReflectionInSnapshot>[2]) => {
     commitSnapshot((current) => updateReflectionInSnapshot(current, id, patch));
   };
@@ -464,18 +461,24 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return stored;
   };
 
-  const setMomentNarration = async (momentId: string, media: MediaUploadWithBlob | null): Promise<StorageWriteResult> => {
+  /** Store the new file (if any), apply the change, and drop the file it replaces once nothing uses it. */
+  const commitMediaChange = async (media: MediaUploadWithBlob | null | undefined, previous: string | undefined,
+    change: (current: AppSnapshot, assetId: string | undefined) => AppSnapshot): Promise<StorageWriteResult> => {
     if (originalDataRef.current !== undefined) return { ok: false, error: recoveryPendingError() };
-    const previous = snapshotRef.current.moments.find((item) => item.id === momentId)?.narrationMediaAssetId;
     let asset: MediaAsset | undefined;
     if (media) {
       const stored = await putMediaBlob(media);
       if (!stored.ok) return stored;
       asset = stored.asset;
     }
-    const withAsset = asset ? addMediaAssetToSnapshot(snapshotRef.current, asset) : snapshotRef.current;
-    let next = setMomentNarrationInSnapshot(withAsset, momentId, asset?.id);
-    if (previous) next = removeUnusedMediaAsset(next, previous);
+    let next: AppSnapshot;
+    try {
+      next = change(asset ? addMediaAssetToSnapshot(snapshotRef.current, asset) : snapshotRef.current, asset?.id);
+      if (previous) next = removeUnusedMediaAsset(next, previous);
+    } catch (error) {
+      if (asset) void mediaStore().delete(asset.id).catch(() => undefined);
+      throw error;
+    }
     const result: StorageWriteResult = originalDataRef.current !== undefined ? { ok: false, error: recoveryPendingError() } : persistSnapshot(next);
     if (!result.ok) {
       if (asset) void mediaStore().delete(asset.id).catch(() => undefined);
@@ -488,6 +491,15 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (previous && !next.mediaAssets.some((item) => item.id === previous)) void mediaStore().delete(previous).catch(() => undefined);
     return result;
   };
+
+  const setMomentNarration = (momentId: string, media: MediaUploadWithBlob | null) => commitMediaChange(media,
+    snapshotRef.current.moments.find((item) => item.id === momentId)?.narrationMediaAssetId,
+    (current, assetId) => setMomentNarrationInSnapshot(current, momentId, assetId));
+
+  /** Change a story; with a new recording it is told aloud, and the recording it had is let go. */
+  const updatePerspectiveWithMedia = (id: string, patch: Parameters<typeof updatePerspectiveInSnapshot>[2], media?: MediaUploadWithBlob) =>
+    commitMediaChange(media, snapshotRef.current.perspectives.find((item) => item.id === id)?.mediaAssetId,
+      (current, assetId) => updatePerspectiveInSnapshot(current, id, assetId ? { ...patch, type: 'audio', mediaAssetId: assetId } : patch));
 
   const discardMedia = (assetId: string) => {
     commitSnapshot((current) => removeUnusedMediaAsset(current, assetId));
@@ -717,7 +729,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         addMemory,
         addMoment,
         updateMoment,
-        updatePerspective,
+        updatePerspectiveWithMedia,
         updateReflection,
         addPerspective,
         addPerspectiveWithMedia,

@@ -249,6 +249,28 @@ describe('changing a story after it was added', () => {
     expect(updatePerspectiveInSnapshot(base, text.id, { content: 'Ещё раз' }).perspectives.find((item) => item.id === text.id)?.authorId).toBe(text.authorId);
   });
 
+  it('tells a story aloud instead of in words, and back, with the recording following', () => {
+    const voice = { id: 'media_voice', type: 'audio' as const, url: 'idb:media_voice', mimeType: 'audio/webm', createdAt: '2026-10-10T10:00:00.000Z' };
+    const base = { ...structuredClone(seedSnapshot), mediaAssets: [...seedSnapshot.mediaAssets, voice] };
+    const text = base.perspectives.find((item) => item.type === 'text' && !item.mediaAssetId)!;
+    // Aloud needs a recording, and a recording it is.
+    expect(() => updatePerspectiveInSnapshot(base, text.id, { type: 'audio' })).toThrow('Запишите голос');
+    expect(() => updatePerspectiveInSnapshot(base, text.id, { type: 'audio', mediaAssetId: 'asset_porch' })).toThrow('Запишите голос');
+    const aloud = updatePerspectiveInSnapshot(base, text.id, { type: 'audio', mediaAssetId: voice.id, content: 'Пара слов' });
+    expect(aloud.perspectives.find((item) => item.id === text.id)).toMatchObject({ type: 'audio', mediaAssetId: voice.id, content: 'Пара слов' });
+    // Its words can change while the recording stays.
+    expect(updatePerspectiveInSnapshot(aloud, text.id, { content: 'Другие слова' }).perspectives.find((item) => item.id === text.id)?.mediaAssetId).toBe(voice.id);
+    // Back to words: they are needed, and the recording leaves the story for the caller to let go.
+    expect(() => updatePerspectiveInSnapshot(aloud, text.id, { type: 'text', mediaAssetId: undefined, content: ' ' })).toThrow();
+    expect(() => updatePerspectiveInSnapshot(aloud, text.id, { type: 'text' })).toThrow('записи');
+    const written = updatePerspectiveInSnapshot(aloud, text.id, { type: 'text', mediaAssetId: undefined, content: 'Снова словами' });
+    expect(written.perspectives.find((item) => item.id === text.id)).toMatchObject({ type: 'text', mediaAssetId: undefined, content: 'Снова словами' });
+    expect(removeUnusedMediaAsset(written, voice.id).mediaAssets.some((asset) => asset.id === voice.id)).toBe(false);
+    // A photo stays a photo.
+    const photo = base.perspectives.find((item) => item.type === 'photo')!;
+    expect(() => updatePerspectiveInSnapshot(base, photo.id, { type: 'text', mediaAssetId: undefined, content: 'Текст' })).toThrow('материалами');
+  });
+
   it('changes a reflection and can take the name off it', () => {
     const base = structuredClone(seedSnapshot);
     const reflection = base.reflections[0];

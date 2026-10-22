@@ -273,7 +273,10 @@ export function deleteMomentsFromSnapshot(snapshot: AppSnapshot, momentIds: Iter
   return dropOrphanedMedia(next, candidates);
 }
 
-/** Delete one story of a moment (not its main one) with its photo, voice or video. */
+/**
+ * Delete one story of a moment with its photo, voice or video. When it was the
+ * main one, the moment is left without a main story until someone writes a new one.
+ */
 export function deletePerspectiveFromSnapshot(snapshot: AppSnapshot, perspectiveId: string): DeletionResult {
   const perspective = snapshot.perspectives.find((item) => item.id === perspectiveId);
   if (!perspective) return { snapshot, removedMediaIds: [] };

@@ -412,6 +412,10 @@ export interface PerspectiveEdit {
   caption?: string;
   /** Undefined signs the story without a name. */
   authorId?: string;
+  /** A story told in words can be told aloud instead, and back. */
+  type?: 'text' | 'audio';
+  /** The recording of a voice story; a story in words has none. */
+  mediaAssetId?: string;
 }
 
 /** New words for a story (and, for a file, its caption); its file and moment stay. */
@@ -419,12 +423,20 @@ export function updatePerspectiveInSnapshot(snapshot: AppSnapshot, perspectiveId
   const perspective = snapshot.perspectives.find((item) => item.id === perspectiveId);
   if (!perspective) return snapshot;
   const content = patch.content === undefined ? perspective.content : patch.content.trim();
-  if (perspective.type === 'text' && !content) throw new Error('Напишите хотя бы несколько слов о том, что помните.');
+  const type = patch.type ?? perspective.type;
+  const mediaAssetId = 'mediaAssetId' in patch ? patch.mediaAssetId : perspective.mediaAssetId;
+  if (patch.type && perspective.type !== 'text' && perspective.type !== 'audio') throw new Error('Фото и видео остаются материалами.');
+  if (type === 'text' && !content) throw new Error('Напишите хотя бы несколько слов о том, что помните.');
+  if (type === 'text' && mediaAssetId) throw new Error('У рассказа текстом не бывает записи.');
+  if (type === 'audio' && (type !== perspective.type || mediaAssetId !== perspective.mediaAssetId)
+    && snapshot.mediaAssets.find((asset) => asset.id === mediaAssetId)?.type !== 'audio') {
+    throw new Error('Запишите голос или выберите аудиофайл.');
+  }
   if ('authorId' in patch && patch.authorId && !snapshot.people.some((person) => person.id === patch.authorId)) {
     throw new Error('Не найден автор рассказа.');
   }
   const caption = patch.caption === undefined ? perspective.caption : patch.caption.trim() || undefined;
-  const next: Perspective = { ...perspective, content, caption, authorId: 'authorId' in patch ? patch.authorId : perspective.authorId };
+  const next: Perspective = { ...perspective, type, mediaAssetId, content, caption, authorId: 'authorId' in patch ? patch.authorId : perspective.authorId };
   return { ...snapshot, perspectives: snapshot.perspectives.map((item) => (item.id === perspectiveId ? next : item)) };
 }
 

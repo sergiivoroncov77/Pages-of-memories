@@ -8,6 +8,7 @@ import {
   deleteBookFromSnapshot,
   deleteChapterFromSnapshot,
   deleteMomentsFromSnapshot,
+  deletePerspectiveFromSnapshot,
   deletePersonFromSnapshot,
   emptySnapshot,
   initialsOf,
@@ -18,7 +19,7 @@ import {
   updateChapterInSnapshot,
   updatePersonInSnapshot
 } from './library';
-import { addMomentToSnapshot, createMoment, ensureMemoryMoments, publishMemoryToSnapshot } from './mutations';
+import { addMomentToSnapshot, addPerspectiveToSnapshot, createMoment, createPerspective, ensureMemoryMoments, publishMemoryToSnapshot } from './mutations';
 import { coverColorOf } from './coverColors';
 import { normalizeSnapshotValue } from './repository';
 import { seedSnapshot } from './seed';
@@ -147,6 +148,25 @@ describe('moments', () => {
     expect(next.people.find((person) => person.id === 'person_anna')?.answeredCount)
       .toBe(snapshot.people.find((person) => person.id === 'person_anna')!.answeredCount - 1);
     expect(normalizeSnapshotValue(next).moments.some((item) => item.id === moment.id)).toBe(false);
+  });
+
+  it('deletes the main story without putting another in its place', () => {
+    // Not an interview moment: there the main story is the answer itself and is changed in the interview.
+    const start = demo();
+    const chapter = start.chapters[0];
+    const moment = createMoment({ bookId: chapter.bookId, chapterId: chapter.id, title: 'Дача' });
+    let snapshot = addMomentToSnapshot(start, moment);
+    snapshot = addPerspectiveToSnapshot(snapshot, createPerspective({ momentId: moment.id, type: 'text', content: 'Основной', isPrimary: true }, 'perspective_main'));
+    snapshot = addPerspectiveToSnapshot(snapshot, createPerspective({ momentId: moment.id, type: 'text', content: 'Дополнение' }, 'perspective_addition'));
+    const main = 'perspective_main';
+    expect(snapshot.moments.find((item) => item.id === moment.id)?.primaryPerspectiveId).toBe(main);
+    const { snapshot: next } = deletePerspectiveFromSnapshot(snapshot, main);
+    expect(next.perspectives.some((item) => item.id === main)).toBe(false);
+    expect(next.moments.find((item) => item.id === moment.id)?.primaryPerspectiveId).toBeUndefined();
+    expect(next.perspectives.filter((item) => item.momentId === moment.id).length).toBeGreaterThan(0);
+    expect(next.perspectives.filter((item) => item.momentId === moment.id).every((item) => !item.isPrimary)).toBe(true);
+    // And it stays that way after a reload.
+    expect(normalizeSnapshotValue(next).moments.find((item) => item.id === moment.id)?.primaryPerspectiveId).toBeUndefined();
   });
 
   it('keeps media still used elsewhere', () => {

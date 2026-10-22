@@ -1,5 +1,5 @@
 import { BookOpen, CalendarDays, Camera, Clapperboard, FileAudio, FileText, FileVideo, Heart, MessageCircle, Mic, Paperclip, Pencil, Plus, Send, Trash2, UserRound, Users, X } from 'lucide-react';
-import { useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { Avatar } from '../../components/Avatar';
@@ -7,6 +7,7 @@ import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { PageHeader } from '../../components/PageHeader';
 import type { MediaAsset, Moment, Person, Perspective, PerspectiveType, Reflection } from '../../data/types';
+import type { PerspectiveEdit } from '../../data/mutations';
 import { formatDate, formatDuration, pluralize } from '../../lib/format';
 import { findRecordedDuration } from '../../lib/mediaDuration';
 import { MAX_MEDIA_FILE_BYTES, prepareMediaFile, validateMediaFile, type MediaUploadWithBlob } from '../../lib/mediaFiles';
@@ -30,6 +31,14 @@ const acceptTypes: Record<PerspectiveType, string> = {
 const extensions: Record<string, string> = { 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg' };
 const ANONYMOUS = 'Анонимно';
 
+const voiceUpload = (take: Recording, momentTitle: string, words: string): MediaUploadWithBlob => ({
+  type: 'audio', url: '', mimeType: take.mimeType, blob: take.blob, sizeBytes: take.blob.size, durationSeconds: take.durationSeconds,
+  fileName: `Голос — ${momentTitle}.${extensions[take.mimeType] ?? 'webm'}`, alt: words.trim() || `Рассказ голосом: ${momentTitle}`
+});
+
+const isRecording = (status: ReturnType<typeof useAudioRecorder>['status']) =>
+  status === 'requesting' || status === 'recording' || status === 'paused' || status === 'stopping';
+
 export function MomentPage() {
   const { momentId } = useParams();
   const { getMoment, chapters, books } = useAppState();
@@ -41,27 +50,31 @@ export function MomentPage() {
 }
 
 function MomentContent({ moment }: { moment: Moment }) {
-  const { chapters, books, perspectivesForMoment, reflectionsForMoment, mediaForPerspective, getPerson, getMemory, addPerspectiveWithMedia, addReflection, toggleMomentFavorite, updateMoment, updatePerspective, updateReflection, deleteMoment, deletePerspective, deleteReflection } = useAppState();
+  const { chapters, books, perspectivesForMoment, reflectionsForMoment, mediaForPerspective, getPerson, getMemory, addPerspectiveWithMedia, addReflection, toggleMomentFavorite, updateMoment, updatePerspectiveWithMedia, updateReflection, deleteMoment, deletePerspective, deleteReflection } = useAppState();
   const cloud = useCloudSync();
   const navigate = useNavigate();
   const chapter = chapters.find((item) => item.id === moment.chapterId)!;
   const book = books.find((item) => item.id === moment.bookId)!;
   const perspectives = perspectivesForMoment(moment.id);
   const reflections = reflectionsForMoment(moment.id);
-  const primary = perspectives.find((item) => item.id === moment.primaryPerspectiveId) ?? perspectives.find((item) => item.isPrimary) ?? perspectives[0];
+  // Without a main story (none yet, or it was deleted) the moment asks for one instead of promoting another.
+  const primary = perspectives.find((item) => item.id === moment.primaryPerspectiveId) ?? perspectives.find((item) => item.isPrimary);
   const others = perspectives.filter((item) => item.id !== primary?.id);
   // In a shared book a deletion reaches everyone, and a relative deletes only what they added.
   const shared = cloud.isShared(book.id);
   const everyone = shared ? ' у всех участников книги' : '';
   const momentBlocker = cloud.deletionBlocker(book.id, { type: 'moment', id: moment.id });
-  // The main story goes with the moment; a story kept from an interview is edited in the answer.
-  const canDeletePerspective = (item: Perspective) => item.id !== primary?.id && !item.sourceMemoryId
+  // A story kept from an interview lives in the answer and is changed there.
+  const canDeletePerspective = (item: Perspective) => !item.sourceMemoryId
     && !cloud.deletionBlocker(book.id, { type: 'perspective', id: item.id });
   const removePerspective = (item: Perspective) => {
-    const what = item.type === 'text' ? 'этот рассказ' : item.type === 'photo' ? 'это фото' : item.type === 'video' ? 'это видео' : 'эту запись';
-    if (!window.confirm(`Удалить ${what}${everyone}? Это нельзя отменить.`)) return;
+    const main = item.id === primary?.id;
+    const what = main ? 'основной рассказ' : item.type === 'text' ? 'этот рассказ' : item.type === 'photo' ? 'это фото' : item.type === 'video' ? 'это видео' : 'эту запись';
+    const after = main ? ' Его место останется пустым: основной рассказ можно будет написать или записать заново.' : '';
+    if (!window.confirm(`Удалить ${what}${everyone}?${after} Это нельзя отменить.`)) return;
     deletePerspective(item.id);
-    setNotice('Взгляд удалён.');
+    if (editingId === item.id) setEditingId('');
+    setNotice(main ? 'Основной рассказ удалён. Его можно написать заново.' : 'Взгляд удалён.');
   };
   const removeReflection = (reflectionId: string) => {
     if (!window.confirm(`Удалить отклик${everyone}? Это нельзя отменить.`)) return;
@@ -81,6 +94,8 @@ function MomentContent({ moment }: { moment: Moment }) {
   const [tab, setTab] = useState<MomentTab>('story');
   const [showEdit, setShowEdit] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  // The form writes the main story: opened from «Начните рассказ», while the moment has none.
+  const [formForMain, setFormForMain] = useState(false);
   const [showReflection, setShowReflection] = useState(false);
   const [type, setType] = useState<PerspectiveType>('text');
   const [anonymous, setAnonymous] = useState(false);
@@ -99,14 +114,15 @@ function MomentContent({ moment }: { moment: Moment }) {
   const [editingId, setEditingId] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const tabButtons = useRef<(HTMLButtonElement | null)[]>([]);
-  const recording = recorder.status === 'requesting' || recorder.status === 'recording' || recorder.status === 'paused' || recorder.status === 'stopping';
+  const recording = isRecording(recorder.status);
 
   const forgetVoice = () => {
     recorder.cancel();
     setTake(null);
   };
-  const openForm = (format: PerspectiveType = 'text', record = false) => {
+  const openForm = (format: PerspectiveType = 'text', record = false, main = false) => {
     forgetVoice();
+    setFormForMain(main);
     setType(format);
     setSelectedFile(null);
     setError('');
@@ -142,11 +158,6 @@ function MomentContent({ moment }: { moment: Moment }) {
     tabButtons.current[nextIndex]?.focus();
   };
 
-  const voiceUpload = (recordingTake: Recording): MediaUploadWithBlob => ({
-    type: 'audio', url: '', mimeType: recordingTake.mimeType, blob: recordingTake.blob, sizeBytes: recordingTake.blob.size, durationSeconds: recordingTake.durationSeconds,
-    fileName: `Голос — ${moment.title}.${extensions[recordingTake.mimeType] ?? 'webm'}`, alt: content.trim() || `Рассказ голосом: ${moment.title}`
-  });
-
   const submitPerspective = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isSaving) return;
@@ -176,21 +187,22 @@ function MomentContent({ moment }: { moment: Moment }) {
     try {
       const authorId = await signAs(anonymous);
       let media: MediaUploadWithBlob | undefined;
-      if (voice) media = voiceUpload(voice);
+      if (voice) media = voiceUpload(voice, moment.title, content);
       else if (selectedFile) {
         media = prepareMediaFile(selectedFile);
         media.alt = caption.trim() || content.trim() || selectedFile.name;
       }
       const text = voice ? content.trim() : content.trim() || caption.trim() || selectedFile?.name || '';
-      const result = await addPerspectiveWithMedia({ momentId: moment.id, type, content: text, authorId, caption: voice ? undefined : caption.trim() || undefined, isPrimary: perspectives.length === 0 }, media);
+      const main = !primary && (formForMain || perspectives.length === 0);
+      const result = await addPerspectiveWithMedia({ momentId: moment.id, type, content: text, authorId, caption: voice ? undefined : caption.trim() || undefined, isPrimary: main }, media);
       if (!result.ok) { setError(result.error.message); return; }
       setContent('');
       setCaption('');
       setSelectedFile(null);
       setTake(null);
       setShowForm(false);
-      setTab(type === 'text' || voice ? 'perspectives' : 'materials');
-      setNotice(type === 'text' ? 'Ваш рассказ добавлен в момент.' : voice ? 'Ваш рассказ голосом добавлен в момент.' : 'Материал сохранён в этой книге.');
+      setTab(main ? 'story' : type === 'text' || voice ? 'perspectives' : 'materials');
+      setNotice(main ? 'Основной рассказ сохранён.' : type === 'text' ? 'Ваш рассказ добавлен в момент.' : voice ? 'Ваш рассказ голосом добавлен в момент.' : 'Материал сохранён в этой книге.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Не удалось сохранить материал. Попробуйте ещё раз.');
     } finally {
@@ -219,9 +231,16 @@ function MomentContent({ moment }: { moment: Moment }) {
     if (item.sourceMemoryId) return getMemory(item.sourceMemoryId) ? { editTo: '/memories/' + item.sourceMemoryId } : {};
     if (!cloud.canEdit(book.id, { type: 'perspective', id: item.id })) return {};
     return {
-      onEdit: () => { setEditingId(item.id); setShowForm(false); setShowEdit(false); },
-      editor: editingId === item.id ? <PerspectiveEditor perspective={item} me={me} myName={myName} signAs={signAs}
-        onSave={(patch) => { updatePerspective(item.id, patch); setEditingId(''); setNotice(item.type === 'text' ? 'Рассказ изменён.' : 'Описание изменено.'); }}
+      onEdit: () => { setEditingId(item.id); closeForm(); setShowEdit(false); },
+      editor: editingId === item.id ? <PerspectiveEditor perspective={item} asset={mediaForPerspective(item.id)} momentTitle={moment.title} shared={shared}
+        me={me} myName={myName} signAs={signAs}
+        onSave={async (patch, media) => {
+          const result = await updatePerspectiveWithMedia(item.id, patch, media);
+          if (!result.ok) throw new Error(result.error.message);
+          setEditingId('');
+          setNotice(media ? (item.type === 'audio' ? 'Запись заменена.' : 'Рассказ теперь голосом.')
+            : patch.type === 'text' && item.type !== 'text' ? 'Рассказ теперь текстом.' : item.type === 'text' ? 'Рассказ изменён.' : 'Описание изменено.');
+        }}
         onCancel={() => setEditingId('')} /> : undefined
     };
   };
@@ -242,7 +261,8 @@ function MomentContent({ moment }: { moment: Moment }) {
         navigate('/book');
       }}><Trash2 size={17} aria-hidden="true" /> Удалить момент</button>}</div></Card> : null}
 
-    {showForm ? <Card className="perspective-form-card" id="perspective-form"><div className="card-heading"><div><p className="eyebrow">Ещё один голос</p><h2>Добавить свой взгляд</h2><p>Расскажите своими словами, голосом или сохраните материал с устройства.</p></div><button type="button" className="icon-button" aria-label="Закрыть форму" disabled={isSaving} onClick={closeForm}><X size={20} /></button></div>
+    {showForm ? <Card className="perspective-form-card" id="perspective-form"><div className="card-heading"><div>{formForMain && !primary ? <><p className="eyebrow">Основной рассказ</p><h2>Рассказ об этом моменте</h2><p>Напишите его или расскажите голосом — он откроет момент в книге.</p></>
+        : <><p className="eyebrow">Ещё один голос</p><h2>Добавить свой взгляд</h2><p>Расскажите своими словами, голосом или сохраните материал с устройства.</p></>}</div><button type="button" className="icon-button" aria-label="Закрыть форму" disabled={isSaving} onClick={closeForm}><X size={20} /></button></div>
       <form className="inline-form" onSubmit={submitPerspective} aria-busy={isSaving}>
         <label className="field"><span>Формат</span><select value={type} disabled={isSaving} onChange={(event) => changeType(event.target.value as PerspectiveType)}>{Object.entries(formatLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
         {type === 'audio' ? <div className="field voice-field"><span>Рассказ голосом</span>
@@ -262,7 +282,10 @@ function MomentContent({ moment }: { moment: Moment }) {
     <div className="moment-tabs" role="tablist" aria-label="Содержимое момента">{tabs.map((value, index) => <button key={value} ref={(element) => { tabButtons.current[index] = element; }} id={'tab-' + value} type="button" role="tab" aria-selected={tab === value} aria-controls={'panel-' + value} tabIndex={tab === value ? 0 : -1} className={tab === value ? 'is-active' : ''} onClick={() => changeTab(value)} onKeyDown={(event) => onTabKeyDown(event, index)}>{value === 'story' ? 'Рассказ' : value === 'perspectives' ? 'Взгляды' : 'Материалы'}{value !== 'story' ? <span>{value === 'perspectives' ? perspectives.length : linkedAssets.length}</span> : null}</button>)}</div>
     <div key={tab} id={'panel-' + tab} role="tabpanel" aria-labelledby={'tab-' + tab} tabIndex={0}>
       {tab === 'story' ? <div className="moment-reading-layout"><div className="moment-reading-main">
-        {primary ? cardFor(primary, { primary: true }) : <Card tone="warm"><h2>Начните рассказ об этом моменте</h2><p>Здесь будет первая история. Напишите её или расскажите голосом — позже близкие смогут дополнить её своими воспоминаниями.</p><div className="page-action-group"><button type="button" className="button button--primary" onClick={() => openForm()}><Pencil size={17} aria-hidden="true" /> Написать рассказ</button><button type="button" className="button button--secondary" onClick={() => openForm('audio', true)}><Mic size={17} aria-hidden="true" /> Рассказать голосом</button></div></Card>}
+        {primary ? cardFor(primary, { primary: true, onDelete: canDeletePerspective(primary) ? () => removePerspective(primary) : undefined })
+          : <Card tone="warm">{perspectives.length ? <><h2>Основного рассказа пока нет</h2><p>Напишите его или расскажите голосом — он откроет момент в книге. Дополнения близких останутся рядом.</p></>
+            : <><h2>Начните рассказ об этом моменте</h2><p>Здесь будет первая история. Напишите её или расскажите голосом — позже близкие смогут дополнить её своими воспоминаниями.</p></>}
+            <div className="page-action-group"><button type="button" className="button button--primary" onClick={() => openForm('text', false, true)}><Pencil size={17} aria-hidden="true" /> Написать рассказ</button><button type="button" className="button button--secondary" onClick={() => openForm('audio', true, true)}><Mic size={17} aria-hidden="true" /> Рассказать голосом</button></div></Card>}
         {others.length ? <section className="moment-section"><div className="section__heading"><div><p className="eyebrow">Другие голоса</p><h2>Дополнения к истории</h2></div><button type="button" className="text-button" onClick={() => changeTab('perspectives')}>Все взгляды</button></div><div className="perspective-preview-list">{others.slice(0, 2).map((item) => <PerspectiveCard key={item.id} perspective={item} author={getPerson(item.authorId ?? '')} asset={mediaForPerspective(item.id)} compact />)}</div></section> : null}
       </div><aside className="moment-reading-aside"><Card><div className="card-heading card-heading--compact"><h2>Участники</h2><Users size={20} aria-hidden="true" /></div><div className="participant-list">{participants.length ? participants.map((person) => <Link to={'/people/' + person.id} className="participant" key={person.id}><Avatar person={person} size="small" /><span><strong>{person.name}</strong><small>{person.relation}</small></span></Link>) : <p className="muted-copy">Первый рассказчик можете быть вы.</p>}</div></Card><Card tone="warm"><h2>А как это помните вы?</h2><p>Другая деталь, фотография, рассказ голосом — всё поможет сохранить этот день.</p><div className="moment-aside-actions"><button type="button" className="button button--primary" onClick={() => openForm()} aria-expanded={showForm} aria-controls="perspective-form"><Plus size={18} aria-hidden="true" /> Добавить взгляд</button><button type="button" className="button button--secondary" onClick={() => openForm('audio', true)}><Mic size={18} aria-hidden="true" /> Рассказать голосом</button></div></Card></aside></div> : null}
       {tab === 'perspectives' ? <section className="moment-section"><div className="section__heading"><div><p className="eyebrow">Каждый помнит по-своему</p><h2>Взгляды участников</h2></div><div className="page-action-group"><button type="button" className="button button--secondary button--small" onClick={() => openForm('audio', true)}><Mic size={17} aria-hidden="true" /> Голосом</button><button type="button" className="button button--primary button--small" onClick={() => openForm()}><Plus size={17} aria-hidden="true" /> Добавить взгляд</button></div></div>{perspectives.length ? <div className="perspective-list">{perspectives.map((item) => cardFor(item, { primary: item.id === primary?.id, onDelete: canDeletePerspective(item) ? () => removePerspective(item) : undefined }))}</div> : <p className="muted-copy">Здесь появятся рассказы и материалы участников.</p>}</section> : null}
@@ -309,7 +332,7 @@ function PerspectiveCard({ perspective, author, asset, compact = false, primary 
       {(onEdit || editTo || onDelete) && !editor ? <div className="card-tools">
         {onEdit ? <button type="button" className="card-tool" aria-label={'Изменить ' + what} onClick={onEdit}><Pencil size={16} /></button> : null}
         {editTo ? <Link to={editTo} className="card-tool" aria-label="Изменить в ответе на вопрос" title="Рассказ из интервью меняется в ответе"><Pencil size={16} /></Link> : null}
-        {onDelete ? <button type="button" className="card-tool card-tool--danger perspective-card__delete" aria-label="Удалить этот взгляд" onClick={onDelete}><Trash2 size={16} /></button> : null}
+        {onDelete ? <button type="button" className="card-tool card-tool--danger perspective-card__delete" aria-label={primary ? 'Удалить основной рассказ' : 'Удалить этот взгляд'} onClick={onDelete}><Trash2 size={16} /></button> : null}
       </div> : null}</div>
     {asset ? <AssetPreview asset={asset} /> : null}
     {perspective.type === 'audio' && !asset ? <p className="demo-media-note">Демонстрационный рассказ: аудиофайл не прикреплён.</p> : null}
@@ -324,12 +347,21 @@ interface EditorProps<Patch> {
   me?: string;
   myName?: string;
   signAs: (anonymous: boolean, name: string) => Promise<string | undefined>;
-  onSave: (patch: Patch) => void;
+  /** May throw: the message is shown in the form. */
+  onSave: (patch: Patch, media?: MediaUploadWithBlob) => void | Promise<void>;
   onCancel: () => void;
 }
 
-/** Change the words of a story; its author may also sign it differently. */
-function PerspectiveEditor({ perspective, me, myName, signAs, onSave, onCancel }: EditorProps<{ content: string; caption: string; authorId?: string }> & { perspective: Perspective }) {
+interface PerspectiveEditorProps extends EditorProps<PerspectiveEdit> {
+  perspective: Perspective;
+  /** The recording of a voice story. */
+  asset?: MediaAsset;
+  momentTitle: string;
+  shared: boolean;
+}
+
+/** Change a story: its words, whether it is told in words or aloud, and its author may sign it differently. */
+function PerspectiveEditor({ perspective, asset, momentTitle, shared, me, myName, signAs, onSave, onCancel }: PerspectiveEditorProps) {
   const [content, setContent] = useState(perspective.content);
   const [caption, setCaption] = useState(perspective.caption ?? '');
   // Someone else's name stays on their story; one's own story can go unsigned and back.
@@ -338,26 +370,80 @@ function PerspectiveEditor({ perspective, me, myName, signAs, onSave, onCancel }
   const [newName, setNewName] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const text = perspective.type === 'text';
+  // A story is told in words or aloud and can switch; photos and videos stay what they are.
+  const switchable = perspective.type === 'text' || perspective.type === 'audio';
+  const [format, setFormat] = useState<PerspectiveType>(perspective.type);
+  const recorder = useAudioRecorder();
+  const [take, setTake] = useState<Recording | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const recording = isRecording(recorder.status);
+  const text = format === 'text';
+  const formatLabel = useId();
+
+  const changeFormat = (next: PerspectiveType) => {
+    if (next === 'text') { recorder.cancel(); setTake(null); setFile(null); }
+    setFormat(next);
+    setError('');
+  };
+  const chooseFile = (chosen: File | null) => {
+    setFile(chosen);
+    if (chosen) setTake(null);
+    setError(chosen ? validateMediaFile(chosen, 'audio') ?? '' : '');
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (saving) return;
     setError('');
+    if (recording) { setError('Сначала нажмите «Готово», чтобы закончить запись.'); return; }
+    if (text && !content.trim()) { setError('Напишите хотя бы несколько слов о том, что помните.'); return; }
+    if (format === 'audio' && perspective.type !== 'audio' && !take && !file) { setError('Запишите голос или выберите аудиофайл.'); return; }
+    if (file) {
+      const fileError = validateMediaFile(file, 'audio');
+      if (fileError) { setError(fileError); return; }
+    }
+    if (take && take.blob.size > MAX_MEDIA_FILE_BYTES) { setError('Запись не помещается в книгу: до 50 МБ на файл. Запишите рассказ частями.'); return; }
     setSaving(true);
     try {
       const authorId = signable ? await signAs(anonymous, newName) : perspective.authorId;
-      onSave({ content, caption, authorId });
+      let media: MediaUploadWithBlob | undefined;
+      if (take) media = voiceUpload(take, momentTitle, content);
+      else if (file) media = { ...prepareMediaFile(file), alt: content.trim() || file.name };
+      // Told in words again: the recording leaves the story.
+      const toText = text && perspective.type !== 'text' ? { type: 'text' as const, mediaAssetId: undefined } : {};
+      await onSave({ content, caption, authorId, ...toText }, media);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Не удалось сохранить изменения.');
       setSaving(false);
     }
   };
-  return <form className="inline-form perspective-editor" onSubmit={(event) => { void submit(event); }}>
-    <label className="field"><span>{text ? 'Рассказ' : perspective.type === 'audio' ? 'Пара слов о записи' : 'Что стоит знать об этом материале?'}</span>
-      <textarea autoFocus value={content} onChange={(event) => setContent(event.target.value)} rows={text ? 8 : 3} maxLength={30000} required={text} disabled={saving} /></label>
+
+  return <form className="inline-form perspective-editor" onSubmit={(event) => { void submit(event); }} aria-busy={saving}>
+    {switchable ? <div className="field">
+      <span id={formatLabel}>Как рассказан</span>
+      <div className="segmented segmented--two" role="radiogroup" aria-labelledby={formatLabel}>
+        <button type="button" role="radio" aria-checked={text} className={text ? 'is-active' : ''} disabled={saving} onClick={() => changeFormat('text')}>
+          <FileText size={17} aria-hidden="true" /><span>Текстом</span>
+        </button>
+        <button type="button" role="radio" aria-checked={!text} className={!text ? 'is-active' : ''} disabled={saving} onClick={() => changeFormat('audio')}>
+          <Mic size={17} aria-hidden="true" /><span>Голосом</span>
+        </button>
+      </div>
+      {text && perspective.type === 'audio' && asset ? <small>Запись удалится{shared ? ' у всех участников' : ''}, останется текст ниже.</small> : null}
+    </div> : null}
+    {format === 'audio' ? <div className="field voice-field"><span>{perspective.type === 'audio' && asset ? 'Записать заново' : 'Рассказ голосом'}</span>
+      {perspective.type === 'audio' && asset && !take && !file && !recording ? <small className="field-note">Сейчас в рассказе запись выше{asset.durationSeconds ? `, ${formatDuration(asset.durationSeconds)}` : ''}. Новая запись или файл заменят её.</small> : null}
+      <VoiceRecorder recorder={recorder} take={take} onTake={(next) => { setTake(next); if (next) { setFile(null); if (fileInput.current) fileInput.current.value = ''; } setError(''); }} disabled={saving} />
+      {!take && !recording ? <label className="voice-field__file"><span>Или выберите аудиофайл</span><input ref={fileInput} type="file" accept={acceptTypes.audio} disabled={saving} onChange={(event) => chooseFile(event.target.files?.[0] ?? null)} />{file ? <small>{file.name} · {Math.ceil(file.size / 1024)} КБ</small> : null}</label> : null}
+      {take || file ? <small className="field-note">До 50 МБ на файл. {shared ? 'Новая запись уйдёт всем участникам книги.' : 'Запись хранится на этом устройстве.'}</small> : null}
+    </div> : null}
+    <label className="field"><span>{text ? 'Рассказ' : format === 'audio' ? <>Пара слов о записи <small>необязательно</small></> : 'Что стоит знать об этом материале?'}</span>
+      <textarea autoFocus={text} value={content} onChange={(event) => setContent(event.target.value)} rows={text ? 8 : 3} maxLength={30000} required={text} disabled={saving} /></label>
     {perspective.type === 'photo' || perspective.type === 'video' || perspective.caption ? <label className="field"><span>Подпись к материалу <small>необязательно</small></span><input value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={500} disabled={saving} /></label> : null}
     {signable ? <AuthorChoice myName={myName} anonymous={anonymous} onAnonymous={setAnonymous} newName={newName} onNewName={setNewName} disabled={saving} /> : null}
     {error ? <p className="field-message field-message--error" role="alert">{error}</p> : null}
-    <div className="form-actions"><button type="submit" className="button button--primary" disabled={saving || (text && !content.trim())}>Сохранить</button><button type="button" className="button button--ghost" onClick={onCancel} disabled={saving}>Отмена</button></div>
+    <div className="form-actions"><button type="submit" className="button button--primary" disabled={saving || recording || (text && !content.trim())}>{saving ? 'Сохраняем…' : 'Сохранить'}</button><button type="button" className="button button--ghost" onClick={() => { recorder.cancel(); onCancel(); }} disabled={saving}>Отмена</button></div>
   </form>;
 }
 
