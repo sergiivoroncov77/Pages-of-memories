@@ -103,7 +103,9 @@ export function BookPage() {
 
   const submitMoment = (details: MomentDetails) => {
     if (!book) return;
-    const moment = addMoment({ ...details, bookId: book.id, tags: [] });
+    const { story, ...metadata } = details;
+    const moment = addMoment({ ...metadata, bookId: book.id, tags: [] },
+      story?.trim() ? { content: story, authorId: cloud.myPersonId(book.id) } : undefined);
     navigate('/moments/' + moment.id);
   };
 
@@ -243,9 +245,11 @@ export function BookPage() {
 
   const momentForm = (
     <Card className="create-moment-card" id="create-moment">
-      <div className="card-heading"><div><p className="eyebrow">Новая страница</p><h2>Создать момент</h2><p>Начните с названия. Рассказы и материалы можно добавить следом.</p></div>
+      <div className="card-heading"><div><p className="eyebrow">Новая страница</p><h2>Создать момент</h2><p>Добавьте название и запишите рассказ. Фотографии, голос и другие материалы можно добавить следом.</p></div>
         <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setPanel('none')}><X size={20} /></button></div>
-      <MomentDetailsForm key={momentChapterId} chapters={chapters} initial={{ title: '', summary: '', chapterId: momentChapterId }} submitLabel="Создать и открыть" onSubmit={submitMoment} onCancel={() => setPanel('none')} />
+      <MomentDetailsForm key={momentChapterId} chapters={chapters} initial={{ title: '', summary: '', chapterId: momentChapterId }} includeStory
+        storyAuthorName={getPerson(cloud.myPersonId(book.id) ?? '')?.name}
+        submitLabel="Создать и открыть" onSubmit={submitMoment} onCancel={() => setPanel('none')} />
     </Card>
   );
 

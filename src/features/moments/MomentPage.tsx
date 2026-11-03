@@ -6,6 +6,7 @@ import { Avatar } from '../../components/Avatar';
 import { Card } from '../../components/Card';
 import { EmptyState } from '../../components/EmptyState';
 import { PageHeader } from '../../components/PageHeader';
+import { StoryEditor } from '../../components/StoryEditor';
 import type { MediaAsset, Moment, Person, Perspective, PerspectiveType, Reflection } from '../../data/types';
 import type { PerspectiveEdit } from '../../data/mutations';
 import { formatDate, formatDuration, pluralize } from '../../lib/format';
@@ -271,7 +272,7 @@ function MomentContent({ moment }: { moment: Moment }) {
         </div> : null}
         {type === 'photo' || type === 'video' ? <label className="field file-field"><span>Файл с устройства</span><input ref={fileInput} key={type} type="file" accept={acceptTypes[type]} disabled={isSaving} onChange={(event) => chooseFile(event.target.files?.[0] ?? null)} aria-describedby="media-size-note" />{selectedFile ? <small>{selectedFile.name} · {Math.ceil(selectedFile.size / 1024)} КБ</small> : null}</label> : null}
         {type !== 'text' && !(type === 'audio' && (take || recording)) ? <small id="media-size-note" className="field-note">До 50 МБ на файл. {shared ? 'Материал уйдёт всем участникам книги через семейное хранилище.' : 'Материал хранится на этом устройстве; близким он уйдёт вместе с файлом книги («Библиотека» → «Поделиться»).'}</small> : null}
-        <label className="field"><span>{type === 'text' ? 'Как вы это помните?' : type === 'audio' ? <>Пара слов о записи <small>необязательно</small></> : 'Что стоит знать об этом материале?'}</span><textarea autoFocus={type === 'text'} value={content} onChange={(event) => setContent(event.target.value)} rows={type === 'audio' ? 3 : 5} maxLength={30000} required={type === 'text'} disabled={isSaving} placeholder={type === 'audio' ? 'Например, о чём этот рассказ или кто рядом' : 'Можно начать с одной детали…'} /></label>
+        <StoryEditor label={type === 'text' ? 'Как вы это помните?' : type === 'audio' ? <>Пара слов о записи <small>необязательно</small></> : 'Что стоит знать об этом материале?'} autoFocus={type === 'text'} value={content} onChange={setContent} rows={type === 'audio' ? 3 : 7} maxLength={30000} required={type === 'text'} disabled={isSaving} placeholder={type === 'audio' ? 'Например, о чём этот рассказ или кто рядом' : 'Можно начать с одной детали…'} />
         {type === 'photo' || type === 'video' || (type === 'audio' && selectedFile) ? <label className="field"><span>Подпись к материалу <small>необязательно</small></span><input value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={500} disabled={isSaving} placeholder="Например, семья за столом летом 1980 года" /></label> : null}
         <AuthorChoice myName={myName} anonymous={anonymous} onAnonymous={setAnonymous} newName={newName} onNewName={setNewName} disabled={isSaving} />
         {error ? <p className="field-message field-message--error" role="alert">{error}</p> : null}
@@ -438,8 +439,8 @@ function PerspectiveEditor({ perspective, asset, momentTitle, shared, me, myName
       {!take && !recording ? <label className="voice-field__file"><span>Или выберите аудиофайл</span><input ref={fileInput} type="file" accept={acceptTypes.audio} disabled={saving} onChange={(event) => chooseFile(event.target.files?.[0] ?? null)} />{file ? <small>{file.name} · {Math.ceil(file.size / 1024)} КБ</small> : null}</label> : null}
       {take || file ? <small className="field-note">До 50 МБ на файл. {shared ? 'Новая запись уйдёт всем участникам книги.' : 'Запись хранится на этом устройстве.'}</small> : null}
     </div> : null}
-    <label className="field"><span>{text ? 'Рассказ' : format === 'audio' ? <>Пара слов о записи <small>необязательно</small></> : 'Что стоит знать об этом материале?'}</span>
-      <textarea autoFocus={text} value={content} onChange={(event) => setContent(event.target.value)} rows={text ? 8 : 3} maxLength={30000} required={text} disabled={saving} /></label>
+    <StoryEditor label={text ? 'Рассказ' : format === 'audio' ? <>Пара слов о записи <small>необязательно</small></> : 'Что стоит знать об этом материале?'}
+      autoFocus={text} value={content} onChange={setContent} rows={text ? 8 : 3} maxLength={30000} required={text} disabled={saving} />
     {perspective.type === 'photo' || perspective.type === 'video' || perspective.caption ? <label className="field"><span>Подпись к материалу <small>необязательно</small></span><input value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={500} disabled={saving} /></label> : null}
     {signable ? <AuthorChoice myName={myName} anonymous={anonymous} onAnonymous={setAnonymous} newName={newName} onNewName={setNewName} disabled={saving} /> : null}
     {error ? <p className="field-message field-message--error" role="alert">{error}</p> : null}

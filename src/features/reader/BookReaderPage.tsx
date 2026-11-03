@@ -9,6 +9,7 @@ import type { MediaAsset } from '../../data/types';
 import { clothStyle } from '../../lib/cloth';
 import { chronologicalMoments } from '../../lib/film/timeline';
 import { pluralize } from '../../lib/format';
+import { splitStoryParagraphs } from '../../lib/storyText';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { useMediaUrl } from '../../lib/useMediaUrl';
 import {
@@ -56,11 +57,12 @@ function initialPage(pages: ReaderPage[], params: URLSearchParams): number {
 
 function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bookTitle: string; assets: MediaAsset[]; cloth: CSSProperties }) {
   const [params, setParams] = useSearchParams();
-  const spread = useMediaQuery('(min-width: 900px)');
+  const compact = useMediaQuery('(orientation: landscape) and (max-height: 600px)');
+  const spread = useMediaQuery('(min-width: 900px)') && !compact;
   const [size, setSize] = useState({ width: 0, height: 0 });
-  const pageWidth = spread ? Math.min(size.width / 2, size.height * PAGE_RATIO) : Math.min(size.width, 560);
+  const pageWidth = spread ? Math.min(size.width / 2, size.height * PAGE_RATIO) : Math.min(size.width, compact ? 760 : 560);
   const pageHeight = spread ? pageWidth / PAGE_RATIO : Math.min(size.height, Math.max(420, pageWidth / 0.6));
-  const budget = size.width ? estimatePageBudget(pageWidth, pageHeight) : DEFAULT_PAGE_BUDGET;
+  const budget = size.width ? estimatePageBudget(pageWidth, pageHeight, { compact }) : DEFAULT_PAGE_BUDGET;
   const pages = useMemo(() => buildReaderPages(source, budget),
     // The budget is rounded, so pages are rebuilt only when the text really fits differently.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -254,7 +256,9 @@ function PageView({ page, number, total, assets, chapterTitles, onJump }: PageVi
           {page.heading.narrators.length ? <p className="reader-story__narrators">Вспоминают: {page.heading.narrators.join(', ')}</p> : null}
         </header> : null}
         {!page.heading && page.voice && page.dropCap ? <p className="reader-kicker">Взгляд · {page.voice}</p> : null}
-        <div className={'reader-story__text ' + (page.dropCap ? 'has-drop-cap' : '')}>{page.text.split('\n').map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div>
+        <div className={'reader-story__text ' + (page.dropCap ? 'has-drop-cap' : '')}>{splitStoryParagraphs(page.text).map((paragraph, index) => (
+          <p key={index} className={index === 0 && page.startsMidParagraph ? 'is-continuation' : undefined}>{paragraph}</p>
+        ))}</div>
         {page.voice && page.heading ? <p className="reader-story__signature">— {page.voice}</p> : null}
         {page.voice && !page.heading && !page.dropCap ? <p className="reader-story__signature">— {page.voice}</p> : null}
       </div>;

@@ -1,7 +1,8 @@
 import type { Book, Chapter, MediaAsset, Moment, Person, Perspective, Reflection } from '../../data/types';
 import { formatDate, truncate } from '../../lib/format';
 import { isAttachedMedia } from '../../lib/film/timeline';
-import { chapterLabel, paginateText, toRoman } from '../../lib/film/text';
+import { chapterLabel, toRoman } from '../../lib/film/text';
+import { paginateStoryText } from './readerPagination';
 
 /** One page of the page-flip reader. Pages are plain data so pagination is testable. */
 export type ReaderPage =
@@ -9,7 +10,7 @@ export type ReaderPage =
   | { kind: 'contents'; key: string; entries: { chapterId: string; label: string; title: string; page: number }[] }
   | { kind: 'chapter'; key: string; chapterId: string; numeral: string; label: string; title: string; description: string; momentCount: number }
   | { kind: 'story'; key: string; chapterId: string; momentId: string; text: string; heading?: { title: string; date: string; narrators: string[] };
-      voice?: string; dropCap: boolean; continued: boolean }
+      voice?: string; dropCap: boolean; continued: boolean; startsMidParagraph: boolean; separatorBefore: string }
   | { kind: 'photo'; key: string; chapterId: string; momentId: string; assetId: string; caption: string; author: string }
   | { kind: 'media'; key: string; chapterId: string; momentId: string; assetId: string; mediaType: 'audio' | 'video'; caption: string; author: string }
   | { kind: 'reflections'; key: string; chapterId: string; momentId: string; momentTitle: string; notes: { text: string; author: string }[] }
@@ -37,17 +38,22 @@ export interface PageBudget {
 export const DEFAULT_PAGE_BUDGET: PageBudget = { firstPageChars: 430, pageChars: 760 };
 
 /** Estimate the characters of serif body text that fit on a page of the given size (CSS pixels). */
-export function estimatePageBudget(pageWidth: number, pageHeight: number): PageBudget {
+export function estimatePageBudget(pageWidth: number, pageHeight: number, { compact = false } = {}): PageBudget {
   const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
   const fontSize = clamp(pageWidth * 0.036, 15.2, 17.3);
-  const paddingX = clamp(pageWidth * 0.085, 18, 46);
-  const chrome = clamp(pageWidth * 0.075, 18, 42) + clamp(pageWidth * 0.05, 12, 26) + 64;
+  // The landscape reader uses narrower padding and a smaller title so the
+  // estimate matches its actual text area rather than a tall portrait page.
+  const paddingX = compact ? 24 : clamp(pageWidth * 0.085, 18, 46);
+  const chrome = compact ? 60 : clamp(pageWidth * 0.075, 18, 42) + clamp(pageWidth * 0.05, 12, 26) + 64;
   const charsPerLine = (pageWidth - paddingX * 2) / (fontSize * 0.5);
   const lineHeight = fontSize * 1.68;
   const lines = (pageHeight - chrome) / lineHeight - 1.5;
-  const headingLines = 150 / lineHeight;
-  const round = (value: number) => Math.max(160, Math.floor(value / 40) * 40);
-  return { firstPageChars: round(charsPerLine * (lines - headingLines) * 0.9), pageChars: round(charsPerLine * lines * 0.9) };
+  const headingLines = (compact ? 100 : 150) / lineHeight;
+  const round = (value: number, minimum: number) => Math.max(minimum, Math.floor(value / 40) * 40);
+  return {
+    firstPageChars: round(charsPerLine * (lines - headingLines) * 0.9, compact ? 60 : 160),
+    pageChars: round(charsPerLine * lines * 0.9, compact ? 100 : 160)
+  };
 }
 
 export function pageChapterId(page: ReaderPage): string | undefined {
@@ -97,11 +103,12 @@ export function buildReaderPages(source: ReaderSource, { firstPageChars, pageCha
         narrators: [...new Set(perspectives.map((item) => item.authorId).filter((id): id is string => Boolean(id)).map(name))]
       };
       const opening = primary?.content ?? moment.summary;
-      const [first = '', ...restText] = opening.trim() ? paginateText(opening, firstPageChars) : [''];
-      pages.push({ kind: 'story', key: 'story:' + moment.id, ...base, heading, text: first, dropCap: Boolean(first), continued: false,
+      const openingPages = paginateStoryText(opening, { firstPageChars, pageChars });
+      const [first = { text: '', startsMidParagraph: false, separatorBefore: '' }, ...restText] = openingPages;
+      pages.push({ kind: 'story', key: 'story:' + moment.id, ...base, heading, ...first, dropCap: Boolean(first.text), continued: false,
         voice: primary && restText.length === 0 && perspectives.filter((item) => item.type === 'text').length > 1 ? name(primary.authorId) : undefined });
-      paginateText(restText.join('\n'), pageChars).forEach((text, index, all) => pages.push({
-        kind: 'story', key: `story:${moment.id}:${index}`, ...base, text, dropCap: false, continued: true,
+      restText.forEach((part, index, all) => pages.push({
+        kind: 'story', key: `story:${moment.id}:${index}`, ...base, ...part, dropCap: false, continued: true,
         voice: primary && index === all.length - 1 && perspectives.filter((item) => item.type === 'text').length > 1 ? name(primary.authorId) : undefined
       }));
 
@@ -109,8 +116,8 @@ export function buildReaderPages(source: ReaderSource, { firstPageChars, pageCha
         const asset = perspective.mediaAssetId ? source.assets.get(perspective.mediaAssetId) : undefined;
         const author = name(perspective.authorId);
         if (perspective.type === 'text' && perspective.id !== primary?.id && perspective.content.trim()) {
-          paginateText(perspective.content, pageChars).forEach((text, index) => pages.push({
-            kind: 'story', key: `voice:${perspective.id}:${index}`, ...base, text, dropCap: index === 0, continued: index > 0,
+          paginateStoryText(perspective.content, { firstPageChars: pageChars, pageChars }).forEach((part, index) => pages.push({
+            kind: 'story', key: `voice:${perspective.id}:${index}`, ...base, ...part, dropCap: index === 0, continued: index > 0,
             voice: author
           }));
         }

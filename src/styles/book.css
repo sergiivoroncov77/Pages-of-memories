@@ -235,11 +235,13 @@
 }
 
 .book3d__photo {
-  width: 74%;
-  aspect-ratio: 4 / 3;
+  width: auto;
+  height: auto;
+  max-width: 74%;
+  max-height: calc(var(--w) * 0.52);
   border: 3px solid #f4ead6;
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.35);
-  object-fit: cover;
+  object-fit: contain;
   rotate: -2deg;
 }
 
@@ -515,7 +517,7 @@
   }
 
   .moment-card:hover .moment-card__image {
-    transform: scale(1.04);
+    transform: none;
   }
 }
 

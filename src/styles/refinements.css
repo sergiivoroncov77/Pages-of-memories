@@ -65,7 +65,7 @@ button:disabled { cursor: not-allowed; }
 .moment-card { overflow: hidden; }
 .moment-card__main { height: 100%; padding: 0; display: flex; flex-direction: column; }
 .moment-card__body { padding: 22px; display: flex; flex: 1; flex-direction: column; }
-.moment-card__image { width: 100%; height: 172px; object-fit: cover; border-bottom: 1px solid var(--line); }
+.moment-card__image { width: 100%; height: 172px; object-fit: contain; background: var(--bg-deep); border-bottom: 1px solid var(--line); }
 .moment-card h3 { max-width: none; font-size: 1.4rem; line-height: 1.22; margin: 12px 0; }
 .moment-card p { font-size: .95rem; line-height: 1.6; min-height: 0; }
 .moment-card__footer { margin-top: auto; }

@@ -524,12 +524,12 @@
 .memory-card__media img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   transition: transform 400ms ease;
 }
 
 .memory-card:hover .memory-card__media img {
-  transform: scale(1.035);
+  transform: none;
 }
 
 .memory-card__quote {

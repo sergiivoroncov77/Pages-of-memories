@@ -46,7 +46,7 @@ import {
 import {
   addMediaAssetToSnapshot,
   addMemoryToSnapshot,
-  addMomentToSnapshot,
+  addMomentWithStoryToSnapshot,
   addPerspectiveToSnapshot,
   addReflectionToSnapshot,
   attachMemoryAudio,
@@ -122,7 +122,7 @@ interface AppStateValue {
   nextQuestion: (personId?: string) => Question | undefined;
   saveDraft: (input: Omit<MemoryDraft, 'id' | 'createdAt' | 'status'>) => MemoryDraft;
   addMemory: (input: NewMemoryInput) => Memory;
-  addMoment: (input: Parameters<typeof createMoment>[0]) => Moment;
+  addMoment: (input: Parameters<typeof createMoment>[0], story?: { content: string; authorId?: string }) => Moment;
   updateMoment: (id: string, patch: Parameters<typeof updateMomentInSnapshot>[2]) => void;
   /** Change a story and, with `media`, give it a new recording; a recording no longer used is removed. Throws on a wrong change. */
   updatePerspectiveWithMedia: (id: string, patch: Parameters<typeof updatePerspectiveInSnapshot>[2], media?: MediaUploadWithBlob) => Promise<StorageWriteResult>;
@@ -384,9 +384,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return result.memory;
   };
 
-  const addMoment = (input: Parameters<typeof createMoment>[0]) => {
-    const moment = createMoment(input);
-    commitSnapshot((current) => addMomentToSnapshot(current, moment));
+  const addMoment = (input: Parameters<typeof createMoment>[0], story?: { content: string; authorId?: string }) => {
+    let moment = createMoment(input);
+    commitSnapshot((current) => {
+      const next = addMomentWithStoryToSnapshot(current, moment, story);
+      moment = next.moments.find((item) => item.id === moment.id)!;
+      return next;
+    });
     return moment;
   };
 

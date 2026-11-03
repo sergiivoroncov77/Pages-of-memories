@@ -1,11 +1,42 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addPerspectiveToSnapshot, createMemoryDraft, ensureMemoryMoments, publishMemoryToSnapshot,
+import { addMomentWithStoryToSnapshot, addPerspectiveToSnapshot, createMoment, createMemoryDraft, ensureMemoryMoments, publishMemoryToSnapshot,
   removeUnusedMediaAsset, saveDraftToSnapshot, setMomentNarrationInSnapshot, toggleMemoryFavorite, toggleMomentFavorite,
   updateMomentInSnapshot, updatePerspectiveInSnapshot, updateReflectionInSnapshot } from './mutations';
 import { loadSnapshot, persistSnapshot } from './repository';
 import { seedSnapshot } from './seed';
 
 afterEach(() => vi.unstubAllGlobals());
+
+describe('creating a moment with its story', () => {
+  it('keeps paragraphs, line breaks and the author through save and reload', () => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal('window', { localStorage: {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value)
+    } });
+    const original = structuredClone(seedSnapshot);
+    const chapter = original.chapters[0];
+    const moment = createMoment({ bookId: chapter.bookId, chapterId: chapter.id, title: 'Школьный день', summary: 'Первый класс' });
+    const content = 'Первое предложение. Второе предложение.\n\nНовый абзац.\n— Реплика на новой строке.';
+    const next = addMomentWithStoryToSnapshot(original, moment, { content, authorId: original.people[0].id });
+    const saved = next.moments.find((item) => item.id === moment.id)!;
+    expect(saved.summary).toBe('Первый класс');
+    expect(next.perspectives.find((item) => item.id === saved.primaryPerspectiveId))
+      .toMatchObject({ content, authorId: original.people[0].id, isPrimary: true, type: 'text' });
+    persistSnapshot(next);
+    expect(loadSnapshot().perspectives.find((item) => item.id === saved.primaryPerspectiveId)?.content).toBe(content);
+    expect(original).toEqual(seedSnapshot);
+  });
+
+  it('allows an empty story and leaves the original untouched if its author is invalid', () => {
+    const original = structuredClone(seedSnapshot);
+    const chapter = original.chapters[0];
+    const moment = createMoment({ bookId: chapter.bookId, chapterId: chapter.id, title: 'Момент' });
+    expect(addMomentWithStoryToSnapshot(original, moment, { content: ' \n ' }).perspectives).toEqual(original.perspectives);
+    expect(() => addMomentWithStoryToSnapshot(original, moment, { content: 'Рассказ', authorId: 'missing' })).toThrow();
+    expect(original).toEqual(seedSnapshot);
+  });
+});
 
 describe('draft and publish mutations', () => {
   it('keeps tags and photo metadata across save, reload, publish, and another reload', () => {

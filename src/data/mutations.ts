@@ -324,6 +324,23 @@ export function addMomentToSnapshot(snapshot: AppSnapshot, moment: Moment): AppS
   return { ...snapshot, moments };
 }
 
+/** Create the moment and its optional opening story together, before either is persisted. */
+export function addMomentWithStoryToSnapshot(
+  snapshot: AppSnapshot,
+  moment: Moment,
+  story?: { content: string; authorId?: string }
+): AppSnapshot {
+  const next = addMomentToSnapshot(snapshot, moment);
+  if (!story?.content.trim()) return next;
+  return addPerspectiveToSnapshot(next, createPerspective({
+    momentId: moment.id,
+    type: 'text',
+    content: story.content,
+    authorId: story.authorId,
+    isPrimary: true
+  }));
+}
+
 export interface NewPerspectiveInput {
   momentId: string;
   type: Perspective['type'];

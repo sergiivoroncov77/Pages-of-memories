@@ -210,7 +210,7 @@
 .cover-picker__option img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .cover-picker__option input {

@@ -417,12 +417,15 @@
 }
 
 .reader-cover__photo {
-  width: 64%;
+  width: auto;
+  height: auto;
+  max-width: 64%;
   max-height: 38%;
-  aspect-ratio: 4 / 3;
+  min-height: 0;
+  aspect-ratio: auto;
   border: 6px solid #f6eedd;
   box-shadow: 0 12px 26px rgba(0, 0, 0, 0.4);
-  object-fit: cover;
+  object-fit: contain;
   rotate: -2deg;
 }
 
@@ -574,10 +577,12 @@
   line-height: 1.68;
   text-align: justify;
   text-indent: 1.4em;
+  white-space: pre-line;
   hyphens: auto;
 }
 
-.reader-story__text p:first-child {
+.reader-story__text p.is-continuation,
+.reader-story__text.has-drop-cap p:first-child {
   text-indent: 0;
 }
 
@@ -605,31 +610,51 @@
 
 /* Photo */
 .reader-photo {
-  margin: auto 0;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: clamp(8px, calc(var(--page-h) * 0.025), 18px);
+  margin: 0;
   text-align: center;
 }
 
 .reader-photo__print {
-  padding: clamp(6px, calc(var(--page-w) * 0.025), 12px);
-  padding-bottom: clamp(18px, calc(var(--page-w) * 0.07), 34px);
-  background: #fffdf8;
-  box-shadow: 0 1px 2px rgba(60, 38, 18, 0.2), 0 14px 30px rgba(60, 38, 18, 0.22);
-  rotate: -1.6deg;
-  transition: rotate 400ms ease;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
 }
 
 .reader-photo__print img {
-  width: 100%;
-  max-height: calc(var(--page-h) * 0.52);
-  aspect-ratio: 4 / 3;
-  object-fit: cover;
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: auto;
+  border: clamp(6px, calc(var(--page-w) * 0.025), 12px) solid #fffdf8;
+  border-bottom-width: clamp(18px, calc(var(--page-w) * 0.07), 34px);
+  background: #fffdf8;
+  box-shadow: 0 1px 2px rgba(60, 38, 18, 0.2), 0 8px 16px rgba(60, 38, 18, 0.18);
+  object-fit: contain;
   filter: sepia(0.08) saturate(0.95);
 }
 
 .reader-photo figcaption {
   display: grid;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 35%;
   gap: 6px;
-  margin-top: 18px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
 }
 
 .reader-photo figcaption span {
@@ -725,8 +750,12 @@
 }
 
 :root[data-theme='dark'] .reader-note,
-:root[data-theme='dark'] .reader-photo__print {
+:root[data-theme='dark'] .reader-photo__print img {
   background: #38312a;
+}
+
+:root[data-theme='dark'] .reader-photo__print img {
+  border-color: #38312a;
 }
 
 .reader-note p {
@@ -846,6 +875,121 @@ input[type='range'].range,
 
   .reader-leaf__face--front .reader-page {
     border-radius: 3px 10px 10px 3px;
+  }
+}
+
+/* A phone turned sideways needs its height for the page, rather than app navigation.
+   The reader keeps its own back link and page controls on screen. */
+@media (orientation: landscape) and (max-height: 600px) {
+  .app-shell:has(.page--reader) {
+    display: block;
+  }
+
+  .app-shell:has(.page--reader) > .sidebar,
+  .app-shell:has(.page--reader) > .mobile-topbar,
+  .app-shell:has(.page--reader) > .mobile-nav {
+    display: none;
+  }
+
+  .app-main:has(.page--reader) {
+    padding: calc(8px + env(safe-area-inset-top)) calc(8px + env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));
+  }
+
+  .page--reader {
+    display: grid;
+    height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    grid-template-rows: 44px minmax(0, 1fr) 44px;
+    gap: 6px;
+  }
+
+  .reader-header {
+    justify-content: space-between;
+  }
+
+  .reader-header__title {
+    display: none;
+  }
+
+  .reader-stage--single {
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .reader-page {
+    padding: 12px 24px 10px;
+  }
+
+  .reader-page--cover,
+  .reader-page--end {
+    padding: 0;
+  }
+
+  .reader-page__head {
+    margin-bottom: 8px;
+  }
+
+  .reader-page__number {
+    margin-top: 6px;
+  }
+
+  .reader-story__heading {
+    margin-bottom: 10px;
+  }
+
+  .reader-story__heading h2 {
+    margin-bottom: 6px;
+    font-size: 1.25rem;
+  }
+
+  .reader-story__narrators {
+    font-size: 0.82rem;
+  }
+
+  .reader-story__heading .reader-kicker {
+    margin-bottom: 6px;
+  }
+
+  .reader-cover__frame {
+    gap: 8px;
+    padding: 14px 18px;
+  }
+
+  .reader-cover h2 {
+    font-size: 1.5rem;
+  }
+
+  .reader-cover__photo {
+    max-height: 40%;
+  }
+
+  .reader-photo__print img {
+    border-width: 6px;
+    border-bottom-width: 16px;
+  }
+
+  .reader-photo figcaption {
+    gap: 3px;
+  }
+
+  .reader-photo figcaption span {
+    font-size: 0.9rem;
+  }
+
+  .reader-controls__turn,
+  .reader-controls__film {
+    width: 44px;
+    height: 44px;
+  }
+
+  .reader-controls__film {
+    padding: 0;
+    justify-content: center;
+  }
+
+  .reader-controls__film span {
+    display: none;
   }
 }
 
