@@ -2,6 +2,7 @@ import { deleteChapterFromSnapshot, deleteMomentsFromSnapshot } from '../data/li
 import { entityFields, isSafeBackupMediaUrl, normalizeSnapshotValue, validateFields } from '../data/repository';
 import type { AppSnapshot, Book, Chapter, MediaAsset, Moment, Person, Perspective, Reflection } from '../data/types';
 import { isStoredMedia, storedMediaUrl } from '../lib/mediaStore';
+import { referencedMediaIds, storyMediaIds } from '../data/mediaRefs';
 
 /*
  * A book in the family storage is a flat set of records keyed "type:id".
@@ -67,7 +68,7 @@ export function mediaIdsOfBook(snapshot: AppSnapshot, bookId: string): Set<strin
   return new Set([
     book?.coverMediaAssetId,
     ...moments.map((moment) => moment.narrationMediaAssetId),
-    ...snapshot.perspectives.filter((item) => momentIds.has(item.momentId)).map((item) => item.mediaAssetId)
+    ...storyMediaIds(snapshot.perspectives.filter((item) => momentIds.has(item.momentId)), snapshot.reflections.filter((item) => momentIds.has(item.momentId)))
   ].filter((id): id is string => Boolean(id)));
 }
 
@@ -299,12 +300,7 @@ export function applyRemoteEntities(snapshot: AppSnapshot, bookId: string, entit
     };
   }
   if (removedMedia.size) {
-    const used = new Set([
-      ...next.perspectives.map((item) => item.mediaAssetId),
-      ...next.moments.map((item) => item.narrationMediaAssetId),
-      ...next.books.map((item) => item.coverMediaAssetId),
-      ...next.drafts.map((item) => item.audioMediaAssetId)
-    ]);
+    const used = referencedMediaIds(next);
     const gone = [...removedMedia].filter((assetId) => !used.has(assetId));
     next = { ...next, mediaAssets: next.mediaAssets.filter((asset) => !gone.includes(asset.id)) };
     removedMediaIds.push(...gone);

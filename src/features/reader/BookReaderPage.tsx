@@ -1,10 +1,10 @@
-import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Clapperboard, FileAudio, MessageCircle } from 'lucide-react';
+import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Clapperboard, Maximize2, MessageCircle } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { EmptyState } from '../../components/EmptyState';
 import { MediaImage } from '../../components/MediaImage';
-import { StoredAudio } from '../../components/StoredAudio';
+import { VoiceNote } from '../../components/VoiceNote';
 import type { MediaAsset } from '../../data/types';
 import { clothStyle } from '../../lib/cloth';
 import { chronologicalMoments } from '../../lib/film/timeline';
@@ -86,6 +86,20 @@ function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bo
   const contents = pages.find((page): page is Extract<ReaderPage, { kind: 'contents' }> => page.kind === 'contents');
   const chapterTitles = useMemo(() => new Map(contents?.entries.map((entry) => [entry.chapterId, entry.title]) ?? []), [contents]);
   const chapterId = pageChapterId(pages[safeCurrent]);
+  // Reading without the menus: a tap in the middle of the page hides them and brings them back.
+  const [immersive, setImmersive] = useState(false);
+  const [hint, setHint] = useState(false);
+  const toggleImmersive = useCallback(() => {
+    setImmersive((value) => {
+      if (!value) setHint(true);
+      return !value;
+    });
+  }, []);
+  useEffect(() => {
+    if (!hint) return;
+    const timer = window.setTimeout(() => setHint(false), 2600);
+    return () => window.clearTimeout(timer);
+  }, [hint]);
 
   useEffect(() => {
     const stage = stageRef.current;
@@ -127,10 +141,11 @@ function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bo
       if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); previous(); }
       if (event.key === 'Home') { event.preventDefault(); turnTo(0); }
       if (event.key === 'End') { event.preventDefault(); turnTo(pages.length - 1); }
+      if (event.key === 'Escape' && immersive) { event.preventDefault(); setImmersive(false); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [next, previous, pages.length, turnTo]);
+  }, [next, previous, pages.length, turnTo, immersive]);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     pointer.current = { x: event.clientX, y: event.clientY, time: performance.now() };
@@ -150,8 +165,11 @@ function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bo
     if (!tap || (event.target as HTMLElement).closest('button, a, audio, video, input, select, label')) return;
     const box = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - box.left) / box.width;
-    if (spread ? x > 0.5 : x > 0.66) next();
-    else if (spread ? x <= 0.5 : x < 0.34) previous();
+    // The middle of the screen shows or hides the menus; the sides turn pages.
+    const middle = spread ? x > 0.42 && x < 0.58 : x >= 0.34 && x <= 0.66;
+    if (middle) toggleImmersive();
+    else if (x > 0.5) next();
+    else previous();
   };
 
   const closed = spread && turned === 0 ? 'is-closed-front' : spread && turned === leaves.length ? 'is-closed-back' : '';
@@ -159,7 +177,8 @@ function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bo
   const totalNumbered = pages.length - 2;
   const pageLabel = safeCurrent === 0 ? 'Обложка' : safeCurrent === pages.length - 1 ? 'Последняя страница' : `Страница ${safeCurrent} из ${totalNumbered}`;
 
-  return <div className="page page--reader">
+  return <div className={'page page--reader' + (immersive ? ' is-immersive' : '')}>
+    {hint ? <p className="reader-hint" role="status">Нажмите в центр страницы, чтобы вернуть меню</p> : null}
     <header className="reader-header">
       <Link className="back-link" to="/book"><ArrowLeft size={20} aria-hidden="true" /> К книге</Link>
       <h1 className="reader-header__title">{bookTitle}</h1>
@@ -171,6 +190,9 @@ function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bo
           <option value="">Содержание</option>
           {contents.entries.map((entry) => <option key={entry.chapterId} value={entry.chapterId}>{entry.label}: {entry.title}</option>)}
         </select></label> : null}
+      <button type="button" className="icon-button reader-header__immersive" onClick={toggleImmersive} aria-label="Скрыть меню для чтения" title="Скрыть меню (или нажмите в центр страницы)">
+        <Maximize2 size={18} aria-hidden="true" />
+      </button>
     </header>
 
     <div ref={stageRef} className={'reader-stage ' + (spread ? 'reader-stage--spread' : 'reader-stage--single')} onPointerDown={onPointerDown} onPointerUp={onPointerUp}
@@ -261,6 +283,8 @@ function PageView({ page, number, total, assets, chapterTitles, onJump }: PageVi
         ))}</div>
         {page.voice && page.heading ? <p className="reader-story__signature">— {page.voice}</p> : null}
         {page.voice && !page.heading && !page.dropCap ? <p className="reader-story__signature">— {page.voice}</p> : null}
+        {page.audioIds?.map((id) => assets.get(id)).filter((asset): asset is MediaAsset => Boolean(asset))
+          .map((asset) => <VoiceNote key={asset.id} asset={asset} label={page.voice ? 'Голос: ' + page.voice : 'Послушать рассказ'} className="reader-story__voice" />)}
       </div>;
       break;
     case 'photo': {
@@ -273,16 +297,19 @@ function PageView({ page, number, total, assets, chapterTitles, onJump }: PageVi
     }
     case 'media': {
       const asset = assets.get(page.assetId);
-      body = <div className="reader-media"><p className="reader-kicker">{page.mediaType === 'audio' ? 'Голос из прошлого' : 'Видео'}</p>
-        <span className="reader-media__icon" aria-hidden="true"><FileAudio size={28} /></span>
-        <h3>{page.author}</h3><p>{page.caption}</p>
-        {asset ? page.mediaType === 'audio' ? <StoredAudio asset={asset} label={page.caption} /> : <ReaderVideo asset={asset} /> : null}</div>;
+      body = <div className={'reader-media reader-media--' + page.mediaType}>
+        <h3>{page.author}</h3>{page.caption ? <p>{page.caption}</p> : null}
+        {asset ? page.mediaType === 'audio' ? <VoiceNote asset={asset} label={page.caption || 'Рассказ голосом'} /> : <ReaderVideo asset={asset} /> : null}</div>;
       break;
     }
     case 'reflections':
       body = <div className="reader-notes"><p className="reader-kicker"><MessageCircle size={14} aria-hidden="true" /> Отклики близких</p>
         <h3>{page.momentTitle}</h3>
-        {page.notes.map((note, index) => <blockquote key={index} className="reader-note"><p>{note.text}</p><cite>{note.author}</cite></blockquote>)}</div>;
+        {page.notes.map((note, index) => {
+          const voice = note.voiceId ? assets.get(note.voiceId) : undefined;
+          return <blockquote key={index} className="reader-note">{note.text ? <p>{note.text}</p> : null}
+            {voice ? <VoiceNote asset={voice} label="Отклик голосом" /> : null}<cite>{note.author}</cite></blockquote>;
+        })}</div>;
       break;
     case 'end':
       body = <div className="reader-cover reader-cover--back"><div className="reader-cover__frame"><Fleuron className="reader-cover__mark" />

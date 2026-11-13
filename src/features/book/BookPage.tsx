@@ -19,6 +19,7 @@ import { BookShelf, ImportBookButton } from '../library/BookShelf';
 import { ChapterForm } from '../library/ChapterForm';
 import { ShareBookPanel } from '../library/ShareBookPanel';
 import { MomentDetailsForm, type MomentDetails } from '../moments/MomentDetailsForm';
+import { perspectiveMediaIds } from '../../data/mediaRefs';
 
 type Panel = 'none' | 'new-book' | 'edit-book' | 'share' | 'moment' | 'new-chapter';
 
@@ -51,7 +52,7 @@ export function BookPage() {
   const voiceCount = new Set(allMoments.flatMap((moment) => perspectivesForMoment(moment.id).map((item) => item.authorId).filter(Boolean))).size;
   const hasFilters = Boolean(query || personId || activeChapterId || favoritesOnly);
   const bookPhotos = mediaAssets.filter((asset) => asset.type === 'photo'
-    && allMoments.some((moment) => perspectivesForMoment(moment.id).some((item) => item.mediaAssetId === asset.id)));
+    && allMoments.some((moment) => perspectivesForMoment(moment.id).some((item) => perspectiveMediaIds(item).includes(asset.id))));
 
   const reveal = (id: string) => window.requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   // Opened from «Пригласить близких»: the sharing panel is open; the address forgets the request.

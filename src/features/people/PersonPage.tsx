@@ -13,6 +13,7 @@ import type { QuestionStatus } from '../../data/types';
 import { formatDate, pluralize, truncate } from '../../lib/format';
 import { useCloudSync } from '../../sync/CloudSync';
 import { PersonForm } from './PersonForm';
+import { perspectiveMediaIds } from '../../data/mediaRefs';
 
 const statusCopy: Record<QuestionStatus, string> = {
   answered: 'Ответ сохранён',
@@ -146,7 +147,7 @@ export function PersonPage() {
           <div className="moment-grid">
             {personMoments.map(({ moment, contributions }) => {
               const chapter = chapters.find((item) => item.id === moment.chapterId);
-              const photoIds = new Set(contributions.map((perspective) => perspective.mediaAssetId));
+              const photoIds = new Set(contributions.flatMap(perspectiveMediaIds));
               const photo = mediaAssets.find((asset) => photoIds.has(asset.id) && asset.type === 'photo');
               const excerpt = contributions.find((perspective) => perspective.content.trim())?.content
                 || contributions.find((perspective) => perspective.caption?.trim())?.caption

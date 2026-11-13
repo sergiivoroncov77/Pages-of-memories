@@ -62,9 +62,11 @@ import {
   toggleMomentFavorite,
   toggleMemoryFavorite,
   updateMomentInSnapshot,
+  storyType,
   updatePerspectiveInSnapshot,
   updateReflectionInSnapshot
 } from '../data/mutations';
+import { perspectiveAssets, perspectiveMediaIds } from '../data/mediaRefs';
 import type {
   AppSettings,
   AppSnapshot,
@@ -137,6 +139,14 @@ interface AppStateValue {
   setMomentNarration: (momentId: string, media: MediaUploadWithBlob | null) => Promise<StorageWriteResult>;
   discardMedia: (assetId: string) => void;
   addReflection: (input: Parameters<typeof createReflection>[0]) => Reflection;
+  /** A reflection in words, aloud, or both; the voice is stored on the device first. */
+  addReflectionWithMedia: (input: Parameters<typeof createReflection>[0], voice?: MediaUploadWithBlob) => Promise<StorageWriteResult>;
+  /** A story with its words and any number of attached files (voice, photos, video). */
+  addStory: (input: Omit<Parameters<typeof createPerspective>[0], 'type' | 'mediaAssetId' | 'attachmentIds'>, files: MediaUploadWithBlob[]) => Promise<StorageWriteResult>;
+  /** Change a story's words and files: keep some of its files, attach new ones; files let go are removed once unused. */
+  updateStory: (id: string, patch: { content: string; caption?: string; authorId?: string }, keep: string[], files: MediaUploadWithBlob[]) => Promise<StorageWriteResult>;
+  /** Files of a story in display order. */
+  mediaForStory: (perspectiveId: string) => MediaAsset[];
   addMediaAsset: (input: Parameters<typeof createMediaAsset>[0]) => MediaAsset;
   toggleFavorite: (memoryId: string) => void;
   toggleMomentFavorite: (momentId: string) => void;
@@ -343,6 +353,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     snapshot.reflections
       .filter((reflection) => reflection.momentId === momentId)
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  const mediaForStory = (perspectiveId: string) => {
+    const perspective = snapshot.perspectives.find((item) => item.id === perspectiveId);
+    return perspective ? perspectiveAssets(perspective, snapshot.mediaAssets) : [];
+  };
   const mediaForPerspective = (perspectiveId: string) => {
     const perspective = snapshot.perspectives.find((item) => item.id === perspectiveId);
     return perspective?.mediaAssetId
@@ -512,6 +526,52 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  /** Store every file, then apply one change that references them; on failure no file is left behind. */
+  const commitWithFiles = async (files: MediaUploadWithBlob[], letGo: string[],
+    change: (current: AppSnapshot, assets: MediaAsset[]) => AppSnapshot): Promise<StorageWriteResult> => {
+    if (originalDataRef.current !== undefined) return { ok: false, error: recoveryPendingError() };
+    const assets: MediaAsset[] = [];
+    const dropStored = () => assets.forEach((asset) => { void mediaStore().delete(asset.id).catch(() => undefined); });
+    for (const file of files) {
+      const stored = await putMediaBlob(file);
+      if (!stored.ok) { dropStored(); return stored; }
+      assets.push(stored.asset);
+    }
+    let next: AppSnapshot;
+    try {
+      next = change(assets.reduce(addMediaAssetToSnapshot, snapshotRef.current), assets);
+      letGo.forEach((id) => { next = removeUnusedMediaAsset(next, id); });
+    } catch (error) {
+      dropStored();
+      throw error;
+    }
+    const result: StorageWriteResult = originalDataRef.current !== undefined ? { ok: false, error: recoveryPendingError() } : persistSnapshot(next);
+    if (!result.ok) { dropStored(); return result; }
+    snapshotRef.current = next;
+    persistenceErrorRef.current = null;
+    setPersistenceError(null);
+    setSnapshot(next);
+    letGo.filter((id) => !next.mediaAssets.some((asset) => asset.id === id))
+      .forEach((id) => { void mediaStore().delete(id).catch(() => undefined); });
+    return result;
+  };
+
+  const addStory: AppStateValue['addStory'] = (input, files) => commitWithFiles(files, [], (current, assets) => {
+    const perspective = createPerspective({ ...input, type: storyType(input.content, assets), attachmentIds: assets.map((asset) => asset.id) });
+    return addPerspectiveToSnapshot(current, perspective);
+  });
+
+  const updateStory: AppStateValue['updateStory'] = (id, patch, keep, files) => {
+    const before = snapshotRef.current.perspectives.find((item) => item.id === id);
+    const letGo = before ? perspectiveMediaIds(before).filter((assetId) => !keep.includes(assetId)) : [];
+    return commitWithFiles(files, letGo, (current, assets) =>
+      updatePerspectiveInSnapshot(current, id, { ...patch, attachmentIds: [...keep, ...assets.map((asset) => asset.id)] }));
+  };
+
+  const addReflectionWithMedia: AppStateValue['addReflectionWithMedia'] = (input, voice) =>
+    commitWithFiles(voice ? [voice] : [], [], (current, assets) =>
+      addReflectionToSnapshot(current, createReflection({ ...input, mediaAssetId: assets[0]?.id })));
+
   const addReflection = (input: Parameters<typeof createReflection>[0]) => {
     const reflection = createReflection(input);
     commitSnapshot((current) => addReflectionToSnapshot(current, reflection));
@@ -610,7 +670,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const deletePerspective = (perspectiveId: string) => commitDeletion((current) => deletePerspectiveFromSnapshot(current, perspectiveId));
 
-  const deleteReflection = (reflectionId: string) => commitSnapshot((current) => deleteReflectionFromSnapshot(current, reflectionId));
+  const deleteReflection = (reflectionId: string) => commitDeletion((current) => deleteReflectionFromSnapshot(current, reflectionId));
 
   const createPerson = (input: PersonInput) => {
     let person: Person | undefined;
@@ -649,7 +709,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const portable = {
       ...pkg,
       mediaAssets: assets.filter((asset) => !lost.has(asset.id)),
-      perspectives: pkg.perspectives.map((item) => item.mediaAssetId && lost.has(item.mediaAssetId) ? { ...item, mediaAssetId: undefined } : item),
+      perspectives: pkg.perspectives.map((item) => {
+        const attachmentIds = item.attachmentIds?.filter((id) => !lost.has(id));
+        const mediaAssetId = item.mediaAssetId && lost.has(item.mediaAssetId) ? undefined : item.mediaAssetId;
+        return { ...item, mediaAssetId, attachmentIds: attachmentIds?.length ? attachmentIds : undefined };
+      }),
+      reflections: pkg.reflections.map((item) => item.mediaAssetId && lost.has(item.mediaAssetId) ? { ...item, mediaAssetId: undefined } : item),
       moments: pkg.moments.map((moment) => moment.narrationMediaAssetId && lost.has(moment.narrationMediaAssetId) ? { ...moment, narrationMediaAssetId: undefined } : moment),
       book: pkg.book.coverMediaAssetId && lost.has(pkg.book.coverMediaAssetId) ? { ...pkg.book, coverMediaAssetId: undefined } : pkg.book
     };
@@ -741,6 +806,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setMomentNarration,
         discardMedia,
         addReflection,
+        addReflectionWithMedia,
+        addStory,
+        updateStory,
+        mediaForStory,
         addMediaAsset,
         toggleFavorite,
         toggleMomentFavorite: toggleMomentFavoriteState,

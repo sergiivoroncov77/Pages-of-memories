@@ -3,6 +3,7 @@ import { formatDate, truncate } from '../../lib/format';
 import { isAttachedMedia } from '../../lib/film/timeline';
 import { chapterLabel, toRoman } from '../../lib/film/text';
 import { paginateStoryText } from './readerPagination';
+import { perspectiveAssets } from '../../data/mediaRefs';
 
 /** One page of the page-flip reader. Pages are plain data so pagination is testable. */
 export type ReaderPage =
@@ -10,10 +11,12 @@ export type ReaderPage =
   | { kind: 'contents'; key: string; entries: { chapterId: string; label: string; title: string; page: number }[] }
   | { kind: 'chapter'; key: string; chapterId: string; numeral: string; label: string; title: string; description: string; momentCount: number }
   | { kind: 'story'; key: string; chapterId: string; momentId: string; text: string; heading?: { title: string; date: string; narrators: string[] };
-      voice?: string; dropCap: boolean; continued: boolean; startsMidParagraph: boolean; separatorBefore: string }
+      voice?: string; dropCap: boolean; continued: boolean; startsMidParagraph: boolean; separatorBefore: string;
+      /** Recordings told with these words: a small player follows the text on its last page. */
+      audioIds?: string[] }
   | { kind: 'photo'; key: string; chapterId: string; momentId: string; assetId: string; caption: string; author: string }
   | { kind: 'media'; key: string; chapterId: string; momentId: string; assetId: string; mediaType: 'audio' | 'video'; caption: string; author: string }
-  | { kind: 'reflections'; key: string; chapterId: string; momentId: string; momentTitle: string; notes: { text: string; author: string }[] }
+  | { kind: 'reflections'; key: string; chapterId: string; momentId: string; momentTitle: string; notes: { text: string; author: string; voiceId?: string }[] }
   | { kind: 'end'; key: string; title: string }
   | { kind: 'blank'; key: string };
 
@@ -95,45 +98,68 @@ export function buildReaderPages(source: ReaderSource, { firstPageChars, pageCha
     });
     moments.forEach(({ moment, perspectives, reflections }) => {
       const base = { chapterId: chapter.id, momentId: moment.id };
-      const primary = perspectives.find((item) => item.id === moment.primaryPerspectiveId && item.type === 'text' && item.content.trim())
-        ?? perspectives.find((item) => item.type === 'text' && item.content.trim());
+      // Any story with words opens the moment, whether it was written or told aloud with a few words.
+      const told = (item: Perspective) => Boolean(item.content.trim()) && item.type !== 'photo' && item.type !== 'video';
+      const primary = perspectives.find((item) => item.id === moment.primaryPerspectiveId && told(item))
+        ?? perspectives.find((item) => item.type === 'text' && item.content.trim()) ?? perspectives.find(told);
+      const filesOf = (item: Perspective) => perspectiveAssets(item, source.assets);
+      const voicesOf = (item: Perspective) => filesOf(item).filter((asset) => asset.type === 'audio' && isAttachedMedia(asset)).map((asset) => asset.id);
+      const wordsCount = perspectives.filter(told).length;
+      // A small player under the text takes about two lines of the page.
+      const budgetFor = (item: Perspective | undefined, first: number, rest: number) => item && voicesOf(item).length
+        ? { firstPageChars: Math.max(80, first - 120), pageChars: Math.max(120, rest - 120) } : { firstPageChars: first, pageChars: rest };
       const heading = {
         title: moment.title,
         date: moment.occurredAt ? formatDate(moment.occurredAt) : '',
         narrators: [...new Set(perspectives.map((item) => item.authorId).filter((id): id is string => Boolean(id)).map(name))]
       };
       const opening = primary?.content ?? moment.summary;
-      const openingPages = paginateStoryText(opening, { firstPageChars, pageChars });
+      const openingPages = paginateStoryText(opening, budgetFor(primary, firstPageChars, pageChars));
       const [first = { text: '', startsMidParagraph: false, separatorBefore: '' }, ...restText] = openingPages;
+      const primaryVoices = primary ? voicesOf(primary) : [];
+      const signed = primary && wordsCount > 1 ? name(primary.authorId) : undefined;
       pages.push({ kind: 'story', key: 'story:' + moment.id, ...base, heading, ...first, dropCap: Boolean(first.text), continued: false,
-        voice: primary && restText.length === 0 && perspectives.filter((item) => item.type === 'text').length > 1 ? name(primary.authorId) : undefined });
+        voice: restText.length === 0 ? signed : undefined, audioIds: restText.length === 0 && primaryVoices.length ? primaryVoices : undefined });
       restText.forEach((part, index, all) => pages.push({
         kind: 'story', key: `story:${moment.id}:${index}`, ...base, ...part, dropCap: false, continued: true,
-        voice: primary && index === all.length - 1 && perspectives.filter((item) => item.type === 'text').length > 1 ? name(primary.authorId) : undefined
+        voice: index === all.length - 1 ? signed : undefined, audioIds: index === all.length - 1 && primaryVoices.length ? primaryVoices : undefined
       }));
 
       perspectives.forEach((perspective) => {
-        const asset = perspective.mediaAssetId ? source.assets.get(perspective.mediaAssetId) : undefined;
         const author = name(perspective.authorId);
-        if (perspective.type === 'text' && perspective.id !== primary?.id && perspective.content.trim()) {
-          paginateStoryText(perspective.content, { firstPageChars: pageChars, pageChars }).forEach((part, index) => pages.push({
+        const files = filesOf(perspective);
+        // An older story's own file keeps the page key it always had.
+        const keyOf = (asset: MediaAsset) => asset.id === perspective.mediaAssetId ? perspective.id : perspective.id + ':' + asset.id;
+        const withWords = told(perspective);
+        const voices = voicesOf(perspective);
+        if (withWords && perspective.id !== primary?.id) {
+          const parts = paginateStoryText(perspective.content, budgetFor(perspective, pageChars, pageChars));
+          parts.forEach((part, index) => pages.push({
             kind: 'story', key: `voice:${perspective.id}:${index}`, ...base, ...part, dropCap: index === 0, continued: index > 0,
-            voice: author
+            voice: author, audioIds: index === parts.length - 1 && voices.length ? voices : undefined
           }));
         }
-        if (asset?.type === 'photo' && (perspective.type === 'photo' || perspective.type === 'text')) {
-          pages.push({ kind: 'photo', key: 'photo:' + perspective.id, ...base, assetId: asset.id, caption: perspective.caption || perspective.content || asset.alt || '', author });
-        }
-        if ((perspective.type === 'audio' || perspective.type === 'video') && isAttachedMedia(asset) && asset.type === perspective.type) {
-          pages.push({ kind: 'media', key: 'media:' + perspective.id, ...base, assetId: asset.id, mediaType: perspective.type,
-            caption: perspective.caption || perspective.content || (perspective.type === 'audio' ? 'Голосовая запись' : 'Видео'), author });
-        }
+        files.forEach((asset) => {
+          const own = asset.id === perspective.mediaAssetId;
+          const caption = own ? perspective.caption || perspective.content || asset.alt || '' : asset.alt || perspective.caption || '';
+          if (asset.type === 'photo' && (!own || perspective.type === 'photo' || perspective.type === 'text')) {
+            pages.push({ kind: 'photo', key: 'photo:' + keyOf(asset), ...base, assetId: asset.id, caption, author });
+          }
+          if (asset.type === 'video' && isAttachedMedia(asset) && (!own || perspective.type === 'video')) {
+            pages.push({ kind: 'media', key: 'media:' + keyOf(asset), ...base, assetId: asset.id, mediaType: 'video', caption: caption || 'Видео', author });
+          }
+          // A voice without words gets a quiet page of its own; with words it plays under the text.
+          if (asset.type === 'audio' && !withWords && isAttachedMedia(asset) && (!own || perspective.type === 'audio')) {
+            pages.push({ kind: 'media', key: 'media:' + keyOf(asset), ...base, assetId: asset.id, mediaType: 'audio', caption: caption || 'Рассказ голосом', author });
+          }
+        });
       });
 
       for (let index = 0; index < reflections.length; index += 3) {
         pages.push({
           kind: 'reflections', key: `reflections:${moment.id}:${index}`, ...base, momentTitle: moment.title,
-          notes: reflections.slice(index, index + 3).map((reflection) => ({ text: truncate(reflection.text, 320), author: name(reflection.authorId) }))
+          notes: reflections.slice(index, index + 3).map((reflection) => ({ text: truncate(reflection.text, 320), author: name(reflection.authorId),
+            voiceId: reflection.mediaAssetId && isAttachedMedia(source.assets.get(reflection.mediaAssetId)) ? reflection.mediaAssetId : undefined }))
         });
       }
     });

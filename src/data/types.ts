@@ -119,6 +119,8 @@ export interface Perspective {
   type: PerspectiveType;
   content: string;
   mediaAssetId?: string;
+  /** Voice, photos and video attached to the story's words, in the order they are shown. */
+  attachmentIds?: string[];
   caption?: string;
   createdAt: string;
   isPrimary: boolean;
@@ -128,7 +130,10 @@ export interface Reflection {
   id: string;
   momentId: string;
   authorId?: string;
+  /** May be empty when the reflection is told aloud. */
   text: string;
+  /** The voice of a reflection told aloud. */
+  mediaAssetId?: string;
   createdAt: string;
 }
 

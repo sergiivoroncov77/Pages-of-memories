@@ -3,6 +3,7 @@ import { ensureMemoryMoments } from './mutations';
 import { normalizeSnapshotValue } from './repository';
 import { seedSnapshot } from './seed';
 import type { AppSnapshot } from './types';
+import { perspectiveMediaIds, referencedMediaIds } from './mediaRefs';
 
 /*
  * The demo family and its book: a sample to look around the app. It is off by
@@ -46,7 +47,7 @@ export function demoDependents(snapshot: AppSnapshot): number {
     ...own('chapters', snapshot.chapters).filter((item) => ids.books.has(item.bookId)),
     ...own('moments', snapshot.moments).filter((item) => ids.books.has(item.bookId) || ids.chapters.has(item.chapterId)
       || Boolean(item.sourceMemoryId && ids.memories.has(item.sourceMemoryId)) || demoMedia(item.narrationMediaAssetId)),
-    ...own('perspectives', snapshot.perspectives).filter((item) => ids.moments.has(item.momentId) || demoPerson(item.authorId) || demoMedia(item.mediaAssetId)),
+    ...own('perspectives', snapshot.perspectives).filter((item) => ids.moments.has(item.momentId) || demoPerson(item.authorId) || perspectiveMediaIds(item).some(demoMedia)),
     ...own('reflections', snapshot.reflections).filter((item) => ids.moments.has(item.momentId) || demoPerson(item.authorId))
   ].length;
 }
@@ -79,12 +80,7 @@ export function removeDemo(snapshot: AppSnapshot): DeletionResult {
   delete settings.demoBook;
   const next = normalizeSnapshotValue({ ...result.snapshot, ...rest, settings } as AppSnapshot);
   // Demo pictures nothing uses any more go too; the family's own files stay.
-  const used = new Set([
-    ...next.perspectives.map((item) => item.mediaAssetId),
-    ...next.moments.map((item) => item.narrationMediaAssetId),
-    ...next.books.map((item) => item.coverMediaAssetId),
-    ...next.drafts.map((item) => item.audioMediaAssetId)
-  ]);
+  const used = referencedMediaIds(next);
   const gone = next.mediaAssets.filter((asset) => ids.mediaAssets.has(asset.id) && !used.has(asset.id)).map((asset) => asset.id);
   return {
     snapshot: gone.length ? { ...next, mediaAssets: next.mediaAssets.filter((asset) => !gone.includes(asset.id)) } : next,

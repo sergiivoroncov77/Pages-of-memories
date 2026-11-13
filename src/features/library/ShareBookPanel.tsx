@@ -8,6 +8,7 @@ import { formatFileSize } from '../../lib/format';
 import { appAddress, copyText, downloadFile, shareOrDownload } from '../../lib/shareFile';
 import { useCloudSync } from '../../sync/CloudSync';
 import { CloudInvitePanel } from '../cloud/CloudInvitePanel';
+import { storyMediaIds } from '../../data/mediaRefs';
 
 type Status = { kind: 'idle' } | { kind: 'packing' } | { kind: 'done'; message: string; file: File } | { kind: 'error'; message: string };
 
@@ -18,7 +19,7 @@ type Status = { kind: 'idle' } | { kind: 'packing' } | { kind: 'done'; message: 
  * relative adds their memories and sends it back, new things are merged in.
  */
 export function ShareBookPanel({ book, person, onClose }: { book: Book; person?: Person; onClose?: () => void }) {
-  const { packBook, moments, perspectives, mediaAssets } = useAppState();
+  const { packBook, moments, perspectives, reflections, mediaAssets } = useAppState();
   const cloud = useCloudSync();
   const personName = person?.name;
   const shared = Boolean(cloud.connection && cloud.books[book.id]);
@@ -29,7 +30,7 @@ export function ShareBookPanel({ book, person, onClose }: { book: Book; person?:
   const mediaIds = new Set([
     book.coverMediaAssetId,
     ...moments.filter((moment) => momentIds.has(moment.id)).map((moment) => moment.narrationMediaAssetId),
-    ...perspectives.filter((item) => momentIds.has(item.momentId)).map((item) => item.mediaAssetId)
+    ...storyMediaIds(perspectives.filter((item) => momentIds.has(item.momentId)), reflections.filter((item) => momentIds.has(item.momentId)))
   ]);
   const estimated = mediaAssets.filter((asset) => mediaIds.has(asset.id)).reduce((total, asset) => total + (asset.sizeBytes ?? 0), 0) * 1.37;
   const message = `${personName ? personName + ', это' : 'Это'} наша семейная книга «${book.title}». Откройте приложение «Истории близких»: ${address} — затем «Библиотека» → «Открыть файл книги» и выберите файл из этого сообщения. Добавьте свои воспоминания и пришлите файл обратно.`;

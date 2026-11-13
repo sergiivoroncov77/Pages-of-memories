@@ -3,6 +3,7 @@ import type { Chapter, MediaAsset, Moment, Person, Perspective, Reflection } fro
 export { chronologicalMoments } from '../../data/library';
 import { formatDate, truncate } from '../format';
 import { chapterLabel, paginateText, readingSeconds } from './text';
+import { perspectiveAssets } from '../../data/mediaRefs';
 
 /**
  * The chapter film is described as plain data: a list of timed scenes plus
@@ -180,11 +181,12 @@ export function filmMediaRequests(source: FilmSource): { photos: MediaAsset[]; a
   const videos = new Map<string, MediaAsset>();
   source.moments.forEach(({ moment, perspectives }) => {
     perspectives.forEach((perspective) => {
-      const asset = perspective.mediaAssetId ? source.assets.get(perspective.mediaAssetId) : undefined;
-      if (!isAttachedMedia(asset)) return;
-      if (asset.type === 'photo') photos.set(asset.id, asset);
-      if (asset.type === 'audio' && perspective.type === 'audio') audio.set(asset.id, asset);
-      if (asset.type === 'video' && perspective.type === 'video') videos.set(asset.id, asset);
+      perspectiveAssets(perspective, source.assets).forEach((asset) => {
+        if (!isAttachedMedia(asset)) return;
+        if (asset.type === 'photo') photos.set(asset.id, asset);
+        if (asset.type === 'audio' && (perspective.type === 'audio' || asset.id !== perspective.mediaAssetId)) audio.set(asset.id, asset);
+        if (asset.type === 'video' && (perspective.type === 'video' || asset.id !== perspective.mediaAssetId)) videos.set(asset.id, asset);
+      });
     });
     const narration = moment.narrationMediaAssetId ? source.assets.get(moment.narrationMediaAssetId) : undefined;
     if (isAttachedMedia(narration) && narration.type === 'audio') audio.set(narration.id, narration);
@@ -226,12 +228,12 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
 
   source.moments.forEach(({ moment, perspectives, reflections }) => {
     stats.moments += 1;
-    const assetOf = (perspective: Perspective) => perspective.mediaAssetId ? source.assets.get(perspective.mediaAssetId) : undefined;
-    const photoPerspectives = perspectives.filter((item) => {
-      const asset = assetOf(item);
-      return asset?.type === 'photo' && availability.photos.has(asset.id);
-    });
-    const photoIds = unique(photoPerspectives.map((item) => item.mediaAssetId!));
+    // A story's own file (older stories) keeps the scene id it always had; attached files add their id.
+    const sceneId = (perspective: Perspective, asset: MediaAsset) => asset.id === perspective.mediaAssetId ? perspective.id : perspective.id + ':' + asset.id;
+    // An older story shows its one file only as its own type; a story with attachments shows all of them.
+    const filesOf = (perspective: Perspective, type: MediaAsset['type']) => perspectiveAssets(perspective, source.assets)
+      .filter((asset) => asset.type === type && (asset.id !== perspective.mediaAssetId || perspective.type === type || type === 'photo'));
+    const photoIds = unique(perspectives.flatMap((item) => filesOf(item, 'photo')).filter((asset) => availability.photos.has(asset.id)).map((asset) => asset.id));
     const narration = options.includeNarration && moment.narrationMediaAssetId
       ? availability.durations.get(moment.narrationMediaAssetId) : undefined;
 
@@ -251,18 +253,19 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
         stats.texts += 1;
         filmNarrators.push(author);
       }
-      const asset = assetOf(perspective);
-      if (perspective.type === 'photo' && asset && photoIds.includes(asset.id) && !seenPhotos.has(asset.id)) {
+      filesOf(perspective, 'photo').forEach((asset) => {
+        if ((perspective.type !== 'photo' && asset.id === perspective.mediaAssetId) || !photoIds.includes(asset.id) || seenPhotos.has(asset.id)) return;
         seenPhotos.add(asset.id);
         const author = personName(source, perspective.authorId);
+        const caption = asset.id === perspective.mediaAssetId ? perspective.caption || perspective.content || '' : asset.alt || perspective.caption || '';
         photos.push({
-          id: 'photo:' + perspective.id, kind: 'photo', momentId: moment.id, transition: 'fade', duration: PHOTO_SECONDS,
-          label: 'Фото: ' + truncate(perspective.caption || perspective.content || asset.alt || 'без подписи', 40),
-          assetId: asset.id, caption: perspective.caption || perspective.content || '', author
+          id: 'photo:' + sceneId(perspective, asset), kind: 'photo', momentId: moment.id, transition: 'fade', duration: PHOTO_SECONDS,
+          label: 'Фото: ' + truncate(caption || asset.alt || 'без подписи', 40),
+          assetId: asset.id, caption, author
         });
         stats.photos += 1;
         filmNarrators.push(author);
-      }
+      });
     });
     // The primary story comes first, its photos follow: the voice-over reads over both.
     const group: Draft[] = [...texts, ...photos];
@@ -292,39 +295,37 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
       stats.narrations += 1;
     }
 
-    if (options.includeVoices) perspectives.forEach((perspective) => {
-      const asset = assetOf(perspective);
-      const seconds = asset ? availability.durations.get(asset.id) : undefined;
-      if (perspective.type !== 'audio' || asset?.type !== 'audio' || seconds === undefined) return;
+    if (options.includeVoices) perspectives.forEach((perspective) => filesOf(perspective, 'audio').forEach((asset) => {
+      const seconds = availability.durations.get(asset.id);
+      if (seconds === undefined) return;
       const person = perspective.authorId ? source.people.get(perspective.authorId) : undefined;
       const author = personName(source, perspective.authorId);
       const scene = place({
-        id: 'voice:' + perspective.id, kind: 'voice', momentId: moment.id, transition: 'fade',
+        id: 'voice:' + sceneId(perspective, asset), kind: 'voice', momentId: moment.id, transition: 'fade',
         duration: seconds + VOICE_PADDING * 2, assetId: asset.id, audioOffset: VOICE_PADDING, label: 'Голос: ' + author,
         author, initials: person?.initials ?? '♪', color: person?.avatarColor ?? '#9b5038',
-        caption: perspective.caption || perspective.content || 'Голосовая запись', photoIds
+        caption: perspective.caption || (perspective.type === 'audio' ? perspective.content : '') || 'Голосовая запись', photoIds
       });
       cues.push({ assetId: asset.id, kind: 'voice', start: scene.start + VOICE_PADDING, duration: seconds });
       quietSpans.push({ start: scene.start + VOICE_PADDING, end: scene.start + VOICE_PADDING + seconds });
       stats.voices += 1;
       filmNarrators.push(author);
-    });
+    }));
 
-    if (options.includeVideos) perspectives.forEach((perspective) => {
-      const asset = assetOf(perspective);
-      const seconds = asset ? availability.durations.get(asset.id) : undefined;
-      if (perspective.type !== 'video' || asset?.type !== 'video' || seconds === undefined) return;
+    if (options.includeVideos) perspectives.forEach((perspective) => filesOf(perspective, 'video').forEach((asset) => {
+      const seconds = availability.durations.get(asset.id);
+      if (seconds === undefined) return;
       const author = personName(source, perspective.authorId);
       const length = Math.min(seconds, MAX_VIDEO_SECONDS);
       const scene = place({
-        id: 'video:' + perspective.id, kind: 'video', momentId: moment.id, transition: 'fade',
+        id: 'video:' + sceneId(perspective, asset), kind: 'video', momentId: moment.id, transition: 'fade',
         duration: length + 0.8, assetId: asset.id, videoOffset: 0.4, label: 'Видео: ' + author, author,
         caption: perspective.caption || perspective.content || ''
       });
       quietSpans.push({ start: scene.start + 0.4, end: scene.start + 0.4 + length });
       stats.videos += 1;
       filmNarrators.push(author);
-    });
+    }));
 
     if (options.includeReflections && reflections.length) {
       for (let index = 0; index < reflections.length; index += 3) {

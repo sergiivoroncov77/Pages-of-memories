@@ -2,6 +2,7 @@ import { safeFileName } from '../lib/fileName';
 import { pluralize } from '../lib/format';
 import { entityFields, isSafeBackupMediaUrl, normalizeSnapshotValue, validateFields } from './repository';
 import type { AppSnapshot, Book, Chapter, MediaAsset, Moment, Person, Perspective, Reflection } from './types';
+import { storyMediaIds } from './mediaRefs';
 
 /*
  * One book as a file a relative can open in their own copy of the app — the
@@ -52,7 +53,7 @@ export function buildBookPackage(snapshot: AppSnapshot, bookId: string, exported
   const mediaIds = new Set([
     book.coverMediaAssetId,
     ...moments.map((moment) => moment.narrationMediaAssetId),
-    ...perspectives.map((item) => item.mediaAssetId)
+    ...storyMediaIds(perspectives, reflections)
   ].filter((id): id is string => Boolean(id)));
   const authorIds = new Set([...perspectives, ...reflections].map((item) => item.authorId).filter((id): id is string => Boolean(id)));
   return {
@@ -157,6 +158,10 @@ export function parseBookPackage(text: string): BookPackage {
   });
   typed.perspectives.forEach((item) => {
     if (item.mediaAssetId !== undefined) check(item.type === 'text' || assets.get(item.mediaAssetId)?.type === item.type, 'материала с файлом');
+    (item.attachmentIds ?? []).forEach((id) => check(assets.has(id), 'материала с файлом'));
+  });
+  typed.reflections.forEach((item) => {
+    if (item.mediaAssetId !== undefined) check(assets.get(item.mediaAssetId)?.type === 'audio', 'отклика с голосом');
   });
   if (book.coverMediaAssetId !== undefined) check(assets.get(book.coverMediaAssetId)?.type === 'photo', 'обложки с фотографией');
   typed.mediaAssets.forEach((asset) => {

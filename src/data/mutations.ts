@@ -10,6 +10,7 @@ import type {
   Perspective,
   Reflection
 } from './types';
+import { perspectiveMediaIds, referencedMediaIds } from './mediaRefs';
 
 export type MemoryDraftInput = Omit<MemoryDraft, 'id' | 'createdAt' | 'status'>;
 
@@ -347,6 +348,7 @@ export interface NewPerspectiveInput {
   content: string;
   authorId?: string;
   mediaAssetId?: string;
+  attachmentIds?: string[];
   caption?: string;
   isPrimary?: boolean;
 }
@@ -363,6 +365,7 @@ export function createPerspective(
     type: input.type,
     content: input.content,
     mediaAssetId: input.mediaAssetId,
+    attachmentIds: input.attachmentIds?.length ? [...input.attachmentIds] : undefined,
     caption: input.caption,
     createdAt,
     isPrimary: input.isPrimary ?? false
@@ -372,7 +375,7 @@ export function createPerspective(
 export function addPerspectiveToSnapshot(snapshot: AppSnapshot, perspective: Perspective): AppSnapshot {
   if (!snapshot.moments.some((moment) => moment.id === perspective.momentId)
     || (perspective.authorId && !snapshot.people.some((person) => person.id === perspective.authorId))
-    || (perspective.mediaAssetId && !snapshot.mediaAssets.some((asset) => asset.id === perspective.mediaAssetId))) {
+    || perspectiveMediaIds(perspective).some((id) => !snapshot.mediaAssets.some((asset) => asset.id === id))) {
     throw new Error('Не найден момент, автор или прикреплённый файл.');
   }
   const updated = snapshot.perspectives.some((item) => item.id === perspective.id)
@@ -395,6 +398,8 @@ export interface NewReflectionInput {
   momentId: string;
   text: string;
   authorId?: string;
+  /** The voice of a reflection told aloud. */
+  mediaAssetId?: string;
 }
 
 export function createReflection(
@@ -407,15 +412,19 @@ export function createReflection(
     momentId: input.momentId,
     authorId: input.authorId,
     text: input.text,
+    mediaAssetId: input.mediaAssetId,
     createdAt
   };
 }
 
 export function addReflectionToSnapshot(snapshot: AppSnapshot, reflection: Reflection): AppSnapshot {
-  if (!reflection.text.trim()) throw new Error('Добавьте текст отклика.');
+  if (!reflection.text.trim() && !reflection.mediaAssetId) throw new Error('Напишите отклик или запишите его голосом.');
   if (!snapshot.moments.some((moment) => moment.id === reflection.momentId)
     || (reflection.authorId && !snapshot.people.some((person) => person.id === reflection.authorId))) {
     throw new Error('Не найден момент или автор отклика.');
+  }
+  if (reflection.mediaAssetId && snapshot.mediaAssets.find((asset) => asset.id === reflection.mediaAssetId)?.type !== 'audio') {
+    throw new Error('Не найдена запись отклика.');
   }
   const reflections = snapshot.reflections.some((item) => item.id === reflection.id)
     ? snapshot.reflections.map((item) => (item.id === reflection.id ? { ...reflection } : item))
@@ -431,8 +440,14 @@ export interface PerspectiveEdit {
   authorId?: string;
   /** A story told in words can be told aloud instead, and back. */
   type?: 'text' | 'audio';
+  /**
+   * The files attached to the story's words, in order. With this field the
+   * story keeps every file here (its old single file moves in) and its type
+   * follows its contents: words make it a story in words.
+   */
   /** The recording of a voice story; a story in words has none. */
   mediaAssetId?: string;
+  attachmentIds?: string[];
 }
 
 /** New words for a story (and, for a file, its caption); its file and moment stay. */
@@ -440,6 +455,7 @@ export function updatePerspectiveInSnapshot(snapshot: AppSnapshot, perspectiveId
   const perspective = snapshot.perspectives.find((item) => item.id === perspectiveId);
   if (!perspective) return snapshot;
   const content = patch.content === undefined ? perspective.content : patch.content.trim();
+  if ('attachmentIds' in patch) return updateStoryWithAttachments(snapshot, perspective, content, patch);
   const type = patch.type ?? perspective.type;
   const mediaAssetId = 'mediaAssetId' in patch ? patch.mediaAssetId : perspective.mediaAssetId;
   if (patch.type && perspective.type !== 'text' && perspective.type !== 'audio') throw new Error('Фото и видео остаются материалами.');
@@ -457,11 +473,34 @@ export function updatePerspectiveInSnapshot(snapshot: AppSnapshot, perspectiveId
   return { ...snapshot, perspectives: snapshot.perspectives.map((item) => (item.id === perspectiveId ? next : item)) };
 }
 
+/** The type a story shows under: words first, else its first file. */
+export function storyType(content: string, attachments: readonly MediaAsset[]): Perspective['type'] {
+  if (content.trim() || !attachments.length) return 'text';
+  const first = attachments[0].type;
+  return first === 'document' ? 'text' : first;
+}
+
+function updateStoryWithAttachments(snapshot: AppSnapshot, perspective: Perspective, content: string, patch: PerspectiveEdit): AppSnapshot {
+  const attachmentIds = [...new Set(patch.attachmentIds ?? [])];
+  const attachments = attachmentIds.map((id) => snapshot.mediaAssets.find((asset) => asset.id === id));
+  if (attachments.some((asset) => !asset)) throw new Error('Не найден прикреплённый файл.');
+  if (!content && !attachmentIds.length) throw new Error('Напишите рассказ или прикрепите голос, фото или видео.');
+  if ('authorId' in patch && patch.authorId && !snapshot.people.some((person) => person.id === patch.authorId)) {
+    throw new Error('Не найден автор рассказа.');
+  }
+  const caption = patch.caption === undefined ? perspective.caption : patch.caption.trim() || undefined;
+  const next: Perspective = {
+    ...perspective, content, caption, type: storyType(content, attachments as MediaAsset[]), mediaAssetId: undefined,
+    attachmentIds: attachmentIds.length ? attachmentIds : undefined, authorId: 'authorId' in patch ? patch.authorId : perspective.authorId
+  };
+  return { ...snapshot, perspectives: snapshot.perspectives.map((item) => (item.id === perspective.id ? next : item)) };
+}
+
 export function updateReflectionInSnapshot(snapshot: AppSnapshot, reflectionId: string, patch: { text?: string; authorId?: string }): AppSnapshot {
   const reflection = snapshot.reflections.find((item) => item.id === reflectionId);
   if (!reflection) return snapshot;
   const text = patch.text === undefined ? reflection.text : patch.text.trim();
-  if (!text) throw new Error('Добавьте текст отклика.');
+  if (!text && !reflection.mediaAssetId) throw new Error('Добавьте текст отклика.');
   if ('authorId' in patch && patch.authorId && !snapshot.people.some((person) => person.id === patch.authorId)) {
     throw new Error('Не найден автор отклика.');
   }
@@ -493,9 +532,8 @@ export function addMediaAssetToSnapshot(snapshot: AppSnapshot, asset: MediaAsset
 
 /** Drop an asset nothing in the book uses (e.g. a re-recorded draft answer). */
 export function removeUnusedMediaAsset(snapshot: AppSnapshot, assetId: string): AppSnapshot {
-  if (snapshot.perspectives.some((item) => item.mediaAssetId === assetId)
-    || snapshot.moments.some((moment) => moment.narrationMediaAssetId === assetId)
-    || snapshot.books.some((book) => book.coverMediaAssetId === assetId)) return snapshot;
+  const used = referencedMediaIds({ ...snapshot, drafts: [] });
+  if (used.has(assetId)) return snapshot;
   return {
     ...snapshot,
     mediaAssets: snapshot.mediaAssets.filter((asset) => asset.id !== assetId),

@@ -10,6 +10,7 @@ import { buildBookHtml } from '../../lib/bookExport';
 import { formatDate, pluralize, truncate } from '../../lib/format';
 import { inlineStoredMedia, mediaStore } from '../../lib/mediaStore';
 import { withCloudOriginals } from '../../lib/cloudMedia';
+import { storyMediaIds } from '../../data/mediaRefs';
 
 export function ExportPage() {
   const { activeBook: book, chaptersForBook, momentsForChapter, perspectives, reflections, mediaAssets, people } = useAppState();
@@ -57,7 +58,7 @@ export function ExportPage() {
     try {
       // Only media used by the selected moments is embedded: from the device, or from the cloud for shared books.
       const selectedIds = new Set(selectedMoments.map((moment) => moment.id));
-      const usedAssetIds = new Set(perspectives.filter((item) => selectedIds.has(item.momentId)).map((item) => item.mediaAssetId));
+      const usedAssetIds = new Set(storyMediaIds(perspectives.filter((item) => selectedIds.has(item.momentId)), reflections.filter((item) => selectedIds.has(item.momentId))));
       const portableAssets = withMedia
         ? (await inlineStoredMedia(mediaAssets.filter((asset) => usedAssetIds.has(asset.id)), withCloudOriginals(mediaStore()))).assets
         : mediaAssets;

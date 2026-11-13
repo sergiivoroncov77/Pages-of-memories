@@ -192,6 +192,12 @@ function normalizeDraft(value: unknown, fallback?: MemoryDraft): MemoryDraft | n
   };
 }
 
+/** Attached files that are still in the book; none at all leaves the field out. */
+function keptAttachments(ids: string[] | undefined, known: ReadonlySet<string>): string[] | undefined {
+  const kept = [...new Set((ids ?? []).filter((id) => known.has(id)))];
+  return kept.length ? kept : undefined;
+}
+
 function optionalString(value: unknown, fallback?: string): string | undefined {
   if (typeof value === 'string') return value;
   return fallback;
@@ -289,6 +295,7 @@ function normalizePerspective(value: unknown, fallback?: Perspective): Perspecti
     type: enumValue(value.type, PERSPECTIVE_TYPES, fallback?.type ?? 'text'),
     content: stringValue(value.content, fallback?.content ?? ''),
     mediaAssetId: optionalString(value.mediaAssetId, fallback?.mediaAssetId),
+    attachmentIds: Array.isArray(value.attachmentIds) ? stringArray(value.attachmentIds) : fallback?.attachmentIds,
     caption: optionalString(value.caption, fallback?.caption),
     createdAt,
     isPrimary: typeof value.isPrimary === 'boolean' ? value.isPrimary : fallback?.isPrimary ?? false
@@ -300,15 +307,18 @@ function normalizeReflection(value: unknown, fallback?: Reflection): Reflection 
 
   const id = requiredString(value.id, fallback?.id);
   const momentId = requiredString(value.momentId, fallback?.momentId);
-  const text = requiredString(value.text, fallback?.text);
+  const text = stringValue(value.text, fallback?.text ?? '').trim();
+  const mediaAssetId = optionalString(value.mediaAssetId, fallback?.mediaAssetId);
   const createdAt = dateValue(value.createdAt, fallback?.createdAt);
-  if (!id || !momentId || !text || !createdAt) return null;
+  // A reflection is words, a voice, or both.
+  if (!id || !momentId || (!text && !mediaAssetId) || !createdAt) return null;
 
   return {
     id,
     momentId,
     authorId: optionalString(value.authorId, fallback?.authorId),
     text,
+    mediaAssetId,
     createdAt
   };
 }
@@ -579,7 +589,8 @@ function normalizeSnapshot(value: unknown): AppSnapshot | null {
     isPrimary: normalizedMomentsById.get(perspective.momentId)?.primaryPerspectiveId === perspective.id,
     mediaAssetId: perspective.mediaAssetId && mediaAssetIds.has(perspective.mediaAssetId)
       ? perspective.mediaAssetId
-      : undefined
+      : undefined,
+    attachmentIds: keptAttachments(perspective.attachmentIds, mediaAssetIds)
   }));
 
   return ensureMemoryMoments({
@@ -597,7 +608,9 @@ function normalizeSnapshot(value: unknown): AppSnapshot | null {
     moments: normalizedMoments,
     perspectives: normalizedPerspectives,
     reflections: reflections.map((reflection) => ({ ...reflection,
-      authorId: reflection.authorId && peopleIds.has(reflection.authorId) ? reflection.authorId : undefined
+      authorId: reflection.authorId && peopleIds.has(reflection.authorId) ? reflection.authorId : undefined,
+      mediaAssetId: reflection.mediaAssetId && mediaAssets.some((asset) => asset.id === reflection.mediaAssetId && asset.type === 'audio')
+        ? reflection.mediaAssetId : undefined
     })),
     mediaAssets,
     settings: withActiveBook(normalizeSettings(value.settings, seed.settings), normalizedBooks)
@@ -633,8 +646,8 @@ export const entityFields: Record<string, FieldSchema> = {
     occurredAt: optional('date'), tags: 'strings', primaryPerspectiveId: optional('id'), narrationMediaAssetId: optional('id'),
     createdAt: 'date', updatedAt: 'date', favorite: 'boolean' },
   perspectives: { id: 'id', sourceMemoryId: optional('id'), momentId: 'id', authorId: optional('id'), type: PERSPECTIVE_TYPES,
-    content: 'text', mediaAssetId: optional('id'), caption: optional('text'), createdAt: 'date', isPrimary: 'boolean' },
-  reflections: { id: 'id', momentId: 'id', authorId: optional('id'), text: 'id', createdAt: 'date' },
+    content: 'text', mediaAssetId: optional('id'), attachmentIds: optional('strings'), caption: optional('text'), createdAt: 'date', isPrimary: 'boolean' },
+  reflections: { id: 'id', momentId: 'id', authorId: optional('id'), text: 'text', mediaAssetId: optional('id'), createdAt: 'date' },
   mediaAssets: { id: 'id', type: MEDIA_ASSET_TYPES, url: 'id', mimeType: 'id', fileName: optional('text'), alt: optional('text'),
     sizeBytes: optional('number'), durationSeconds: optional('number'), width: optional('number'), height: optional('number'), createdAt: 'date' }
 };
@@ -735,10 +748,14 @@ export function parseSnapshotImport(json: string): AppSnapshot {
     reference(moments.has(item.momentId), 'рассказа или отклика с моментом');
     if (item.authorId !== undefined) reference(people.has(item.authorId), 'рассказа или отклика с автором');
   });
+  collections.reflections.forEach((item) => {
+    if (item.mediaAssetId !== undefined) reference(assets.get(item.mediaAssetId as string)?.type === 'audio', 'отклика с голосом');
+  });
   const ownedPerspectives = new Set<string>();
   collections.perspectives.forEach((item) => {
     if (item.mediaAssetId !== undefined) reference(assets.has(item.mediaAssetId)
       && (item.type === 'text' || item.type === assets.get(item.mediaAssetId)?.type), 'материала с файлом');
+    ((item.attachmentIds ?? []) as string[]).forEach((id) => reference(assets.has(id), 'материала с файлом'));
     if (item.sourceMemoryId !== undefined) reference(memories.has(item.sourceMemoryId)
       && moments.get(item.momentId)?.sourceMemoryId === item.sourceMemoryId
       && memories.get(item.sourceMemoryId)?.personId === item.authorId

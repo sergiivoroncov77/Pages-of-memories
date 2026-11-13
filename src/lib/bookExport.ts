@@ -3,6 +3,7 @@ import kitchenIllustration from '../../public/demo/photo-kitchen.svg?raw';
 import walkIllustration from '../../public/demo/photo-walk.svg?raw';
 import type { Chapter, MediaAsset, Moment, Person, Perspective, Reflection } from '../data/types';
 import { formatDate, pluralize } from './format';
+import { perspectiveAssets, perspectiveMediaIds } from '../data/mediaRefs';
 
 export interface BookExportInput {
   title: string;
@@ -88,25 +89,30 @@ function renderMedia(asset: MediaAsset, url: string, perspective: Perspective): 
 
 function renderPerspective(perspective: Perspective, input: BookExportInput): string {
   const author = input.people.find((person) => person.id === perspective.authorId)?.name ?? 'Участник';
-  const asset = input.mediaAssets.find((item) => item.id === perspective.mediaAssetId);
-  const url = input.withMedia && asset ? portableMediaUrl(asset) : undefined;
-  const label = asset?.type === 'audio' && url ? 'Аудиозапись' : perspectiveLabels[perspective.type];
-  let media = asset && url ? renderMedia(asset, url, perspective) : '';
-
-  if (!url && (asset || perspective.type !== 'text')) {
-    let note = 'Медиа не включены в эту копию.';
+  const assets = perspectiveAssets(perspective, input.mediaAssets);
+  const missing = perspectiveMediaIds(perspective).length > assets.length || (!assets.length && perspective.type !== 'text');
+  const rendered = assets.map((asset) => {
+    const url = input.withMedia ? portableMediaUrl(asset) : undefined;
+    return url ? renderMedia(asset, url, perspective) : '';
+  });
+  const label = perspective.type === 'audio' && rendered.some(Boolean) ? 'Аудиозапись' : perspectiveLabels[perspective.type];
+  let note = '';
+  if (rendered.some((item) => !item) || missing) {
+    note = 'Медиа не включены в эту копию.';
     if (input.withMedia) {
-      note = perspective.type === 'audio' && asset?.url.startsWith('/demo/')
+      note = assets.some((asset) => asset.type === 'audio' && asset.url.startsWith('/demo/'))
         ? 'Демонстрационное аудио: звуковой файл в проекте отсутствует. Сохранён доступный текст.'
         : 'Медиафайл не приложен или недоступен для автономной копии. Сохранён доступный текст.';
     }
-    media = `<p class="media-note">${note}</p>`;
+    note = `<p class="media-note">${note}</p>`;
   }
 
+  // Words first, then the files attached to them.
   return `<div class="perspective">
     <div class="perspective-meta"><strong>${escapeHtml(author)}</strong><span>${label}${perspective.isPrimary ? ' · Основной рассказ' : ''}</span></div>
-    ${media}
     ${perspective.content ? `<p class="preserve-lines">${escapeHtml(perspective.content)}</p>` : ''}
+    ${rendered.join('')}
+    ${note}
     ${perspective.caption ? `<p class="caption preserve-lines">${escapeHtml(perspective.caption)}</p>` : ''}
   </div>`;
 }
@@ -122,7 +128,11 @@ function renderMoment(moment: Moment, anchor: string, input: BookExportInput): s
     : [];
   const reflectionMarkup = reflections.map((reflection) => {
     const author = input.people.find((person) => person.id === reflection.authorId)?.name ?? 'Участник';
-    return `<li><p class="preserve-lines">${escapeHtml(reflection.text)}</p><small>— ${escapeHtml(author)}</small></li>`;
+    const voice = reflection.mediaAssetId ? input.mediaAssets.find((asset) => asset.id === reflection.mediaAssetId) : undefined;
+    const voiceUrl = voice && input.withMedia ? portableMediaUrl(voice) : undefined;
+    const voiceMarkup = voiceUrl ? `<audio controls preload="none" aria-label="Отклик голосом" src="${escapeHtml(voiceUrl)}"></audio>`
+      : voice ? '<p class="media-note">Отклик голосом не включён в эту копию.</p>' : '';
+    return `<li>${reflection.text ? `<p class="preserve-lines">${escapeHtml(reflection.text)}</p>` : ''}${voiceMarkup}<small>— ${escapeHtml(author)}</small></li>`;
   }).join('');
 
   return `<article class="moment" id="${anchor}">
