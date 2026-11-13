@@ -2,7 +2,7 @@ import type { MediaAsset } from '../../data/types';
 import { originalBlob } from '../cloudMedia';
 import { baseMimeType, isStoredMedia } from '../mediaStore';
 import { publicUrl } from '../publicUrl';
-import { MUSIC_LOOP_SECONDS, renderMusicLoop } from './music';
+import { renderMusicLoop, type MusicStyle } from './music';
 import { createCanvas, FilmRenderer, type FilmAssets, type PreparedAudio, type PreparedPhoto } from './renderer';
 import { levelAt, musicEnvelope, type FilmAvailability, type FilmTimeline } from './timeline';
 
@@ -139,8 +139,12 @@ export class FilmPlayer {
   private musicGain!: GainNode;
   private voiceBus!: GainNode;
   private music: AudioBuffer | null = null;
-  private musicLoading: Promise<void> | null = null;
+  /** Built-in styles rendered so far, so switching back is instant. */
+  private readonly styleBuffers = new Map<MusicStyle, Promise<AudioBuffer | null>>();
+  private musicLoading: Promise<unknown> | null = null;
   private musicEnabled = true;
+  /** Built-in music always repeats; a family's own track repeats only when asked. */
+  private musicLoop = true;
   private sources: AudioScheduledSourceNode[] = [];
   private playing = false;
   private offset = 0;
@@ -251,7 +255,7 @@ export class FilmPlayer {
         step();
       })
     ]);
-    this.musicLoading ??= renderMusicLoop(context.sampleRate).then((buffer) => { this.music = buffer; }, () => undefined);
+    if (!this.musicLoading) void this.setMusic({ kind: 'style', style: 'warm' });
     return { durations: new Map(durations), photos: new Set(photos), failed };
   }
 
@@ -262,6 +266,35 @@ export class FilmPlayer {
     this.canvas.height = height;
     this.renderer = new FilmRenderer(this.canvas);
     this.render();
+  }
+
+  /**
+   * Choose the background music: a built-in style, or a file of the family's
+   * own that either repeats or plays once and leaves the rest of the film quiet.
+   */
+  async setMusic(track: { kind: 'style'; style: MusicStyle } | { kind: 'file'; file: Blob; loop: boolean }): Promise<boolean> {
+    const context = this.ensureAudio();
+    let buffer: Promise<AudioBuffer | null>;
+    if (track.kind === 'style') {
+      if (!this.styleBuffers.has(track.style)) {
+        this.styleBuffers.set(track.style, renderMusicLoop(context.sampleRate, track.style).catch(() => null));
+      }
+      buffer = this.styleBuffers.get(track.style)!;
+    } else {
+      buffer = track.file.arrayBuffer().then((bytes) => context.decodeAudioData(bytes)).catch(() => null);
+    }
+    const loading = buffer;
+    this.musicLoading = loading;
+    const decoded = await loading;
+    // A later choice wins over one still loading.
+    if (this.musicLoading !== loading || this.disposed) return Boolean(decoded);
+    const wasPlaying = this.playing;
+    const time = this.currentTime;
+    if (wasPlaying) this.stopPlayback();
+    this.music = decoded;
+    this.musicLoop = track.kind === 'style' || track.loop;
+    if (wasPlaying) { this.offset = time; void this.play(); }
+    return Boolean(decoded);
   }
 
   setTimeline(timeline: FilmTimeline, { music }: { music: boolean }) {
@@ -436,10 +469,14 @@ export class FilmPlayer {
     if (this.musicEnabled && this.music) {
       const source = context.createBufferSource();
       source.buffer = this.music;
-      source.loop = true;
+      source.loop = this.musicLoop;
       source.connect(this.musicGain);
-      source.start(at, from % MUSIC_LOOP_SECONDS);
-      this.sources.push(source);
+      const length = this.music.duration;
+      // Played once, a track shorter than the film ends and the rest is quiet.
+      if (this.musicLoop || from < length) {
+        source.start(at, this.musicLoop ? from % length : from);
+        this.sources.push(source);
+      }
       const envelope = musicEnvelope(timeline, MUSIC_LEVEL, MUSIC_LEVEL * 0.28);
       const gain = this.musicGain.gain;
       gain.cancelScheduledValues(0);

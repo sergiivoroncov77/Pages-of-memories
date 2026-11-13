@@ -60,11 +60,11 @@ function request<T>(value: IDBRequest<T>): Promise<T> {
   });
 }
 
-export function createIndexedDbMediaStore(factory: IDBFactory = indexedDB): MediaBlobStore {
+export function createIndexedDbMediaStore(factory: IDBFactory = indexedDB, databaseName = DB_NAME): MediaBlobStore {
   let opening: Promise<IDBDatabase> | undefined;
   const open = () => {
     opening ??= new Promise<IDBDatabase>((resolve, reject) => {
-      const openRequest = factory.open(DB_NAME, 1);
+      const openRequest = factory.open(databaseName, 1);
       openRequest.addEventListener('upgradeneeded', () => {
         if (!openRequest.result.objectStoreNames.contains(STORE_NAME)) openRequest.result.createObjectStore(STORE_NAME);
       });

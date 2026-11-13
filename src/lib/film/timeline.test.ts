@@ -73,7 +73,8 @@ describe('chapter film timeline', () => {
     const momentOrder = timeline.scenes.filter((scene) => scene.kind === 'moment').map((scene) => scene.momentId);
     expect(momentOrder).toEqual(['moment_summer', 'moment_table']);
     const summer = timeline.scenes.filter((scene) => scene.momentId === 'moment_summer').map((scene) => scene.kind);
-    expect(summer).toEqual(['moment', 'text', 'text', 'photo', 'voice', 'reflections']);
+    // The demo recording has no file, so its words are shown as a page of their own.
+    expect(summer).toEqual(['moment', 'text', 'text', 'text', 'photo', 'voice', 'reflections']);
     expect(timeline.stats).toMatchObject({ moments: 2, photos: 2, voices: 1, reflections: 2 });
 
     // Scenes are back to back and the film ends when the last one does.
@@ -87,6 +88,20 @@ describe('chapter film timeline', () => {
     const voice = timeline.scenes.find((scene) => scene.kind === 'voice')!;
     expect(timeline.cues).toEqual([{ assetId: voiceAsset.id, kind: 'voice', start: voice.start + 0.6, duration: 12 }]);
     expect(voice.duration).toBeCloseTo(13.2, 5);
+  });
+
+  it('plays the voice of a story while its words are on screen, not after them', () => {
+    const source = childhoodSource();
+    source.moments.forEach((entry) => {
+      entry.perspectives = entry.perspectives.map((item) => item.id === 'perspective_voice' ? { ...item, content: 'Короткий рассказ о лете.' } : item);
+    });
+    const timeline = buildFilmTimeline(source, DEFAULT_FILM_OPTIONS, available);
+    expect(timeline.scenes.some((scene) => scene.kind === 'voice')).toBe(false);
+    const words = timeline.scenes.find((scene) => scene.id === 'text:perspective_voice:0')!;
+    expect(timeline.cues).toEqual([{ assetId: voiceAsset.id, kind: 'voice', start: words.start + 0.6, duration: 12 }]);
+    // The page stays on screen as long as the voice speaks.
+    expect(words.duration).toBeCloseTo(13.2, 5);
+    expect(timeline.quietSpans).toContainEqual({ start: words.start + 0.6, end: words.start + 12.6 });
   });
 
   it('leaves reflections, texts and voices out on request and skips demo audio without a file', () => {

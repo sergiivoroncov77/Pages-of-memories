@@ -4,6 +4,7 @@ export { chronologicalMoments } from '../../data/library';
 import { formatDate, truncate } from '../format';
 import { chapterLabel, paginateText, readingSeconds } from './text';
 import { perspectiveAssets } from '../../data/mediaRefs';
+import type { MusicStyle } from './music';
 import { stripStoryMarkup } from '../storyMarkup';
 
 /**
@@ -25,6 +26,10 @@ export interface FilmOptions {
   /** Reflections (comments) are optional and shown after each moment. */
   includeReflections: boolean;
   music: boolean;
+  /** A built-in style, or the chapter's own music file. */
+  musicStyle: MusicStyle | 'custom';
+  /** The chapter's own music starts again when it ends; otherwise the rest of the film is quiet. */
+  musicLoop: boolean;
   format: FilmFormat;
 }
 
@@ -35,6 +40,8 @@ export const DEFAULT_FILM_OPTIONS: FilmOptions = {
   includeVideos: true,
   includeReflections: true,
   music: true,
+  musicStyle: 'warm',
+  musicLoop: true,
   format: 'landscape'
 };
 
@@ -241,16 +248,34 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
     const photos: Draft[] = [];
     const texts: Draft[] = [];
     const seenPhotos = new Set<string>();
+    // A story told in words and aloud: its voice plays while its pages are on screen, not after them.
+    const pairs: { firstScene: string; voices: { assetId: string; seconds: number }[] }[] = [];
+    const paired = new Set<string>();
     perspectives.forEach((perspective) => {
-      if (perspective.type === 'text' && options.includeText && perspective.content.trim()) {
+      const told = perspective.type === 'text' || perspective.type === 'audio';
+      if (told && options.includeText && perspective.content.trim()) {
         const pages = paginateText(stripStoryMarkup(perspective.content), TEXT_PAGE_CHARS, { flatten: true });
         const author = personName(source, perspective.authorId);
         const photoId = photoIds.length ? photoIds[texts.length % photoIds.length] : undefined;
-        pages.forEach((text, index) => texts.push({
+        const own = pages.map((text, index): Draft => ({
           id: `text:${perspective.id}:${index}`, kind: 'text', momentId: moment.id, transition: 'fade',
           duration: readingSeconds(text), label: 'Рассказ: ' + author + (pages.length > 1 ? ` (${index + 1}/${pages.length})` : ''),
           text, author, page: index + 1, pages: pages.length, photoId
         }));
+        // With a voice-over for the whole moment, a story's own voice keeps its separate scene.
+        const voices = options.includeVoices && narration === undefined
+          ? filesOf(perspective, 'audio').flatMap((asset) => {
+            const seconds = availability.durations.get(asset.id);
+            return seconds === undefined ? [] : [{ assetId: asset.id, seconds }];
+          }) : [];
+        if (voices.length && own.length) {
+          const needed = voices.reduce((sum, voice) => sum + voice.seconds + VOICE_PADDING, VOICE_PADDING);
+          const span = own.reduce((sum, item) => sum + item.duration, 0);
+          if (span < needed) own.forEach((item) => { item.duration = Math.round(item.duration * (needed / span) * 100) / 100; });
+          pairs.push({ firstScene: own[0].id, voices });
+          voices.forEach((voice) => paired.add(voice.assetId));
+        }
+        texts.push(...own);
         stats.texts += 1;
         filmNarrators.push(author);
       }
@@ -289,6 +314,15 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
       }
     }
     const placed = group.map(place);
+    pairs.forEach(({ firstScene, voices }) => {
+      let at = (placed.find((scene) => scene.id === firstScene)?.start ?? placed[0].start) + VOICE_PADDING;
+      voices.forEach((voice) => {
+        cues.push({ assetId: voice.assetId, kind: 'voice', start: at, duration: voice.seconds });
+        quietSpans.push({ start: at, end: at + voice.seconds });
+        stats.voices += 1;
+        at += voice.seconds + VOICE_PADDING;
+      });
+    });
     if (narration !== undefined) {
       const start = placed[0].start + NARRATION_DELAY;
       cues.push({ assetId: moment.narrationMediaAssetId!, kind: 'narration', start, duration: narration });
@@ -298,7 +332,7 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
 
     if (options.includeVoices) perspectives.forEach((perspective) => filesOf(perspective, 'audio').forEach((asset) => {
       const seconds = availability.durations.get(asset.id);
-      if (seconds === undefined) return;
+      if (seconds === undefined || paired.has(asset.id)) return;
       const person = perspective.authorId ? source.people.get(perspective.authorId) : undefined;
       const author = personName(source, perspective.authorId);
       const scene = place({

@@ -1,6 +1,6 @@
 import {
   AlertTriangle, BookOpen, Camera, Clapperboard, Download, FileText, Film, Maximize2, MessageCircle, Mic, Music, Pause, Play,
-  RotateCcw, Share2, Smartphone, Sparkles, Square, Tv, Video
+  RotateCcw, Share2, Smartphone, Sparkles, Square, Trash2, Tv, Upload, Video
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -19,6 +19,8 @@ import {
   type FilmOptions, type FilmScene, type FilmSource
 } from '../../lib/film/timeline';
 import { NarrationPanel } from './NarrationPanel';
+import { loadChapterMusic, removeChapterMusic, saveChapterMusic } from '../../lib/film/filmMusicStore';
+import { MUSIC_STYLES } from '../../lib/film/music';
 
 const sceneIcons: Record<FilmScene['kind'], typeof Film> = {
   chapter: BookOpen, moment: Sparkles, photo: Camera, text: FileText, voice: Mic, video: Video, reflections: MessageCircle, finale: Clapperboard
@@ -60,6 +62,15 @@ function ChapterFilm({ chapter }: { chapter: Chapter }) {
   const screenRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<FilmPlayer | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // The chapter's own music, kept on this device.
+  const [ownMusic, setOwnMusic] = useState<File | null>(null);
+  const [musicError, setMusicError] = useState('');
+  const musicInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    let active = true;
+    void loadChapterMusic(chapter.id).then((file) => { if (active) setOwnMusic(file); });
+    return () => { active = false; };
+  }, [chapter.id]);
 
   const source = useMemo<FilmSource>(() => ({
     bookTitle: book.title,
@@ -111,6 +122,40 @@ function ChapterFilm({ chapter }: { chapter: Chapter }) {
   useEffect(() => {
     if (timeline) playerRef.current?.setTimeline(timeline, { music: options.music });
   }, [timeline, options.music]);
+
+  // The chosen music: a built-in style, or the chapter's own file (built-in until one is chosen).
+  useEffect(() => {
+    const player = playerRef.current;
+    if (!player || load.status !== 'ready') return;
+    const own = options.musicStyle === 'custom' ? ownMusic : null;
+    void player.setMusic(own ? { kind: 'file', file: own, loop: options.musicLoop }
+      : { kind: 'style', style: options.musicStyle === 'custom' ? 'warm' : options.musicStyle })
+      .then((ok) => setMusicError(ok ? '' : 'Не удалось прочитать этот файл. Выберите MP3, M4A, OGG или WAV.'));
+  }, [options.musicStyle, options.musicLoop, ownMusic, load.status]);
+
+  const chooseMusic = async (file: File | null) => {
+    if (musicInput.current) musicInput.current.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('audio/') && !/\.(mp3|m4a|aac|ogg|oga|wav|flac|webm)$/i.test(file.name)) {
+      setMusicError('Это не аудиофайл. Выберите MP3, M4A, OGG или WAV.');
+      return;
+    }
+    if (file.size > 60 * 1024 * 1024) { setMusicError('Файл больше 60 МБ. Выберите покороче или посжатее.'); return; }
+    try {
+      await saveChapterMusic(chapter.id, file);
+    } catch {
+      setMusicError('Браузер не дал сохранить файл на устройстве. Освободите место и попробуйте ещё раз.');
+      return;
+    }
+    setMusicError('');
+    setOwnMusic(file);
+    setOption('musicStyle', 'custom');
+  };
+  const forgetMusic = async () => {
+    await removeChapterMusic(chapter.id).catch(() => undefined);
+    setOwnMusic(null);
+    setOption('musicStyle', 'warm');
+  };
 
   useEffect(() => () => { if (exportState.status === 'done') URL.revokeObjectURL(exportState.url); }, [exportState]);
 
@@ -285,8 +330,29 @@ function ChapterFilm({ chapter }: { chapter: Chapter }) {
             <Toggle checked={options.includeVoices} onChange={(value) => setOption('includeVoices', value)} label="Голосовые записи" description="Ответы близких звучат поверх фотографий." />
             <Toggle checked={options.includeNarration} onChange={(value) => setOption('includeNarration', value)} label="Озвучка моментов" description="Ваш голос читает историю за кадром." />
             <Toggle checked={options.includeVideos} onChange={(value) => setOption('includeVideos', value)} label="Видео" description="Короткие ролики из материалов главы." />
-            <Toggle checked={options.music} onChange={(value) => setOption('music', value)} label="Тихая музыка" description="Мягко затихает, когда кто-то говорит." />
+            <Toggle checked={options.music} onChange={(value) => setOption('music', value)} label="Фоновая музыка" description="Мягко затихает, когда кто-то говорит." />
           </fieldset>
+          {options.music ? <fieldset className="film-music" disabled={recording}>
+            <legend>Какая музыка</legend>
+            <div className="film-music__styles" role="radiogroup" aria-label="Музыка фильма">
+              {MUSIC_STYLES.map((style) => <button key={style.id} type="button" role="radio" aria-checked={options.musicStyle === style.id}
+                className={options.musicStyle === style.id ? 'is-active' : ''} onClick={() => setOption('musicStyle', style.id)}>
+                <strong>{style.label}</strong><small>{style.description}</small></button>)}
+              <button type="button" role="radio" aria-checked={options.musicStyle === 'custom'} className={options.musicStyle === 'custom' ? 'is-active' : ''}
+                onClick={() => (ownMusic ? setOption('musicStyle', 'custom') : musicInput.current?.click())}>
+                <strong>Своя музыка</strong><small>{ownMusic ? ownMusic.name : 'Файл с этого устройства'}</small></button>
+            </div>
+            <input ref={musicInput} type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.wav,.flac" hidden onChange={(event) => { void chooseMusic(event.target.files?.[0] ?? null); }} />
+            {options.musicStyle === 'custom' && ownMusic ? <div className="film-music__own">
+              <div className="film-music__file"><Music size={16} aria-hidden="true" /><span>{ownMusic.name}</span>
+                <button type="button" className="text-button" onClick={() => musicInput.current?.click()}><Upload size={15} aria-hidden="true" /> Другой файл</button>
+                <button type="button" className="card-tool card-tool--danger" aria-label="Убрать свою музыку" onClick={() => { void forgetMusic(); }}><Trash2 size={15} /></button></div>
+              <Toggle checked={options.musicLoop} onChange={(value) => setOption('musicLoop', value)} label="Повторять по кругу"
+                description={options.musicLoop ? 'Если музыка короче фильма, она начнётся заново.' : 'Если музыка короче фильма, дальше фильм пойдёт без неё.'} />
+              <small className="field-note">Файл хранится только на этом устройстве и войдёт в скачанный фильм.</small>
+            </div> : null}
+            {musicError ? <p className="field-message field-message--error" role="alert">{musicError}</p> : null}
+          </fieldset> : null}
           <p className="film-options__hint"><Music size={16} aria-hidden="true" /> Изменения сразу видны в плеере.</p>
         </Card>
 
