@@ -480,6 +480,13 @@ export function storyType(content: string, attachments: readonly MediaAsset[]): 
   return first === 'document' ? 'text' : first;
 }
 
+/** A photo or video with its description stays one after an edit, so its words stay its caption in the book. */
+function keptType(perspective: Perspective, content: string, attachments: readonly MediaAsset[]): Perspective['type'] {
+  const visual = perspective.type === 'photo' || perspective.type === 'video';
+  if (visual && attachments.some((asset) => asset.type === perspective.type) && !attachments.some((asset) => asset.type === 'audio')) return perspective.type;
+  return storyType(content, attachments);
+}
+
 function updateStoryWithAttachments(snapshot: AppSnapshot, perspective: Perspective, content: string, patch: PerspectiveEdit): AppSnapshot {
   const attachmentIds = [...new Set(patch.attachmentIds ?? [])];
   const attachments = attachmentIds.map((id) => snapshot.mediaAssets.find((asset) => asset.id === id));
@@ -490,7 +497,7 @@ function updateStoryWithAttachments(snapshot: AppSnapshot, perspective: Perspect
   }
   const caption = patch.caption === undefined ? perspective.caption : patch.caption.trim() || undefined;
   const next: Perspective = {
-    ...perspective, content, caption, type: storyType(content, attachments as MediaAsset[]), mediaAssetId: undefined,
+    ...perspective, content, caption, type: keptType(perspective, content, attachments as MediaAsset[]), mediaAssetId: undefined,
     attachmentIds: attachmentIds.length ? attachmentIds : undefined, authorId: 'authorId' in patch ? patch.authorId : perspective.authorId
   };
   return { ...snapshot, perspectives: snapshot.perspectives.map((item) => (item.id === perspective.id ? next : item)) };

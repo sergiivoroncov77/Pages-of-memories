@@ -18,7 +18,9 @@ import { BookForm, type BookFormValues } from '../library/BookForm';
 import { BookShelf, ImportBookButton } from '../library/BookShelf';
 import { ChapterForm } from '../library/ChapterForm';
 import { ShareBookPanel } from '../library/ShareBookPanel';
-import { MomentDetailsForm, type MomentDetails } from '../moments/MomentDetailsForm';
+import type { MomentDetails } from '../moments/MomentDetailsForm';
+import { MomentEditor } from '../moments/MomentEditor';
+import type { StoryDraft } from '../moments/StoryComposer';
 import { perspectiveMediaIds } from '../../data/mediaRefs';
 import { stripStoryMarkup } from '../../lib/storyMarkup';
 
@@ -27,7 +29,7 @@ type Panel = 'none' | 'new-book' | 'edit-book' | 'share' | 'moment' | 'new-chapt
 export function BookPage() {
   const {
     books, activeBook: book, people, mediaAssets, chaptersForBook, momentsForChapter, perspectivesForMoment, mediaForPerspective, getPerson,
-    addMoment, toggleMomentFavorite, createBook, updateBook, setBookCover, deleteBook, createChapter, updateChapter, moveChapter, deleteChapter
+    addMoment, addStory, deleteMoment, toggleMomentFavorite, createBook, updateBook, setBookCover, deleteBook, createChapter, updateChapter, moveChapter, deleteChapter
   } = useAppState();
   const cloud = useCloudSync();
   const navigate = useNavigate();
@@ -103,11 +105,19 @@ export function BookPage() {
     reveal('create-moment');
   };
 
-  const submitMoment = (details: MomentDetails) => {
+  const submitMoment = async (details: Omit<MomentDetails, 'story'>, draft: StoryDraft | null) => {
     if (!book) return;
-    const { story, ...metadata } = details;
-    const moment = addMoment({ ...metadata, bookId: book.id, tags: [] },
-      story?.trim() ? { content: story, authorId: cloud.myPersonId(book.id) } : undefined);
+    const moment = addMoment({ ...details, bookId: book.id, tags: [] });
+    const words = draft?.content.trim() ?? '';
+    if (draft && (words || draft.files.length)) {
+      // The main story with its voice and photos; without it, the moment is not left half made.
+      const result = await addStory({ momentId: moment.id, content: words, authorId: cloud.myPersonId(book.id), isPrimary: true }, draft.files)
+        .catch((cause: unknown) => ({ ok: false as const, error: { message: cause instanceof Error ? cause.message : 'Не удалось сохранить рассказ.' } }));
+      if (!result.ok) {
+        deleteMoment(moment.id);
+        throw new Error(result.error.message);
+      }
+    }
     navigate('/moments/' + moment.id);
   };
 
@@ -247,10 +257,11 @@ export function BookPage() {
 
   const momentForm = (
     <Card className="create-moment-card" id="create-moment">
-      <div className="card-heading"><div><p className="eyebrow">Новая страница</p><h2>Создать момент</h2><p>Добавьте название и запишите рассказ. Фотографии, голос и другие материалы можно добавить следом.</p></div>
+      <div className="card-heading"><div><p className="eyebrow">Новая страница</p><h2>Создать момент</h2><p>Название, глава, дата и рассказ — с голосом и фотографиями, если хочется. Взгляды близких добавятся потом.</p></div>
         <button type="button" className="icon-button" aria-label="Закрыть форму" onClick={() => setPanel('none')}><X size={20} /></button></div>
-      <MomentDetailsForm key={momentChapterId} chapters={chapters} initial={{ title: '', summary: '', chapterId: momentChapterId }} includeStory
-        storyAuthorName={getPerson(cloud.myPersonId(book.id) ?? '')?.name}
+      <MomentEditor key={momentChapterId} chapters={chapters} initial={{ title: '', summary: '', chapterId: momentChapterId }}
+        note={(getPerson(cloud.myPersonId(book.id) ?? '')?.name ? `Подпись: ${getPerson(cloud.myPersonId(book.id) ?? '')?.name}. ` : 'Без указания автора. ')
+          + (cloud.isShared(book.id) ? 'Файлы уйдут всем участникам книги.' : 'Файлы хранятся на этом устройстве.')}
         submitLabel="Создать и открыть" onSubmit={submitMoment} onCancel={() => setPanel('none')} />
     </Card>
   );

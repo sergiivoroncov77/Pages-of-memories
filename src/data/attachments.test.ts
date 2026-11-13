@@ -66,6 +66,13 @@ describe('a story with words, voice and photos', () => {
     expect(pages.some((page) => page.kind === 'photo' && page.assetId === 'photo_1')).toBe(true);
   });
 
+  it('keeps a photo with its description a photo after an edit, so the words stay its caption', () => {
+    const snapshot = addMediaAssetToSnapshot(demo(), asset('photo_9', 'photo'));
+    const photo = createPerspective({ momentId: snapshot.moments[0].id, type: 'photo', content: 'Лето', mediaAssetId: 'photo_9' }, 'photo_story');
+    const next = updatePerspectiveInSnapshot(addPerspectiveToSnapshot(snapshot, photo), 'photo_story', { content: 'Лето 1979', attachmentIds: ['photo_9'] });
+    expect(next.perspectives.find((item) => item.id === 'photo_story')).toMatchObject({ type: 'photo', content: 'Лето 1979', attachmentIds: ['photo_9'] });
+  });
+
   it('names its type by its contents', () => {
     expect(storyType('слова', [asset('a', 'audio')])).toBe('text');
     expect(storyType('', [asset('b', 'photo')])).toBe('photo');

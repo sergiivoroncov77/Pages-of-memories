@@ -38,6 +38,10 @@ interface StoryComposerProps {
   /** Who signs: rendered under the attachments. */
   signature?: ReactNode;
   note?: string;
+  /** Fields shown above the story (a moment's title, chapter and date). */
+  before?: ReactNode;
+  /** The story may be left empty (it is only part of a larger form). */
+  optional?: boolean;
   /** Where the story goes in the book, for a preview drawn as the book's own pages. */
   preview?: Omit<StoryPreviewProps, 'content' | 'files'>;
   submitLabel: string;
@@ -58,7 +62,7 @@ const nextKey = () => `pending-${(counter += 1)}`;
  * One form for one story: its words, and next to them a voice, photos or a
  * video — all saved together as a single story.
  */
-export function StoryComposer({ initialContent = '', existing = [], momentTitle, label, startRecording = false, signature, note, preview,
+export function StoryComposer({ initialContent = '', existing = [], momentTitle, label, startRecording = false, signature, note, preview, before, optional = false,
   submitLabel, saving, error, onError, onSubmit, onCancel }: StoryComposerProps) {
   const [content, setContent] = useState(initialContent);
   const [keep, setKeep] = useState(() => existing.map((asset) => asset.id));
@@ -101,7 +105,8 @@ export function StoryComposer({ initialContent = '', existing = [], momentTitle,
     Array.from(files ?? []).forEach((file) => {
       const problem = validateMediaFile(file);
       if (problem) { problems.push(`${file.name}: ${problem}`); return; }
-      add(prepareMediaFile(file));
+      // A file name is no caption: the book shows the story's own words or nothing.
+      add({ ...prepareMediaFile(file), alt: undefined });
     });
     onError(problems.join(' '));
     if (fileInput.current) fileInput.current.value = '';
@@ -111,7 +116,7 @@ export function StoryComposer({ initialContent = '', existing = [], momentTitle,
     event.preventDefault();
     if (saving) return;
     if (recording) { onError('Сначала нажмите «Готово», чтобы закончить запись.'); return; }
-    if (!content.trim() && !keep.length && !pending.length) { onError('Напишите рассказ или прикрепите голос, фото или видео.'); return; }
+    if (!optional && !content.trim() && !keep.length && !pending.length) { onError('Напишите рассказ или прикрепите голос, фото или видео.'); return; }
     onError('');
     void onSubmit({ content, keep, files: pending.map((item) => item.media) });
   };
@@ -125,6 +130,7 @@ export function StoryComposer({ initialContent = '', existing = [], momentTitle,
   }))];
 
   return <form className="inline-form story-composer" onSubmit={submit} aria-busy={saving}>
+    {before}
     <StoryEditor label={label} autoFocus={!startRecording} value={content} onChange={setContent} rows={7} maxLength={30000} disabled={saving}
       placeholder="Можно начать с одной детали…"
       renderPreview={preview ? (text) => <StoryPreview {...preview} content={text} files={previewFiles} /> : undefined} />

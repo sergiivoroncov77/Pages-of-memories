@@ -15,7 +15,8 @@ import { useMediaUrl } from '../../lib/useMediaUrl';
 import { useCloudSync } from '../../sync/CloudSync';
 import { useAudioRecorder, type Recording } from '../session/useAudioRecorder';
 import { AuthorChoice } from './AuthorChoice';
-import { MomentDetailsForm } from './MomentDetailsForm';
+import type { MomentDetails } from './MomentDetailsForm';
+import { MomentEditor } from './MomentEditor';
 import { signerFor } from './signer';
 import { StoryComposer, type StoryDraft } from './StoryComposer';
 import type { StoryPreviewProps } from '../reader/StoryPreview';
@@ -130,6 +131,35 @@ function MomentContent({ moment }: { moment: Moment }) {
     tabButtons.current[nextIndex]?.focus();
   };
 
+  // The main story is changed together with the moment, unless it lives in an interview answer or belongs to someone else.
+  const mainLocked = !primary ? undefined
+    : primary.sourceMemoryId ? <>Основной рассказ записан в ответе на вопрос — его текст меняется <Link to={'/memories/' + primary.sourceMemoryId}>в ответе</Link>.</>
+    : !cloud.canEdit(book.id, { type: 'perspective', id: primary.id }) ? `Основной рассказ написал(а) ${getPerson(primary.authorId ?? '')?.name ?? 'другой участник'}: изменить его может только автор.`
+    : undefined;
+  const openMomentEditor = () => {
+    setShowEdit(true);
+    closeForm();
+    setEditingId('');
+    window.requestAnimationFrame(() => document.querySelector('.moment-edit-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+  const saveMoment = async (details: Omit<MomentDetails, 'story'>, draft: StoryDraft | null) => {
+    const words = draft?.content.trim() ?? '';
+    const anything = Boolean(words || draft?.keep.length || draft?.files.length);
+    if (draft && primary && !anything) throw new Error('Основной рассказ не может быть пустым. Чтобы убрать его, удалите карточку рассказа значком корзины.');
+    updateMoment(moment.id, details);
+    if (draft && primary) {
+      const result = await updateStory(primary.id, { content: draft.content, authorId: primary.authorId }, draft.keep, draft.files);
+      if (!result.ok) throw new Error(result.error.message);
+    } else if (draft && anything) {
+      const authorId = await signAs(anonymous);
+      const result = await addStory({ momentId: moment.id, content: words, authorId, isPrimary: true }, draft.files);
+      if (!result.ok) throw new Error(result.error.message);
+    }
+    setShowEdit(false);
+    setTab('story');
+    setNotice('Момент сохранён.');
+  };
+
   const submitStory = async ({ content, files }: StoryDraft) => {
     if (isSaving) return;
     setIsSaving(true);
@@ -190,6 +220,8 @@ function MomentContent({ moment }: { moment: Moment }) {
   const editing = (item: Perspective) => {
     if (item.sourceMemoryId) return getMemory(item.sourceMemoryId) ? { editTo: '/memories/' + item.sourceMemoryId } : {};
     if (!cloud.canEdit(book.id, { type: 'perspective', id: item.id })) return {};
+    // The main story is part of the moment: one form for both.
+    if (item.id === primary?.id) return { onEdit: openMomentEditor };
     return {
       onEdit: () => { setEditingId(item.id); closeForm(); setShowEdit(false); },
       editor: editingId === item.id ? <PerspectiveEditor perspective={item} assets={mediaForStory(item.id)} momentTitle={moment.title} shared={shared}
@@ -211,10 +243,16 @@ function MomentContent({ moment }: { moment: Moment }) {
 
   return <div className="page page--moment">
     <PageHeader eyebrow={book.title + ' · ' + chapter.title} title={moment.title} description={moment.summary} backTo="/book"
-      action={<div className="page-action-group"><Link to={'/read?moment=' + moment.id} className="button button--ghost button--small"><BookOpen size={17} aria-hidden="true" /> В книге</Link><Link to={'/chapters/' + chapter.id + '/film'} className="button button--ghost button--small"><Clapperboard size={17} aria-hidden="true" /> Фильм главы</Link><button type="button" className="button button--ghost button--small" aria-expanded={showEdit} onClick={() => { setShowEdit((value) => !value); closeForm(); }}><Pencil size={17} aria-hidden="true" /> Изменить</button><button type="button" className={'icon-button ' + (moment.favorite ? 'is-favorite' : '')} aria-label={moment.favorite ? 'Убрать из избранного' : 'Добавить в избранное'} aria-pressed={moment.favorite} onClick={() => toggleMomentFavorite(moment.id)}><Heart size={21} fill={moment.favorite ? 'currentColor' : 'none'} /></button></div>} />
+      action={<div className="page-action-group moment-actions"><button type="button" className="button button--secondary button--small" aria-expanded={showEdit} onClick={() => (showEdit ? setShowEdit(false) : openMomentEditor())}><Pencil size={17} aria-hidden="true" /> Изменить момент</button><Link to={'/read?moment=' + moment.id} className="button button--ghost button--small"><BookOpen size={17} aria-hidden="true" /> В книге</Link><Link to={'/chapters/' + chapter.id + '/film'} className="button button--ghost button--small"><Clapperboard size={17} aria-hidden="true" /> Фильм главы</Link><button type="button" className={'icon-button ' + (moment.favorite ? 'is-favorite' : '')} aria-label={moment.favorite ? 'Убрать из избранного' : 'Добавить в избранное'} aria-pressed={moment.favorite} onClick={() => toggleMomentFavorite(moment.id)}><Heart size={21} fill={moment.favorite ? 'currentColor' : 'none'} /></button></div>} />
     <div className="moment-meta-bar"><span><CalendarDays size={17} aria-hidden="true" /> {moment.occurredAt ? formatDate(moment.occurredAt) : 'Дата не указана'}</span><span><Users size={17} aria-hidden="true" /> {participants.length} {pluralize(participants.length, 'рассказчик', 'рассказчика', 'рассказчиков')}</span><span><MessageCircle size={17} aria-hidden="true" /> {reflections.length} {pluralize(reflections.length, 'отклик', 'отклика', 'откликов')}</span></div>
 
-    {showEdit ? <Card className="moment-edit-form"><div className="card-heading"><div><p className="eyebrow">Детали истории</p><h2>Изменить момент</h2></div><button type="button" className="icon-button" aria-label="Закрыть редактирование" onClick={() => setShowEdit(false)}><X size={20} /></button></div><MomentDetailsForm initial={moment} chapters={chapters.filter((item) => item.bookId === book.id)} submitLabel="Сохранить изменения" onCancel={() => setShowEdit(false)} onSubmit={(details) => { updateMoment(moment.id, details); setShowEdit(false); setNotice('Детали момента обновлены.'); }} />
+    {showEdit ? <Card className="moment-edit-form"><div className="card-heading"><div><p className="eyebrow">Название, глава, дата и основной рассказ</p><h2>Изменить момент</h2></div><button type="button" className="icon-button" aria-label="Закрыть редактирование" onClick={() => setShowEdit(false)}><X size={20} /></button></div><MomentEditor key={moment.id + String(showEdit)} initial={moment} chapters={chapters.filter((item) => item.bookId === book.id)} submitLabel="Сохранить момент"
+        story={primary && !mainLocked ? { content: primary.content, files: mediaForStory(primary.id) } : undefined} storyLocked={mainLocked}
+        preview={{ book, chapter, moment, people, others: perspectives.filter((item) => item.id !== primary?.id), primary: true,
+          authorName: primary ? getPerson(primary.authorId ?? '')?.name : anonymous ? undefined : myName ?? (newName.trim() || undefined) }}
+        signature={primary ? null : <AuthorChoice myName={myName} anonymous={anonymous} onAnonymous={setAnonymous} newName={newName} onNewName={setNewName} />}
+        note={shared ? 'Файлы уйдут всем участникам книги через семейное хранилище.' : 'Файлы хранятся на этом устройстве.'}
+        onCancel={() => setShowEdit(false)} onSubmit={saveMoment} />
       <div className="moment-delete">{momentBlocker ? <p className="delete-blocked">{momentBlocker}</p> : <button type="button" className="button button--danger-ghost" onClick={() => {
         const count = perspectives.length + reflections.length;
         if (!window.confirm(`Удалить момент «${moment.title}»${everyone}${count ? ` вместе со всеми рассказами и откликами (${count})` : ''}? Фото, голос и видео этого момента тоже удалятся. Это нельзя отменить.`)) return;

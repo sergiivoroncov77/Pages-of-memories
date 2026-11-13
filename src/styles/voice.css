@@ -301,3 +301,15 @@
 .reflection-card .voice-note {
   margin: 4px 0 8px;
 }
+
+/* One form for the whole moment. */
+.moment-editor__story-title {
+  margin: 8px 0 -4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 1.05rem;
+}
+
+.moment-editor__locked {
+  margin-top: 4px;
+}

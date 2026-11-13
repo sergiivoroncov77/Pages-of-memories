@@ -141,7 +141,9 @@ export function buildReaderPages(source: ReaderSource, { firstPageChars, pageCha
         }
         files.forEach((asset) => {
           const own = asset.id === perspective.mediaAssetId;
-          const caption = own ? perspective.caption || perspective.content || asset.alt || '' : asset.alt || perspective.caption || '';
+          // A photo or video story's words are its caption; files next to a story carry their own.
+          const describes = own || perspective.type === 'photo' || perspective.type === 'video';
+          const caption = describes ? perspective.caption || perspective.content || asset.alt || '' : asset.alt || perspective.caption || '';
           if (asset.type === 'photo' && (!own || perspective.type === 'photo' || perspective.type === 'text')) {
             pages.push({ kind: 'photo', key: 'photo:' + keyOf(asset), ...base, assetId: asset.id, caption, author });
           }

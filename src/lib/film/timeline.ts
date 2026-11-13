@@ -258,7 +258,7 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
         if ((perspective.type !== 'photo' && asset.id === perspective.mediaAssetId) || !photoIds.includes(asset.id) || seenPhotos.has(asset.id)) return;
         seenPhotos.add(asset.id);
         const author = personName(source, perspective.authorId);
-        const caption = asset.id === perspective.mediaAssetId ? perspective.caption || perspective.content || '' : asset.alt || perspective.caption || '';
+        const caption = asset.id === perspective.mediaAssetId || perspective.type === 'photo' ? perspective.caption || perspective.content || '' : asset.alt || perspective.caption || '';
         photos.push({
           id: 'photo:' + sceneId(perspective, asset), kind: 'photo', momentId: moment.id, transition: 'fade', duration: PHOTO_SECONDS,
           label: 'Фото: ' + truncate(caption || asset.alt || 'без подписи', 40),
