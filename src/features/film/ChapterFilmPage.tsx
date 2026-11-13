@@ -327,8 +327,8 @@ function ChapterFilm({ chapter }: { chapter: Chapter }) {
           <fieldset className="film-toggles" disabled={recording}>
             <Toggle checked={options.includeReflections} onChange={(value) => setOption('includeReflections', value)} label="Комментарии близких" description="Отклики появятся после каждого момента, как записки на полях." />
             <Toggle checked={options.includeText} onChange={(value) => setOption('includeText', value)} label="Рассказы текстом" description="Страницы с историями и цитатами." />
-            <Toggle checked={options.includeVoices} onChange={(value) => setOption('includeVoices', value)} label="Голосовые записи" description="Ответы близких звучат поверх фотографий." />
-            <Toggle checked={options.includeNarration} onChange={(value) => setOption('includeNarration', value)} label="Озвучка моментов" description="Ваш голос читает историю за кадром." />
+            <Toggle checked={options.includeVoices} onChange={(value) => setOption('includeVoices', value)} label="Голосовые записи" description="Рассказы и отклики близких звучат их голосами." />
+            <Toggle checked={options.includeNarration} onChange={(value) => setOption('includeNarration', value)} label="Озвучка моментов" description="Голос за кадром рассказывает момент; его голосовые записи тогда не звучат." />
             <Toggle checked={options.includeVideos} onChange={(value) => setOption('includeVideos', value)} label="Видео" description="Короткие ролики из материалов главы." />
             <Toggle checked={options.music} onChange={(value) => setOption('music', value)} label="Фоновая музыка" description="Мягко затихает, когда кто-то говорит." />
           </fieldset>
@@ -358,7 +358,7 @@ function ChapterFilm({ chapter }: { chapter: Chapter }) {
 
         <Card className="film-narration">
           <div className="card-heading card-heading--compact"><div><p className="eyebrow">Голос за кадром</p><h2>Озвучка</h2>
-            <p>Прочитайте историю вслух или расскажите своими словами — запись прозвучит в фильме поверх фотографий момента.</p></div></div>
+            <p>Прочитайте историю вслух или расскажите своими словами — запись прозвучит в фильме поверх момента и заменит его голосовые записи. Отклики голосом звучат как прежде.</p></div></div>
           <NarrationPanel moments={source.moments} disabled={recording} />
         </Card>
       </aside>

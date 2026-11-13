@@ -116,15 +116,33 @@ describe('chapter film timeline', () => {
     const timeline = buildFilmTimeline(childhoodSource(true), DEFAULT_FILM_OPTIONS, available);
     const cue = timeline.cues.find((item) => item.kind === 'narration')!;
     const title = timeline.scenes.find((scene) => scene.id === 'moment:moment_summer')!;
-    const voice = timeline.scenes.find((scene) => scene.kind === 'voice')!;
     expect(cue.start).toBeCloseTo(title.start + 0.9, 5);
-    // The relative's own recording only starts once the voice-over has finished.
-    expect(voice.start).toBeGreaterThanOrEqual(cue.start + cue.duration);
+    // The voice-over tells the moment: the stories' own recordings stay silent.
+    expect(timeline.scenes.some((scene) => scene.kind === 'voice' && scene.momentId === 'moment_summer')).toBe(false);
+    expect(timeline.cues.filter((item) => item.kind === 'voice')).toEqual([]);
     expect(timeline.stats.narrations).toBe(1);
 
+    // Without the voice-over the recordings are heard again.
     const withoutNarration = buildFilmTimeline(childhoodSource(true), { ...DEFAULT_FILM_OPTIONS, includeNarration: false }, available);
     expect(withoutNarration.cues.some((item) => item.kind === 'narration')).toBe(false);
-    expect(withoutNarration.duration).toBeLessThan(timeline.duration);
+    expect(withoutNarration.cues.some((item) => item.assetId === voiceAsset.id)).toBe(true);
+  });
+
+  it('plays a reflection told aloud when its note appears and keeps the note up while it speaks', () => {
+    const source = childhoodSource();
+    const reflectionVoice = { ...voiceAsset, id: 'asset_reflection_voice' };
+    source.assets = new Map([...source.assets, [reflectionVoice.id, reflectionVoice]]);
+    source.moments.forEach((entry) => {
+      if (entry.moment.id !== 'moment_summer') return;
+      entry.reflections = [{ id: 'reflection_voice', momentId: 'moment_summer', text: '', mediaAssetId: reflectionVoice.id, createdAt: '2026-01-01T00:00:00.000Z' }];
+    });
+    expect(filmMediaRequests(source).audio.map((asset) => asset.id)).toContain(reflectionVoice.id);
+    const timeline = buildFilmTimeline(source, DEFAULT_FILM_OPTIONS, { ...available, durations: new Map([...available.durations, [reflectionVoice.id, 9]]) });
+    const scene = timeline.scenes.find((item) => item.kind === 'reflections' && item.momentId === 'moment_summer')!;
+    const cue = timeline.cues.find((item) => item.assetId === reflectionVoice.id)!;
+    expect(cue.start).toBeCloseTo(scene.start + 1.5, 5);
+    expect(scene.start + scene.duration).toBeGreaterThan(cue.start + cue.duration);
+    expect(scene.kind === 'reflections' && scene.notes[0]).toMatchObject({ text: 'Отклик голосом', voiced: true });
   });
 
   it('skips media that did not open on this device', () => {

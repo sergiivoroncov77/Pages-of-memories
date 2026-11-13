@@ -119,7 +119,7 @@ export interface VideoScene extends SceneBase {
 export interface ReflectionsScene extends SceneBase {
   kind: 'reflections';
   momentTitle: string;
-  notes: { text: string; author: string; appearAt: number }[];
+  notes: { text: string; author: string; appearAt: number; voiced?: boolean }[];
 }
 
 export interface FinaleScene extends SceneBase {
@@ -187,7 +187,11 @@ export function filmMediaRequests(source: FilmSource): { photos: MediaAsset[]; a
   const photos = new Map<string, MediaAsset>();
   const audio = new Map<string, MediaAsset>();
   const videos = new Map<string, MediaAsset>();
-  source.moments.forEach(({ moment, perspectives }) => {
+  source.moments.forEach(({ moment, perspectives, reflections }) => {
+    reflections.forEach((reflection) => {
+      const voice = reflection.mediaAssetId ? source.assets.get(reflection.mediaAssetId) : undefined;
+      if (isAttachedMedia(voice) && voice.type === 'audio') audio.set(voice.id, voice);
+    });
     perspectives.forEach((perspective) => {
       perspectiveAssets(perspective, source.assets).forEach((asset) => {
         if (!isAttachedMedia(asset)) return;
@@ -330,7 +334,8 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
       stats.narrations += 1;
     }
 
-    if (options.includeVoices) perspectives.forEach((perspective) => filesOf(perspective, 'audio').forEach((asset) => {
+    // A voice-over tells the moment in one voice: the stories' own recordings then stay silent.
+    if (options.includeVoices && narration === undefined) perspectives.forEach((perspective) => filesOf(perspective, 'audio').forEach((asset) => {
       const seconds = availability.durations.get(asset.id);
       if (seconds === undefined || paired.has(asset.id)) return;
       const person = perspective.authorId ? source.people.get(perspective.authorId) : undefined;
@@ -366,16 +371,25 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
       for (let index = 0; index < reflections.length; index += 3) {
         const group = reflections.slice(index, index + 3);
         let at = 1.2;
+        // A reflection told aloud is heard when its note appears; the note stays until the voice ends.
+        const voices: { at: number; assetId: string; seconds: number }[] = [];
         const notes = group.map((reflection) => {
-          const text = truncate(reflection.text, 220);
-          const note = { text, author: personName(source, reflection.authorId), appearAt: at };
-          at += readingSeconds(text, { min: 2.6, max: 7 });
+          const seconds = options.includeVoices && reflection.mediaAssetId ? availability.durations.get(reflection.mediaAssetId) : undefined;
+          const text = truncate(reflection.text, 220) || (seconds !== undefined ? 'Отклик голосом' : '');
+          const note = { text, author: personName(source, reflection.authorId), appearAt: at, voiced: seconds !== undefined };
+          if (seconds !== undefined) voices.push({ at: at + 0.3, assetId: reflection.mediaAssetId!, seconds });
+          at += Math.max(readingSeconds(text, { min: 2.6, max: 7 }), seconds !== undefined ? seconds + 0.9 : 0);
           return note;
         });
-        place({
+        const scene = place({
           id: `reflections:${moment.id}:${index}`, kind: 'reflections', momentId: moment.id, transition: 'fade',
           duration: Math.round((at + 1.4) * 10) / 10, label: 'Отклики: ' + notes.map((note) => note.author).join(', '),
           momentTitle: moment.title, notes
+        });
+        voices.forEach((voice) => {
+          cues.push({ assetId: voice.assetId, kind: 'voice', start: scene.start + voice.at, duration: voice.seconds });
+          quietSpans.push({ start: scene.start + voice.at, end: scene.start + voice.at + voice.seconds });
+          stats.voices += 1;
         });
         stats.reflections += group.length;
       }

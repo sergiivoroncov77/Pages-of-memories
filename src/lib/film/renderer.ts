@@ -635,7 +635,7 @@ export class FilmRenderer {
       ctx.font = `italic ${body.size}px ${SERIF}`;
       ctx.fillStyle = C.ink;
       drawLines(ctx, body, 0, -height / 2 + 34 * u, 'center');
-      this.smallCaps(ctx, note.author, 0, height / 2 - 26 * u, 13 * u, C.accent, 'center', 0.2);
+      this.smallCaps(ctx, (note.voiced ? '♪ ' : '') + note.author, 0, height / 2 - 26 * u, 13 * u, C.accent, 'center', 0.2);
       ctx.restore();
     });
   }
