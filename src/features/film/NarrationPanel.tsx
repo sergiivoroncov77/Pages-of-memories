@@ -1,10 +1,10 @@
-import { Check, ChevronDown, Mic, Pause, Play, Square, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { Check, ChevronDown, Mic, Paperclip, Pause, Play, Square, Trash2 } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { useAppState } from '../../app/AppState';
 import { StoredAudio } from '../../components/StoredAudio';
 import type { MediaAsset, Moment, Perspective, Reflection } from '../../data/types';
 import { formatDuration } from '../../lib/format';
-import type { MediaUploadWithBlob } from '../../lib/mediaFiles';
+import { prepareMediaFile, validateMediaFile, type MediaUploadWithBlob } from '../../lib/mediaFiles';
 import { stripStoryMarkup } from '../../lib/storyMarkup';
 import type { StorageWriteResult } from '../../lib/storage';
 import { useCloudSync } from '../../sync/CloudSync';
@@ -27,7 +27,12 @@ interface NarrationTarget {
  * reflections. Anyone in the book may read a view or reflection aloud, also
  * someone else's.
  */
-export function NarrationPanel({ moments, disabled }: { moments: { moment: Moment; perspectives: Perspective[]; reflections?: Reflection[] }[]; disabled: boolean }) {
+export function NarrationPanel({ moments, disabled, spans }: {
+  moments: { moment: Moment; perspectives: Perspective[]; reflections?: Reflection[] }[];
+  disabled: boolean;
+  /** Seconds each part lasts in the film without voice-overs, by moment, view or reflection id. */
+  spans?: ReadonlyMap<string, number>;
+}) {
   const { mediaAssets, getPerson, setMomentNarration, setViewNarration } = useAppState();
   const [activeId, setActiveId] = useState<string | null>(null);
   const assetOf = (id?: string) => (id ? mediaAssets.find((item) => item.id === id) : undefined);
@@ -49,7 +54,7 @@ export function NarrationPanel({ moments, disabled }: { moments: { moment: Momen
         }))
       ];
       return <section key={moment.id} className="narration-group" aria-label={'Озвучка: ' + moment.title}>
-        {targets.map((target) => <NarrationRow key={target.key} target={target} bookId={moment.bookId} momentTitle={moment.title}
+        {targets.map((target) => <NarrationRow key={target.key} target={target} bookId={moment.bookId} momentTitle={moment.title} span={spans?.get(target.key)}
           open={activeId === target.key} onOpen={() => setActiveId(target.key)} onClose={() => setActiveId(null)}
           disabled={disabled || (activeId !== null && activeId !== target.key)} />)}
       </section>;
@@ -57,9 +62,24 @@ export function NarrationPanel({ moments, disabled }: { moments: { moment: Momen
   </div>;
 }
 
-function NarrationRow({ target, bookId, momentTitle, open, onOpen, onClose, disabled }: {
-  target: NarrationTarget; bookId: string; momentTitle: string; open: boolean; onOpen: () => void; onClose: () => void; disabled: boolean;
+/** A recording's length from the file itself (mp3, m4a and wav tell it right away). */
+function readDuration(file: Blob): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const audio = new Audio();
+    const done = (value?: number) => { URL.revokeObjectURL(url); resolve(value); };
+    const timer = window.setTimeout(() => done(), 5000);
+    audio.preload = 'metadata';
+    audio.onloadedmetadata = () => { window.clearTimeout(timer); done(Number.isFinite(audio.duration) ? Math.round(audio.duration) : undefined); };
+    audio.onerror = () => { window.clearTimeout(timer); done(); };
+    audio.src = url;
+  });
+}
+
+function NarrationRow({ target, bookId, momentTitle, span, open, onOpen, onClose, disabled }: {
+  target: NarrationTarget; bookId: string; momentTitle: string; span?: number; open: boolean; onOpen: () => void; onClose: () => void; disabled: boolean;
 }) {
+  const fileInput = useRef<HTMLInputElement>(null);
   const cloud = useCloudSync();
   const recorder = useAudioRecorder();
   const [error, setError] = useState('');
@@ -97,6 +117,22 @@ function NarrationRow({ target, bookId, momentTitle, open, onOpen, onClose, disa
     onClose();
   };
 
+  // A voice-over recorded elsewhere, from a file on this device.
+  const upload = async (file: File | null) => {
+    if (fileInput.current) fileInput.current.value = '';
+    if (!file) return;
+    const problem = validateMediaFile(file, 'audio');
+    if (problem) { setError(problem); return; }
+    setError('');
+    setSaving(true);
+    const media = { ...prepareMediaFile(file), alt: `Озвучка ${what} «${momentTitle}»` };
+    media.durationSeconds = await readDuration(media.blob);
+    const result = await target.save(media)
+      .catch((cause: unknown) => ({ ok: false as const, error: { kind: 'unavailable' as const, message: cause instanceof Error ? cause.message : 'Не удалось сохранить озвучку.' } }));
+    setSaving(false);
+    if (!result.ok) setError(result.error.message);
+  };
+
   const remove = async () => {
     const result = await target.save(null);
     if (!result.ok) setError(result.error.message);
@@ -107,12 +143,22 @@ function NarrationRow({ target, bookId, momentTitle, open, onOpen, onClose, disa
       <span className={'narration-row__status ' + (asset ? 'has-voice' : '')} aria-hidden="true">{asset ? <Check size={16} /> : <Mic size={16} />}</span>
       <div className="narration-row__copy">
         <strong>{target.title}</strong>
-        <small>{asset ? 'Озвучка записана' + (asset.durationSeconds ? ' · ' + formatDuration(asset.durationSeconds) : '')
+        <small>{asset ? 'Озвучка ' + (asset.durationSeconds ? formatDuration(asset.durationSeconds) : 'записана')
           : target.kind === 'moment' ? 'Без озвучки' : target.script ? '«' + target.script.slice(0, 60) + (target.script.length > 60 ? '…»' : '»') : 'Без озвучки'}</small>
+        {span !== undefined ? <small className="narration-row__span">{'В фильме ' + formatDuration(Math.round(span))
+          + (asset?.durationSeconds && asset.durationSeconds > span ? ` → продлится до ${formatDuration(asset.durationSeconds + 2)} под озвучку` : '')}</small>
+          : target.kind === 'view' ? <small className="narration-row__span">Покажется на фоне фото момента</small> : null}
       </div>
-      {!open && !locked ? <button type="button" className="button button--secondary button--small" onClick={begin} disabled={disabled}>
-        <Mic size={16} aria-hidden="true" /> {asset ? 'Перезаписать' : 'Озвучить'}
-      </button> : null}
+      {!open && !locked ? <div className="narration-row__actions">
+        <label className={'icon-button narration-row__upload' + (disabled || saving ? ' is-disabled' : '')} title="Загрузить озвучку из аудиофайла">
+          <Paperclip size={17} aria-hidden="true" /><span className="visually-hidden">Загрузить озвучку из файла: {target.title}</span>
+          <input ref={fileInput} type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.weba" hidden disabled={disabled || saving}
+            onChange={(event) => { void upload(event.target.files?.[0] ?? null); }} />
+        </label>
+        <button type="button" className="button button--secondary button--small" onClick={begin} disabled={disabled || saving}>
+          <Mic size={16} aria-hidden="true" /> {saving ? 'Сохраняем…' : asset ? 'Перезаписать' : 'Озвучить'}
+        </button>
+      </div> : null}
     </div>
     {asset && !open ? <div className="narration-row__player"><StoredAudio asset={asset} label={'Озвучка: ' + target.title} />
       {locked ? null : <button type="button" className="icon-button" aria-label={'Удалить озвучку: ' + target.title} onClick={() => { void remove(); }} disabled={disabled}><Trash2 size={18} /></button>}</div> : null}

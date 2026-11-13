@@ -735,3 +735,31 @@
 .narration-row--nested .narration-row__copy strong {
   font-size: 0.92rem;
 }
+
+.narration-rule {
+  margin: 0 0 10px;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.narration-row__span {
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.narration-row__actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.narration-row__upload {
+  cursor: pointer;
+}
+
+.narration-row__upload.is-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}

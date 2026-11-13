@@ -3,7 +3,7 @@ import { seedSnapshot } from '../../data/seed';
 import type { MediaAsset, Perspective } from '../../data/types';
 import { chapterLabel, paginateText, readingSeconds, toRoman } from './text';
 import {
-  buildFilmTimeline, chronologicalMoments, DEFAULT_FILM_OPTIONS, filmMediaRequests, levelAt, musicEnvelope,
+  buildFilmTimeline, chronologicalMoments, DEFAULT_FILM_OPTIONS, filmMediaRequests, levelAt, musicEnvelope, narrationSpans,
   sceneIndexAt, type FilmAvailability, type FilmSource
 } from './timeline';
 
@@ -141,6 +141,18 @@ describe('chapter film timeline', () => {
     const scene = timeline.scenes.find((item) => item.id === 'voice:perspective_voice:narration')!;
     expect(cue.start).toBeCloseTo(scene.start + 0.9, 5);
     expect(scene.start + scene.duration).toBeGreaterThanOrEqual(cue.start + cue.duration);
+  });
+
+  it('tells how long each part lasts, to measure a voice-over against', () => {
+    const timeline = buildFilmTimeline(childhoodSource(), { ...DEFAULT_FILM_OPTIONS, includeNarration: false }, available);
+    const spans = narrationSpans(timeline);
+    const summer = timeline.scenes.filter((scene) => scene.momentId === 'moment_summer' && ['moment', 'text', 'photo'].includes(scene.kind));
+    expect(spans.get('moment_summer')).toBeCloseTo(summer.reduce((sum, scene) => sum + scene.duration, 0), 0);
+    // A view with only a recording lasts as long as its voice scene.
+    expect(spans.get('perspective_voice')).toBeCloseTo(13.2, 1);
+    const reflections = timeline.scenes.find((scene) => scene.kind === 'reflections' && scene.momentId === 'moment_summer');
+    const firstReflection = reflections && reflections.kind === 'reflections' ? reflections.reflectionIds?.[0] : undefined;
+    expect(firstReflection && spans.get(firstReflection)).toBeGreaterThan(2);
   });
 
   it('reads a reflection aloud when its note appears', () => {

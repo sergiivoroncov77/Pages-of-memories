@@ -120,6 +120,8 @@ export interface ReflectionsScene extends SceneBase {
   kind: 'reflections';
   momentTitle: string;
   notes: { text: string; author: string; appearAt: number; voiced?: boolean }[];
+  /** The reflections behind the notes, in the same order. */
+  reflectionIds?: string[];
 }
 
 export interface FinaleScene extends SceneBase {
@@ -443,7 +445,7 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
         const scene = place({
           id: `reflections:${moment.id}:${index}`, kind: 'reflections', momentId: moment.id, transition: 'fade',
           duration: Math.round((at + 1.4) * 10) / 10, label: 'Отклики: ' + notes.map((note) => note.author).join(', '),
-          momentTitle: moment.title, notes
+          momentTitle: moment.title, notes, reflectionIds: group.map((reflection) => reflection.id)
         });
         voices.forEach((voice) => {
           cues.push({ assetId: voice.assetId, kind: voice.kind, start: scene.start + voice.at, duration: voice.seconds });
@@ -487,6 +489,31 @@ export function sceneIndexAt(timeline: Pick<FilmTimeline, 'scenes'>, time: numbe
     else high = middle - 1;
   }
   return low;
+}
+
+/**
+ * How long each part of the film lasts without voice-overs: the moment (title,
+ * stories and photos), each view and each reflection's note. A voice-over that
+ * is longer stretches its part to fit; a shorter one leaves the rest without it.
+ */
+export function narrationSpans(timeline: Pick<FilmTimeline, 'scenes'>): Map<string, number> {
+  const spans = new Map<string, number>();
+  const add = (key: string, seconds: number) => spans.set(key, Math.round(((spans.get(key) ?? 0) + seconds) * 10) / 10);
+  timeline.scenes.forEach((scene) => {
+    if (!scene.momentId) return;
+    if (scene.kind === 'moment' || scene.kind === 'text' || scene.kind === 'photo') add(scene.momentId, scene.duration);
+    // A view's own pages, photos and recording, by the view's id at the start of the scene id.
+    const view = /^(?:text|photo|voice|video):([^:]+)/.exec(scene.id)?.[1];
+    if (view && scene.kind !== 'moment') add(view, scene.duration);
+    if (scene.kind === 'reflections') {
+      const ids = scene.reflectionIds ?? [];
+      scene.notes.forEach((note, index) => {
+        const next = scene.notes[index + 1]?.appearAt ?? scene.duration - 1.4;
+        if (ids[index]) add(ids[index], next - note.appearAt);
+      });
+    }
+  });
+  return spans;
 }
 
 export interface MusicPoint { time: number; level: number }

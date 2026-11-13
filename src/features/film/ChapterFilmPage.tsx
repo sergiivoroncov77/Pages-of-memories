@@ -15,7 +15,7 @@ import { canRecordFilm, FilmPlayer, type FilmLoadResult, type FilmRecording } fr
 import { safeFileName } from '../../lib/fileName';
 import { chapterLabel } from '../../lib/film/text';
 import {
-  buildFilmTimeline, chronologicalMoments, DEFAULT_FILM_OPTIONS, FILM_SIZES, filmMediaRequests, sceneIndexAt,
+  buildFilmTimeline, chronologicalMoments, DEFAULT_FILM_OPTIONS, FILM_SIZES, filmMediaRequests, narrationSpans, sceneIndexAt,
   type FilmOptions, type FilmScene, type FilmSource
 } from '../../lib/film/timeline';
 import { NarrationPanel } from './NarrationPanel';
@@ -111,6 +111,10 @@ function ChapterFilm({ chapter }: { chapter: Chapter }) {
   }, [requestKey]);
 
   const timeline = useMemo(() => load.status === 'ready' ? buildFilmTimeline(source, options, load.result) : null, [source, options, load]);
+  // How long each part lasts without voice-overs: what the voice-over is measured against.
+  const spans = useMemo(() => load.status === 'ready'
+    ? narrationSpans(buildFilmTimeline(source, { ...options, includeNarration: false, includeText: true, includeReflections: true }, load.result))
+    : new Map<string, number>(), [source, options, load]);
 
   useEffect(() => {
     try { window.localStorage.setItem(OPTIONS_KEY, JSON.stringify(options)); } catch { /* per-viewer convenience only */ }
@@ -376,7 +380,9 @@ function ChapterFilm({ chapter }: { chapter: Chapter }) {
         <Card className="film-narration">
           <div className="card-heading card-heading--compact"><div><p className="eyebrow">Голос за кадром</p><h2>Озвучка</h2>
             <p>Прочитайте историю вслух или расскажите своими словами — запись прозвучит в фильме поверх момента и заменит его голосовые записи. Отклики голосом звучат как прежде.</p></div></div>
-          <NarrationPanel moments={source.moments} disabled={recording} />
+          <p className="narration-rule">Под строкой — сколько этот кусок идёт в фильме. Озвучка длиннее — кадры продлятся, пока звучит голос.
+            Короче — остаток пройдёт без неё.</p>
+          <NarrationPanel moments={source.moments} disabled={recording} spans={spans} />
         </Card>
       </aside>
     </div>

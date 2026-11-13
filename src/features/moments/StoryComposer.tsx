@@ -9,7 +9,7 @@ import { StoryPreview, type StoryPreviewProps } from '../reader/StoryPreview';
 import { useAudioRecorder, type Recording } from '../session/useAudioRecorder';
 import { VoiceRecorder } from './VoiceRecorder';
 
-const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,image/avif,audio/mpeg,audio/mp4,audio/aac,audio/ogg,audio/wav,audio/x-wav,audio/webm,video/mp4,video/webm,video/ogg,video/quicktime';
+const ACCEPT = 'image/jpeg,image/png,image/webp,image/gif,image/avif,.jpg,.jpeg,.png,.webp,.gif,.avif,audio/*,.mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.weba,video/mp4,video/webm,video/ogg,video/quicktime,.mp4,.m4v,.webm,.mov';
 const extensions: Record<string, string> = { 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg' };
 
 /** A file waiting to be attached: a voice just recorded or a file chosen on the device. */
