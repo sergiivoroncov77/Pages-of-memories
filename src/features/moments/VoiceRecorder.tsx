@@ -70,7 +70,7 @@ export function VoiceRecorder({ recorder, take, onTake, disabled = false }: Voic
       <div className="narration-studio__bar">
         <strong className="narration-studio__timer" role="timer">{formatDuration(recorder.elapsed)}</strong>
         <span className="narration-studio__state" role="status">{recorder.status === 'requesting' ? 'Ждём разрешения на микрофон…'
-          : recorder.status === 'stopping' ? 'Сохраняем запись…' : recorder.status === 'paused' ? 'Пауза' : 'Идёт запись'}</span>
+          : recorder.status === 'stopping' ? 'Готовим запись…' : recorder.status === 'paused' ? 'Пауза' : 'Идёт запись'}</span>
         <div className="narration-studio__actions">
           {recorder.status === 'recording' ? <button type="button" className="icon-button" aria-label="Пауза" onClick={recorder.pause}><Pause size={18} /></button> : null}
           {recorder.status === 'paused' ? <button type="button" className="icon-button" aria-label="Продолжить запись" onClick={recorder.resume}><Play size={18} /></button> : null}

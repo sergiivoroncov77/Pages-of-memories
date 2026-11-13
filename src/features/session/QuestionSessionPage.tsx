@@ -20,7 +20,7 @@ type SessionPhase = 'intro' | 'recording' | 'draft';
 /** Memories need text; a voice-only answer gets an honest placeholder until someone transcribes it. */
 const AUDIO_ONLY_TRANSCRIPT = 'Голосовая запись без расшифровки.';
 
-const extensions: Record<string, string> = { 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg' };
+const extensions: Record<string, string> = { 'audio/mpeg': 'mp3', 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg' };
 
 export function QuestionSessionPage() {
   const { personId, questionId } = useParams();
@@ -279,7 +279,7 @@ function QuestionSession() {
           <span className="recording-screen__label">
             <i />
             {recorder.status === 'requesting' ? 'Ждём разрешения на микрофон'
-              : recorder.status === 'stopping' ? 'Сохраняем запись…'
+              : recorder.status === 'stopping' ? 'Готовим запись…'
               : isPaused ? 'Запись на паузе'
               : unsavedTake ? 'Запись не сохранена'
               : 'Идёт запись'}

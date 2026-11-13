@@ -10,7 +10,7 @@ import type { StorageWriteResult } from '../../lib/storage';
 import { useCloudSync } from '../../sync/CloudSync';
 import { useAudioRecorder } from '../session/useAudioRecorder';
 
-const extensions: Record<string, string> = { 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg' };
+const extensions: Record<string, string> = { 'audio/mpeg': 'mp3', 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg' };
 
 interface NarrationTarget {
   key: string;

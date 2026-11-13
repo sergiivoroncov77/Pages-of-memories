@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { baseMimeType } from '../../lib/mediaStore';
+import { convertToMp3 } from '../../lib/mp3';
 import { repairWebmBlob } from '../../lib/webmTimestamps';
 
 export type RecorderStatus = 'idle' | 'requesting' | 'recording' | 'paused' | 'stopping' | 'denied' | 'unsupported' | 'error';
@@ -178,10 +179,12 @@ export function useAudioRecorder() {
         const raw = new Blob(chunksRef.current, { type: mimeType });
         chunksRef.current = [];
         if (!raw.size) { setStatus('idle'); resolve(null); return; }
-        // Close timestamp holes the browser may leave, so other players do not play minutes of silence.
-        void repairWebmBlob(raw).then((blob) => {
+        // Close timestamp holes the browser may leave, then make it an MP3 that plays everywhere;
+        // when the browser cannot do that, the recording stays as it was made.
+        void repairWebmBlob(raw).then(async (repaired) => {
+          const mp3 = await convertToMp3(repaired);
           setStatus('idle');
-          resolve({ blob, mimeType, durationSeconds });
+          resolve(mp3 ? { blob: mp3.blob, mimeType: 'audio/mpeg', durationSeconds: mp3.durationSeconds } : { blob: repaired, mimeType, durationSeconds });
         });
       };
       recorder.stop();

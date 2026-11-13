@@ -27,7 +27,7 @@ type MomentTab = 'story' | 'perspectives' | 'materials';
 const tabs: MomentTab[] = ['story', 'perspectives', 'materials'];
 const typeLabels: Record<PerspectiveType, string> = { text: 'Текст', audio: 'Аудио', photo: 'Фото', video: 'Видео' };
 const AUDIO_TYPES = 'audio/*,.mp3,.m4a,.aac,.ogg,.oga,.opus,.wav,.weba';
-const extensions: Record<string, string> = { 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg' };
+const extensions: Record<string, string> = { 'audio/mpeg': 'mp3', 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg' };
 const ANONYMOUS = 'Анонимно';
 
 const voiceUpload = (take: Recording, momentTitle: string, words: string): MediaUploadWithBlob => ({
