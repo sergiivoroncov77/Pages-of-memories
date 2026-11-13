@@ -103,6 +103,12 @@ export interface Moment {
   primaryPerspectiveId?: string;
   /** Voice-over recorded for the chapter film; plays over this moment's pages. */
   narrationMediaAssetId?: string;
+  /**
+   * Voice-overs for the moment's other views and its reflections, by their id.
+   * Kept on the moment, which anyone in the book may change: a relative may
+   * read someone else's view or reflection aloud.
+   */
+  narrations?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
   favorite: boolean;

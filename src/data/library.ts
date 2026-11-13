@@ -1,7 +1,7 @@
 import { createId } from '../lib/id';
 import { isCoverColor } from './coverColors';
 import type { AppSettings, AppSnapshot, Book, Chapter, Moment, Person, Question } from './types';
-import { perspectiveMediaIds, referencedMediaIds, reflectionMediaIds, storyMediaIds } from './mediaRefs';
+import { momentMediaIds, perspectiveMediaIds, referencedMediaIds, reflectionMediaIds, storyMediaIds } from './mediaRefs';
 
 /*
  * Library editing: books, chapters and the people a family shares the book
@@ -251,7 +251,7 @@ export function deleteMomentsFromSnapshot(snapshot: AppSnapshot, momentIds: Iter
   removedMemories.forEach((memory) => answersLost.set(memory.personId, (answersLost.get(memory.personId) ?? 0) + 1));
   const candidates = [
     ...storyMediaIds(snapshot.perspectives.filter((item) => ids.has(item.momentId)), snapshot.reflections.filter((item) => ids.has(item.momentId))),
-    ...moments.map((moment) => moment.narrationMediaAssetId)
+    ...moments.flatMap(momentMediaIds)
   ];
   const next: AppSnapshot = {
     ...snapshot,
@@ -274,19 +274,36 @@ export function deleteMomentsFromSnapshot(snapshot: AppSnapshot, momentIds: Iter
 export function deletePerspectiveFromSnapshot(snapshot: AppSnapshot, perspectiveId: string): DeletionResult {
   const perspective = snapshot.perspectives.find((item) => item.id === perspectiveId);
   if (!perspective) return { snapshot, removedMediaIds: [] };
+  const narration = withoutNarration(snapshot, perspective.momentId, perspectiveId);
   const next: AppSnapshot = {
-    ...snapshot,
+    ...narration.snapshot,
     perspectives: snapshot.perspectives.filter((item) => item.id !== perspectiveId),
-    moments: snapshot.moments.map((moment) => moment.primaryPerspectiveId === perspectiveId ? { ...moment, primaryPerspectiveId: undefined } : moment)
+    moments: narration.snapshot.moments.map((moment) => moment.primaryPerspectiveId === perspectiveId ? { ...moment, primaryPerspectiveId: undefined } : moment)
   };
-  return dropOrphanedMedia(next, perspectiveMediaIds(perspective));
+  return dropOrphanedMedia(next, [...perspectiveMediaIds(perspective), ...narration.assetIds]);
 }
 
 /** Delete a reflection with its voice. */
 export function deleteReflectionFromSnapshot(snapshot: AppSnapshot, reflectionId: string): DeletionResult {
   const reflection = snapshot.reflections.find((item) => item.id === reflectionId);
   if (!reflection) return { snapshot, removedMediaIds: [] };
-  return dropOrphanedMedia({ ...snapshot, reflections: snapshot.reflections.filter((item) => item.id !== reflectionId) }, reflectionMediaIds(reflection));
+  const narration = withoutNarration(snapshot, reflection.momentId, reflectionId);
+  return dropOrphanedMedia({ ...narration.snapshot, reflections: snapshot.reflections.filter((item) => item.id !== reflectionId) },
+    [...reflectionMediaIds(reflection), ...narration.assetIds]);
+}
+
+/** A view or reflection that goes takes its voice-over with it. */
+function withoutNarration(snapshot: AppSnapshot, momentId: string, targetId: string): { snapshot: AppSnapshot; assetIds: string[] } {
+  const moment = snapshot.moments.find((item) => item.id === momentId);
+  const assetId = moment?.narrations?.[targetId];
+  if (!moment || !assetId) return { snapshot, assetIds: [] };
+  const narrations = { ...moment.narrations };
+  delete narrations[targetId];
+  return {
+    snapshot: { ...snapshot, moments: snapshot.moments.map((item) => item.id === momentId
+      ? { ...item, narrations: Object.keys(narrations).length ? narrations : undefined } : item) },
+    assetIds: [assetId]
+  };
 }
 
 export function deleteChapterFromSnapshot(snapshot: AppSnapshot, chapterId: string): DeletionResult {

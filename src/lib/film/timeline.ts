@@ -200,8 +200,10 @@ export function filmMediaRequests(source: FilmSource): { photos: MediaAsset[]; a
         if (asset.type === 'video' && (perspective.type === 'video' || asset.id !== perspective.mediaAssetId)) videos.set(asset.id, asset);
       });
     });
-    const narration = moment.narrationMediaAssetId ? source.assets.get(moment.narrationMediaAssetId) : undefined;
-    if (isAttachedMedia(narration) && narration.type === 'audio') audio.set(narration.id, narration);
+    [moment.narrationMediaAssetId, ...Object.values(moment.narrations ?? {})].forEach((id) => {
+      const narration = id ? source.assets.get(id) : undefined;
+      if (isAttachedMedia(narration) && narration.type === 'audio') audio.set(narration.id, narration);
+    });
   });
   return { photos: [...photos.values()], audio: [...audio.values()], videos: [...videos.values()] };
 }
@@ -249,6 +251,14 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
     const narration = options.includeNarration && moment.narrationMediaAssetId
       ? availability.durations.get(moment.narrationMediaAssetId) : undefined;
 
+    // Views with a voice-over of their own get their own stretch of the film after the moment.
+    const viewNarration = (perspective: Perspective) => {
+      const assetId = options.includeNarration ? moment.narrations?.[perspective.id] : undefined;
+      const seconds = assetId ? availability.durations.get(assetId) : undefined;
+      return assetId && seconds !== undefined ? { assetId, seconds } : undefined;
+    };
+    const narratedViews = perspectives.filter((item) => item.id !== moment.primaryPerspectiveId && viewNarration(item));
+
     const photos: Draft[] = [];
     const texts: Draft[] = [];
     const seenPhotos = new Set<string>();
@@ -256,6 +266,7 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
     const pairs: { firstScene: string; voices: { assetId: string; seconds: number }[] }[] = [];
     const paired = new Set<string>();
     perspectives.forEach((perspective) => {
+      if (narratedViews.includes(perspective)) return;
       const told = perspective.type === 'text' || perspective.type === 'audio';
       if (told && options.includeText && perspective.content.trim()) {
         const pages = paginateText(stripStoryMarkup(perspective.content), TEXT_PAGE_CHARS, { flatten: true });
@@ -334,6 +345,48 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
       stats.narrations += 1;
     }
 
+    narratedViews.forEach((perspective) => {
+      const voiceOver = viewNarration(perspective)!;
+      const author = personName(source, perspective.authorId);
+      const drafts: Draft[] = [];
+      const told = perspective.type === 'text' || perspective.type === 'audio';
+      if (told && options.includeText && perspective.content.trim()) {
+        const pages = paginateText(stripStoryMarkup(perspective.content), TEXT_PAGE_CHARS, { flatten: true });
+        pages.forEach((text, index) => drafts.push({
+          id: `text:${perspective.id}:${index}`, kind: 'text', momentId: moment.id, transition: 'fade',
+          duration: readingSeconds(text), label: 'Взгляд: ' + author + (pages.length > 1 ? ` (${index + 1}/${pages.length})` : ''),
+          text, author, page: index + 1, pages: pages.length, photoId: photoIds[0]
+        }));
+        stats.texts += 1;
+      }
+      filesOf(perspective, 'photo').forEach((asset) => {
+        if (!availability.photos.has(asset.id) || seenPhotos.has(asset.id)) return;
+        seenPhotos.add(asset.id);
+        const caption = asset.id === perspective.mediaAssetId || perspective.type === 'photo' ? perspective.caption || perspective.content || '' : asset.alt || perspective.caption || '';
+        drafts.push({ id: 'photo:' + sceneId(perspective, asset), kind: 'photo', momentId: moment.id, transition: 'fade', duration: PHOTO_SECONDS,
+          label: 'Фото: ' + truncate(caption || 'без подписи', 40), assetId: asset.id, caption, author });
+        stats.photos += 1;
+      });
+      if (!drafts.length) {
+        // Nothing to show of its own: the view is heard over the moment's photos, like a voice.
+        const person = perspective.authorId ? source.people.get(perspective.authorId) : undefined;
+        drafts.push({ id: 'voice:' + perspective.id + ':narration', kind: 'voice', momentId: moment.id, transition: 'fade', duration: 1,
+          assetId: voiceOver.assetId, audioOffset: NARRATION_DELAY, label: 'Озвучка: ' + author, author,
+          initials: person?.initials ?? '♪', color: person?.avatarColor ?? '#9b5038', caption: stripStoryMarkup(perspective.caption || perspective.content || ''), photoIds });
+      }
+      const needed = voiceOver.seconds + NARRATION_DELAY + 0.8;
+      const span = drafts.reduce((sum, item) => sum + item.duration, 0);
+      if (span < needed) drafts.forEach((item) => { item.duration = Math.round(item.duration * (needed / span) * 100) / 100; });
+      const first = drafts.map(place)[0];
+      const start = first.start + NARRATION_DELAY;
+      cues.push({ assetId: voiceOver.assetId, kind: 'narration', start, duration: voiceOver.seconds });
+      quietSpans.push({ start, end: start + voiceOver.seconds });
+      stats.narrations += 1;
+      filmNarrators.push(author);
+      // Read aloud by someone, the view's own recording stays silent.
+      filesOf(perspective, 'audio').forEach((asset) => paired.add(asset.id));
+    });
+
     // A voice-over tells the moment in one voice: the stories' own recordings then stay silent.
     if (options.includeVoices && narration === undefined) perspectives.forEach((perspective) => filesOf(perspective, 'audio').forEach((asset) => {
       const seconds = availability.durations.get(asset.id);
@@ -372,12 +425,18 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
         const group = reflections.slice(index, index + 3);
         let at = 1.2;
         // A reflection told aloud is heard when its note appears; the note stays until the voice ends.
-        const voices: { at: number; assetId: string; seconds: number }[] = [];
+        const voices: { at: number; assetId: string; seconds: number; kind: 'voice' | 'narration' }[] = [];
         const notes = group.map((reflection) => {
-          const seconds = options.includeVoices && reflection.mediaAssetId ? availability.durations.get(reflection.mediaAssetId) : undefined;
+          // A voice-over of the reflection is read instead of its own recording.
+          const narrationId = options.includeNarration ? moment.narrations?.[reflection.id] : undefined;
+          const narrated = narrationId ? availability.durations.get(narrationId) : undefined;
+          const ownSeconds = options.includeVoices && reflection.mediaAssetId ? availability.durations.get(reflection.mediaAssetId) : undefined;
+          const heard = narrated !== undefined ? { assetId: narrationId!, seconds: narrated, kind: 'narration' as const }
+            : ownSeconds !== undefined ? { assetId: reflection.mediaAssetId!, seconds: ownSeconds, kind: 'voice' as const } : undefined;
+          const seconds = heard?.seconds;
           const text = truncate(reflection.text, 220) || (seconds !== undefined ? 'Отклик голосом' : '');
           const note = { text, author: personName(source, reflection.authorId), appearAt: at, voiced: seconds !== undefined };
-          if (seconds !== undefined) voices.push({ at: at + 0.3, assetId: reflection.mediaAssetId!, seconds });
+          if (heard) voices.push({ at: at + 0.3, ...heard });
           at += Math.max(readingSeconds(text, { min: 2.6, max: 7 }), seconds !== undefined ? seconds + 0.9 : 0);
           return note;
         });
@@ -387,9 +446,10 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
           momentTitle: moment.title, notes
         });
         voices.forEach((voice) => {
-          cues.push({ assetId: voice.assetId, kind: 'voice', start: scene.start + voice.at, duration: voice.seconds });
+          cues.push({ assetId: voice.assetId, kind: voice.kind, start: scene.start + voice.at, duration: voice.seconds });
           quietSpans.push({ start: scene.start + voice.at, end: scene.start + voice.at + voice.seconds });
-          stats.voices += 1;
+          if (voice.kind === 'narration') stats.narrations += 1;
+          else stats.voices += 1;
         });
         stats.reflections += group.length;
       }

@@ -5,7 +5,7 @@ import { deletePerspectiveFromSnapshot, deleteReflectionFromSnapshot } from './l
 import { perspectiveMediaIds } from './mediaRefs';
 import {
   addMediaAssetToSnapshot, addPerspectiveToSnapshot, addReflectionToSnapshot, createMediaAsset, createPerspective, createReflection,
-  ensureMemoryMoments, storyType, updatePerspectiveInSnapshot
+  ensureMemoryMoments, setViewNarrationInSnapshot, storyType, updatePerspectiveInSnapshot
 } from './mutations';
 import { normalizeSnapshotValue } from './repository';
 import { seedSnapshot } from './seed';
@@ -76,6 +76,21 @@ describe('a story with words, voice and photos', () => {
   it('names its type by its contents', () => {
     expect(storyType('слова', [asset('a', 'audio')])).toBe('text');
     expect(storyType('', [asset('b', 'photo')])).toBe('photo');
+  });
+});
+
+describe('voice-overs of views and reflections', () => {
+  it('are kept on the moment, counted as media of the book, and go with the view they read', () => {
+    const { snapshot, momentId } = withStory(demo());
+    const withVoice = addMediaAssetToSnapshot(snapshot, asset('narr_1', 'audio'));
+    const narrated = setViewNarrationInSnapshot(withVoice, momentId, 'story_1', 'narr_1');
+    const moment = normalizeSnapshotValue(narrated).moments.find((item) => item.id === momentId)!;
+    expect(moment.narrations).toEqual({ story_1: 'narr_1' });
+    expect([...mediaIdsOfBook(narrated, moment.bookId)]).toContain('narr_1');
+    const removed = deletePerspectiveFromSnapshot(narrated, 'story_1');
+    expect(removed.removedMediaIds).toContain('narr_1');
+    expect(removed.snapshot.moments.find((item) => item.id === momentId)?.narrations).toBeUndefined();
+    expect(() => setViewNarrationInSnapshot(withVoice, momentId, 'missing', 'narr_1')).toThrow();
   });
 });
 

@@ -192,6 +192,18 @@ function normalizeDraft(value: unknown, fallback?: MemoryDraft): MemoryDraft | n
   };
 }
 
+function stringRecord(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0);
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+function keptNarrations(narrations: Record<string, string> | undefined, targetExists: (id: string) => boolean,
+  recordingExists: (id: string) => boolean): Record<string, string> | undefined {
+  const kept = Object.entries(narrations ?? {}).filter(([target, asset]) => targetExists(target) && recordingExists(asset));
+  return kept.length ? Object.fromEntries(kept) : undefined;
+}
+
 /** Attached files that are still in the book; none at all leaves the field out. */
 function keptAttachments(ids: string[] | undefined, known: ReadonlySet<string>): string[] | undefined {
   const kept = [...new Set((ids ?? []).filter((id) => known.has(id)))];
@@ -273,6 +285,7 @@ function normalizeMoment(value: unknown, fallback?: Moment): Moment | null {
     tags: stringArray(value.tags, fallback?.tags ?? []),
     primaryPerspectiveId: optionalString(value.primaryPerspectiveId, fallback?.primaryPerspectiveId),
     narrationMediaAssetId: optionalString(value.narrationMediaAssetId, fallback?.narrationMediaAssetId),
+    narrations: stringRecord(value.narrations) ?? fallback?.narrations,
     createdAt,
     updatedAt,
     favorite: typeof value.favorite === 'boolean' ? value.favorite : fallback?.favorite ?? false
@@ -572,6 +585,11 @@ function normalizeSnapshot(value: unknown): AppSnapshot | null {
       narrationMediaAssetId: moment.narrationMediaAssetId
         && mediaAssets.some((asset) => asset.id === moment.narrationMediaAssetId && asset.type === 'audio')
         ? moment.narrationMediaAssetId : undefined,
+      // Only voice-overs of views and reflections still in this moment, with a recording that exists.
+      narrations: keptNarrations(moment.narrations, (targetId) =>
+        perspectives.some((item) => item.id === targetId && item.momentId === moment.id)
+        || reflections.some((item) => item.id === targetId && item.momentId === moment.id),
+      (assetId) => mediaAssets.some((asset) => asset.id === assetId && asset.type === 'audio')),
       primaryPerspectiveId:
         moment.primaryPerspectiveId && perspectivesById.get(moment.primaryPerspectiveId)?.momentId === moment.id
           ? moment.primaryPerspectiveId
@@ -743,6 +761,7 @@ export function parseSnapshotImport(json: string): AppSnapshot {
     }
     if (item.primaryPerspectiveId !== undefined) reference(perspectives.get(item.primaryPerspectiveId)?.momentId === item.id, 'основного рассказа с моментом');
     if (item.narrationMediaAssetId !== undefined) reference(assets.get(item.narrationMediaAssetId)?.type === 'audio', 'озвучки момента с аудиозаписью');
+    if (isRecord(item.narrations)) Object.values(item.narrations).forEach((id) => reference(assets.get(String(id))?.type === 'audio', 'озвучки момента с аудиозаписью'));
   });
   [...collections.perspectives, ...collections.reflections].forEach((item) => {
     reference(moments.has(item.momentId), 'рассказа или отклика с моментом');

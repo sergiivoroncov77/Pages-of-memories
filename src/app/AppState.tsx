@@ -59,6 +59,7 @@ import {
   removeUnusedMediaAsset,
   saveDraftToSnapshot,
   setMomentNarrationInSnapshot,
+  setViewNarrationInSnapshot,
   toggleMomentFavorite,
   toggleMemoryFavorite,
   updateMomentInSnapshot,
@@ -137,6 +138,8 @@ interface AppStateValue {
   storeMedia: (media: MediaUploadWithBlob) => Promise<{ ok: true; asset: MediaAsset } | { ok: false; error: StorageError }>;
   /** Replace a moment's film voice-over; `null` removes it. The previous recording is deleted from the device. */
   setMomentNarration: (momentId: string, media: MediaUploadWithBlob | null) => Promise<StorageWriteResult>;
+  /** A voice-over for one of the moment's views or reflections; null takes it away. */
+  setViewNarration: (momentId: string, targetId: string, media: MediaUploadWithBlob | null) => Promise<StorageWriteResult>;
   discardMedia: (assetId: string) => void;
   addReflection: (input: Parameters<typeof createReflection>[0]) => Reflection;
   /** A reflection in words, aloud, or both; the voice is stored on the device first. */
@@ -510,6 +513,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return result;
   };
 
+  const setViewNarration = (momentId: string, targetId: string, media: MediaUploadWithBlob | null) => commitMediaChange(media,
+    snapshotRef.current.moments.find((item) => item.id === momentId)?.narrations?.[targetId],
+    (current, assetId) => setViewNarrationInSnapshot(current, momentId, targetId, assetId));
+
   const setMomentNarration = (momentId: string, media: MediaUploadWithBlob | null) => commitMediaChange(media,
     snapshotRef.current.moments.find((item) => item.id === momentId)?.narrationMediaAssetId,
     (current, assetId) => setMomentNarrationInSnapshot(current, momentId, assetId));
@@ -715,7 +722,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         return { ...item, mediaAssetId, attachmentIds: attachmentIds?.length ? attachmentIds : undefined };
       }),
       reflections: pkg.reflections.map((item) => item.mediaAssetId && lost.has(item.mediaAssetId) ? { ...item, mediaAssetId: undefined } : item),
-      moments: pkg.moments.map((moment) => moment.narrationMediaAssetId && lost.has(moment.narrationMediaAssetId) ? { ...moment, narrationMediaAssetId: undefined } : moment),
+      moments: pkg.moments.map((moment) => {
+        const narrations = Object.fromEntries(Object.entries(moment.narrations ?? {}).filter(([, id]) => !lost.has(id)));
+        return { ...moment, narrationMediaAssetId: moment.narrationMediaAssetId && lost.has(moment.narrationMediaAssetId) ? undefined : moment.narrationMediaAssetId,
+          narrations: Object.keys(narrations).length ? narrations : undefined };
+      }),
       book: pkg.book.coverMediaAssetId && lost.has(pkg.book.coverMediaAssetId) ? { ...pkg.book, coverMediaAssetId: undefined } : pkg.book
     };
     const appUrl = new URL(import.meta.env.BASE_URL, window.location.origin).href;
@@ -804,6 +815,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         addPerspectiveWithMedia,
         storeMedia,
         setMomentNarration,
+        setViewNarration,
         discardMedia,
         addReflection,
         addReflectionWithMedia,

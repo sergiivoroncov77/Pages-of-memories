@@ -1,4 +1,4 @@
-import type { AppSnapshot, MediaAsset, Perspective, Reflection } from './types';
+import type { AppSnapshot, MediaAsset, Moment, Perspective, Reflection } from './types';
 
 /**
  * Every file a story uses: its own recording or photo (older stories keep one
@@ -26,11 +26,16 @@ export function storyMediaIds(perspectives: readonly Perspective[], reflections:
   return [...perspectives.flatMap(perspectiveMediaIds), ...reflections.flatMap(reflectionMediaIds)];
 }
 
+/** The voice-overs of a moment: its own and those of its views and reflections. */
+export function momentMediaIds(moment: Pick<Moment, 'narrationMediaAssetId' | 'narrations'>): string[] {
+  return [moment.narrationMediaAssetId, ...Object.values(moment.narrations ?? {})].filter((id): id is string => Boolean(id));
+}
+
 /** Every media id something in the snapshot still uses: stories, reflections, voice-overs, covers and draft answers. */
 export function referencedMediaIds(snapshot: Pick<AppSnapshot, 'perspectives' | 'reflections' | 'moments' | 'books' | 'drafts'>): Set<string> {
   return new Set([
     ...storyMediaIds(snapshot.perspectives, snapshot.reflections),
-    ...snapshot.moments.map((item) => item.narrationMediaAssetId),
+    ...snapshot.moments.flatMap(momentMediaIds),
     ...snapshot.books.map((item) => item.coverMediaAssetId),
     ...snapshot.drafts.map((item) => item.audioMediaAssetId)
   ].filter((id): id is string => Boolean(id)));

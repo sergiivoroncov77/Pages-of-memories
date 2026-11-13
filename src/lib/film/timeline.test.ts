@@ -128,6 +128,34 @@ describe('chapter film timeline', () => {
     expect(withoutNarration.cues.some((item) => item.assetId === voiceAsset.id)).toBe(true);
   });
 
+  it('reads a view aloud in its own stretch after the moment, instead of its recording', () => {
+    const source = childhoodSource();
+    const summer = source.moments.find((entry) => entry.moment.id === 'moment_summer')!;
+    summer.moment = { ...summer.moment, narrations: { [voicePerspective.id]: narrationAsset.id } };
+    expect(filmMediaRequests(source).audio.map((asset) => asset.id)).toContain(narrationAsset.id);
+    const timeline = buildFilmTimeline(source, DEFAULT_FILM_OPTIONS, available);
+    // The view had only a recording: it is now heard through the voice-over, its own voice stays silent.
+    expect(timeline.cues.some((cue) => cue.assetId === voiceAsset.id)).toBe(false);
+    const cue = timeline.cues.find((item) => item.assetId === narrationAsset.id)!;
+    expect(cue.kind).toBe('narration');
+    const scene = timeline.scenes.find((item) => item.id === 'voice:perspective_voice:narration')!;
+    expect(cue.start).toBeCloseTo(scene.start + 0.9, 5);
+    expect(scene.start + scene.duration).toBeGreaterThanOrEqual(cue.start + cue.duration);
+  });
+
+  it('reads a reflection aloud when its note appears', () => {
+    const source = childhoodSource();
+    const summer = source.moments.find((entry) => entry.moment.id === 'moment_summer')!;
+    const reflection = summer.reflections[0];
+    summer.moment = { ...summer.moment, narrations: { [reflection.id]: narrationAsset.id } };
+    const timeline = buildFilmTimeline(source, DEFAULT_FILM_OPTIONS, available);
+    const scene = timeline.scenes.find((item) => item.kind === 'reflections' && item.momentId === 'moment_summer')!;
+    const cue = timeline.cues.find((item) => item.assetId === narrationAsset.id)!;
+    expect(cue).toMatchObject({ kind: 'narration', duration: 40 });
+    expect(cue.start).toBeCloseTo(scene.start + 1.5, 5);
+    expect(scene.start + scene.duration).toBeGreaterThan(cue.start + cue.duration);
+  });
+
   it('plays a reflection told aloud when its note appears and keeps the note up while it speaks', () => {
     const source = childhoodSource();
     const reflectionVoice = { ...voiceAsset, id: 'asset_reflection_voice' };

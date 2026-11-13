@@ -561,6 +561,26 @@ export function setMomentNarrationInSnapshot(snapshot: AppSnapshot, momentId: st
   };
 }
 
+/** A voice-over for one of the moment's views or reflections; undefined takes it away. */
+export function setViewNarrationInSnapshot(snapshot: AppSnapshot, momentId: string, targetId: string, assetId: string | undefined): AppSnapshot {
+  const moment = snapshot.moments.find((item) => item.id === momentId);
+  if (!moment) return snapshot;
+  const belongs = snapshot.perspectives.some((item) => item.id === targetId && item.momentId === momentId)
+    || snapshot.reflections.some((item) => item.id === targetId && item.momentId === momentId);
+  if (!belongs) throw new Error('Этого взгляда или отклика в моменте больше нет.');
+  if (assetId !== undefined && snapshot.mediaAssets.find((asset) => asset.id === assetId)?.type !== 'audio') {
+    throw new Error('Озвучка должна быть аудиозаписью.');
+  }
+  const narrations = { ...moment.narrations };
+  if (assetId) narrations[targetId] = assetId;
+  else delete narrations[targetId];
+  return {
+    ...snapshot,
+    moments: snapshot.moments.map((item) => item.id === momentId
+      ? { ...item, narrations: Object.keys(narrations).length ? narrations : undefined, updatedAt: new Date().toISOString() } : item)
+  };
+}
+
 export function setMomentFavorite(snapshot: AppSnapshot, momentId: string, favorite: boolean): AppSnapshot {
   const moment = snapshot.moments.find((item) => item.id === momentId);
   const memory = snapshot.memories.find((item) => item.id === moment?.sourceMemoryId

@@ -8,7 +8,7 @@ import { formatFileSize } from '../../lib/format';
 import { appAddress, copyText, downloadFile, shareOrDownload } from '../../lib/shareFile';
 import { useCloudSync } from '../../sync/CloudSync';
 import { CloudInvitePanel } from '../cloud/CloudInvitePanel';
-import { storyMediaIds } from '../../data/mediaRefs';
+import { momentMediaIds, storyMediaIds } from '../../data/mediaRefs';
 
 type Status = { kind: 'idle' } | { kind: 'packing' } | { kind: 'done'; message: string; file: File } | { kind: 'error'; message: string };
 
@@ -29,7 +29,7 @@ export function ShareBookPanel({ book, person, onClose }: { book: Book; person?:
   const momentIds = new Set(moments.filter((moment) => moment.bookId === book.id).map((moment) => moment.id));
   const mediaIds = new Set([
     book.coverMediaAssetId,
-    ...moments.filter((moment) => momentIds.has(moment.id)).map((moment) => moment.narrationMediaAssetId),
+    ...moments.filter((moment) => momentIds.has(moment.id)).flatMap(momentMediaIds),
     ...storyMediaIds(perspectives.filter((item) => momentIds.has(item.momentId)), reflections.filter((item) => momentIds.has(item.momentId)))
   ]);
   const estimated = mediaAssets.filter((asset) => mediaIds.has(asset.id)).reduce((total, asset) => total + (asset.sizeBytes ?? 0), 0) * 1.37;

@@ -2,7 +2,7 @@ import { deleteChapterFromSnapshot, deleteMomentsFromSnapshot } from '../data/li
 import { entityFields, isSafeBackupMediaUrl, normalizeSnapshotValue, validateFields } from '../data/repository';
 import type { AppSnapshot, Book, Chapter, MediaAsset, Moment, Person, Perspective, Reflection } from '../data/types';
 import { isStoredMedia, storedMediaUrl } from '../lib/mediaStore';
-import { referencedMediaIds, storyMediaIds } from '../data/mediaRefs';
+import { momentMediaIds, referencedMediaIds, storyMediaIds } from '../data/mediaRefs';
 
 /*
  * A book in the family storage is a flat set of records keyed "type:id".
@@ -67,7 +67,7 @@ export function mediaIdsOfBook(snapshot: AppSnapshot, bookId: string): Set<strin
   const momentIds = new Set(moments.map((moment) => moment.id));
   return new Set([
     book?.coverMediaAssetId,
-    ...moments.map((moment) => moment.narrationMediaAssetId),
+    ...moments.flatMap(momentMediaIds),
     ...storyMediaIds(snapshot.perspectives.filter((item) => momentIds.has(item.momentId)), snapshot.reflections.filter((item) => momentIds.has(item.momentId)))
   ].filter((id): id is string => Boolean(id)));
 }

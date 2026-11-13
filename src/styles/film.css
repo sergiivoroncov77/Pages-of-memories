@@ -719,3 +719,19 @@
   color: var(--ink);
   font-weight: 600;
 }
+
+/* Voice-overs of a moment's views and reflections sit under the moment's own. */
+.narration-group {
+  display: grid;
+  gap: 6px;
+}
+
+.narration-row--nested {
+  margin-left: 22px;
+  border-left: 2px solid var(--line);
+  padding-left: 10px;
+}
+
+.narration-row--nested .narration-row__copy strong {
+  font-size: 0.92rem;
+}

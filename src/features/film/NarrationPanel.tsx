@@ -2,36 +2,75 @@ import { Check, ChevronDown, Mic, Pause, Play, Square, Trash2 } from 'lucide-rea
 import { useState } from 'react';
 import { useAppState } from '../../app/AppState';
 import { StoredAudio } from '../../components/StoredAudio';
-import type { Moment, Perspective } from '../../data/types';
+import type { MediaAsset, Moment, Perspective, Reflection } from '../../data/types';
 import { formatDuration } from '../../lib/format';
+import type { MediaUploadWithBlob } from '../../lib/mediaFiles';
+import { stripStoryMarkup } from '../../lib/storyMarkup';
+import type { StorageWriteResult } from '../../lib/storage';
 import { useCloudSync } from '../../sync/CloudSync';
 import { useAudioRecorder } from '../session/useAudioRecorder';
-import { stripStoryMarkup } from '../../lib/storyMarkup';
 
 const extensions: Record<string, string> = { 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg' };
 
-/** One voice-over per moment: the reader tells the story, the film plays it over the photos. */
-export function NarrationPanel({ moments, disabled }: { moments: { moment: Moment; perspectives: Perspective[] }[]; disabled: boolean }) {
+interface NarrationTarget {
+  key: string;
+  /** What is read aloud: the moment, someone's view or a reflection. */
+  kind: 'moment' | 'view' | 'reflection';
+  title: string;
+  script: string;
+  asset?: MediaAsset;
+  save: (media: MediaUploadWithBlob | null) => Promise<StorageWriteResult>;
+}
+
+/**
+ * Voice-overs for the film: the moment itself, and each of its other views and
+ * reflections. Anyone in the book may read a view or reflection aloud, also
+ * someone else's.
+ */
+export function NarrationPanel({ moments, disabled }: { moments: { moment: Moment; perspectives: Perspective[]; reflections?: Reflection[] }[]; disabled: boolean }) {
+  const { mediaAssets, getPerson, setMomentNarration, setViewNarration } = useAppState();
   const [activeId, setActiveId] = useState<string | null>(null);
+  const assetOf = (id?: string) => (id ? mediaAssets.find((item) => item.id === id) : undefined);
+  const name = (id?: string) => getPerson(id ?? '')?.name ?? 'Без указания автора';
+
   return <div className="narration-list">
-    {moments.map(({ moment, perspectives }) => <NarrationRow key={moment.id} moment={moment} script={stripStoryMarkup(perspectives.find((item) => item.id === moment.primaryPerspectiveId)?.content
-      ?? perspectives.find((item) => item.type === 'text')?.content ?? moment.summary)}
-      open={activeId === moment.id} onOpen={() => setActiveId(moment.id)} onClose={() => setActiveId(null)} disabled={disabled || (activeId !== null && activeId !== moment.id)} />)}
+    {moments.map(({ moment, perspectives, reflections = [] }) => {
+      const primary = perspectives.find((item) => item.id === moment.primaryPerspectiveId) ?? perspectives.find((item) => item.type === 'text');
+      const targets: NarrationTarget[] = [
+        { key: moment.id, kind: 'moment', title: moment.title, asset: assetOf(moment.narrationMediaAssetId),
+          script: stripStoryMarkup(primary?.content ?? moment.summary), save: (media) => setMomentNarration(moment.id, media) },
+        ...perspectives.filter((item) => item.id !== primary?.id).map((item): NarrationTarget => ({
+          key: item.id, kind: 'view', title: 'Взгляд · ' + name(item.authorId), asset: assetOf(moment.narrations?.[item.id]),
+          script: stripStoryMarkup(item.content || item.caption || ''), save: (media) => setViewNarration(moment.id, item.id, media)
+        })),
+        ...reflections.map((item): NarrationTarget => ({
+          key: item.id, kind: 'reflection', title: 'Отклик · ' + name(item.authorId), asset: assetOf(moment.narrations?.[item.id]),
+          script: item.text, save: (media) => setViewNarration(moment.id, item.id, media)
+        }))
+      ];
+      return <section key={moment.id} className="narration-group" aria-label={'Озвучка: ' + moment.title}>
+        {targets.map((target) => <NarrationRow key={target.key} target={target} bookId={moment.bookId} momentTitle={moment.title}
+          open={activeId === target.key} onOpen={() => setActiveId(target.key)} onClose={() => setActiveId(null)}
+          disabled={disabled || (activeId !== null && activeId !== target.key)} />)}
+      </section>;
+    })}
   </div>;
 }
 
-function NarrationRow({ moment, script, open, onOpen, onClose, disabled }: { moment: Moment; script: string; open: boolean; onOpen: () => void; onClose: () => void; disabled: boolean }) {
-  const { mediaAssets, setMomentNarration } = useAppState();
+function NarrationRow({ target, bookId, momentTitle, open, onOpen, onClose, disabled }: {
+  target: NarrationTarget; bookId: string; momentTitle: string; open: boolean; onOpen: () => void; onClose: () => void; disabled: boolean;
+}) {
   const cloud = useCloudSync();
   const recorder = useAudioRecorder();
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [showScript, setShowScript] = useState(true);
-  const asset = moment.narrationMediaAssetId ? mediaAssets.find((item) => item.id === moment.narrationMediaAssetId) : undefined;
+  const { asset } = target;
   const live = recorder.status === 'recording' || recorder.status === 'paused';
   const problem = recorder.status === 'denied' || recorder.status === 'unsupported' || recorder.status === 'error';
   // In a shared book someone else's voice-over is theirs to replace or delete.
-  const locked = asset ? cloud.deletionBlocker(moment.bookId, { type: 'media', id: asset.id }) : null;
+  const locked = asset ? cloud.deletionBlocker(bookId, { type: 'media', id: asset.id }) : null;
+  const what = target.kind === 'moment' ? 'момента' : target.kind === 'view' ? 'взгляда' : 'отклика';
 
   const begin = () => {
     setError('');
@@ -43,10 +82,10 @@ function NarrationRow({ moment, script, open, onOpen, onClose, disabled }: { mom
     const take = await recorder.stop();
     if (!take) { setError('Запись получилась пустой. Попробуйте ещё раз.'); return; }
     setSaving(true);
-    const result = await setMomentNarration(moment.id, {
+    const result = await target.save({
       type: 'audio', url: '', mimeType: take.mimeType, blob: take.blob, sizeBytes: take.blob.size, durationSeconds: take.durationSeconds,
-      fileName: `Озвучка — ${moment.title}.${extensions[take.mimeType] ?? 'webm'}`, alt: `Озвучка момента «${moment.title}»`
-    });
+      fileName: `Озвучка — ${momentTitle}.${extensions[take.mimeType] ?? 'webm'}`, alt: `Озвучка ${what} «${momentTitle}»`
+    }).catch((cause: unknown) => ({ ok: false as const, error: { kind: 'unavailable' as const, message: cause instanceof Error ? cause.message : 'Не удалось сохранить озвучку.' } }));
     setSaving(false);
     if (!result.ok) { setError(result.error.message); return; }
     onClose();
@@ -59,30 +98,31 @@ function NarrationRow({ moment, script, open, onOpen, onClose, disabled }: { mom
   };
 
   const remove = async () => {
-    const result = await setMomentNarration(moment.id, null);
+    const result = await target.save(null);
     if (!result.ok) setError(result.error.message);
   };
 
-  return <article className={'narration-row ' + (open ? 'is-open' : '')}>
+  return <article className={'narration-row ' + (target.kind !== 'moment' ? 'narration-row--nested ' : '') + (open ? 'is-open' : '')}>
     <div className="narration-row__head">
       <span className={'narration-row__status ' + (asset ? 'has-voice' : '')} aria-hidden="true">{asset ? <Check size={16} /> : <Mic size={16} />}</span>
       <div className="narration-row__copy">
-        <strong>{moment.title}</strong>
-        <small>{asset ? 'Озвучка записана' + (asset.durationSeconds ? ' · ' + formatDuration(asset.durationSeconds) : '') : 'Без озвучки'}</small>
+        <strong>{target.title}</strong>
+        <small>{asset ? 'Озвучка записана' + (asset.durationSeconds ? ' · ' + formatDuration(asset.durationSeconds) : '')
+          : target.kind === 'moment' ? 'Без озвучки' : target.script ? '«' + target.script.slice(0, 60) + (target.script.length > 60 ? '…»' : '»') : 'Без озвучки'}</small>
       </div>
       {!open && !locked ? <button type="button" className="button button--secondary button--small" onClick={begin} disabled={disabled}>
         <Mic size={16} aria-hidden="true" /> {asset ? 'Перезаписать' : 'Озвучить'}
       </button> : null}
     </div>
-    {asset && !open ? <div className="narration-row__player"><StoredAudio asset={asset} label={'Озвучка: ' + moment.title} />
-      {locked ? null : <button type="button" className="icon-button" aria-label={'Удалить озвучку: ' + moment.title} onClick={() => { void remove(); }} disabled={disabled}><Trash2 size={18} /></button>}</div> : null}
+    {asset && !open ? <div className="narration-row__player"><StoredAudio asset={asset} label={'Озвучка: ' + target.title} />
+      {locked ? null : <button type="button" className="icon-button" aria-label={'Удалить озвучку: ' + target.title} onClick={() => { void remove(); }} disabled={disabled}><Trash2 size={18} /></button>}</div> : null}
     {locked && !open ? <p className="delete-blocked">Озвучку записали не вы — перезаписать или удалить её может автор или создатель книги.</p> : null}
     {open ? <div className="narration-studio">
-      {script ? <div className="narration-script">
+      {target.script ? <div className="narration-script">
         <button type="button" className="text-button" aria-expanded={showScript} onClick={() => setShowScript((value) => !value)}>
           <ChevronDown size={16} aria-hidden="true" className={showScript ? 'is-flipped' : ''} /> Текст для чтения
         </button>
-        {showScript ? <p>{script}</p> : null}
+        {showScript ? <p>{target.script}</p> : null}
       </div> : null}
       {problem ? <p className="field-message field-message--error" role="alert">{recorder.message}</p> : null}
       <div className={'narration-meter ' + (recorder.status === 'recording' ? 'is-live' : '')} role="meter" aria-label="Громкость микрофона"

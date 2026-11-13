@@ -3,7 +3,7 @@ import { ensureMemoryMoments } from './mutations';
 import { normalizeSnapshotValue } from './repository';
 import { seedSnapshot } from './seed';
 import type { AppSnapshot } from './types';
-import { perspectiveMediaIds, referencedMediaIds } from './mediaRefs';
+import { momentMediaIds, perspectiveMediaIds, referencedMediaIds } from './mediaRefs';
 
 /*
  * The demo family and its book: a sample to look around the app. It is off by
@@ -46,7 +46,7 @@ export function demoDependents(snapshot: AppSnapshot): number {
     ...own('books', snapshot.books).filter((item) => demoMedia(item.coverMediaAssetId)),
     ...own('chapters', snapshot.chapters).filter((item) => ids.books.has(item.bookId)),
     ...own('moments', snapshot.moments).filter((item) => ids.books.has(item.bookId) || ids.chapters.has(item.chapterId)
-      || Boolean(item.sourceMemoryId && ids.memories.has(item.sourceMemoryId)) || demoMedia(item.narrationMediaAssetId)),
+      || Boolean(item.sourceMemoryId && ids.memories.has(item.sourceMemoryId)) || momentMediaIds(item).some(demoMedia)),
     ...own('perspectives', snapshot.perspectives).filter((item) => ids.moments.has(item.momentId) || demoPerson(item.authorId) || perspectiveMediaIds(item).some(demoMedia)),
     ...own('reflections', snapshot.reflections).filter((item) => ids.moments.has(item.momentId) || demoPerson(item.authorId))
   ].length;
