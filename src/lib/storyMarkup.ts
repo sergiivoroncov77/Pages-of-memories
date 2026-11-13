@@ -158,6 +158,26 @@ export function storyToHtml(text: string): string {
 }
 
 /** Format the selected words: wrap them in a pair of markers, or take the pair off when it is already there. */
+/** Split a run of marker characters into markers, longest first; null when it is not made only of markers. */
+function markerTokens(run: string): string[] | null {
+  const tokens: string[] = [];
+  for (let i = 0; i < run.length;) {
+    const marker = MARKERS.find((item) => run.startsWith(item.token, i));
+    if (!marker) return null;
+    tokens.push(marker.token);
+    i += marker.token.length;
+  }
+  return tokens;
+}
+
+const MARKER_CHAR = /[*_+]/;
+
+/**
+ * Format the selected words, or take the formatting off when they already
+ * have it. Several styles nest around the same words (`*__слово__*`), so all
+ * the markers next to the selection are read together: the style's pair is
+ * removed wherever it sits among them, or added inside them.
+ */
 export function toggleInline(value: string, start: number, end: number, style: InlineStyle): { value: string; selectionStart: number; selectionEnd: number } {
   const token = MARKERS.find((item) => item.style === style)!.token;
   const text = normalizeStoryNewlines(value);
@@ -166,19 +186,31 @@ export function toggleInline(value: string, start: number, end: number, style: I
   // Spaces stay outside the markers, or they would not pair.
   while (from < to && /\s/.test(text[from])) from += 1;
   while (to > from && /\s/.test(text[to - 1])) to -= 1;
-  const before = text.slice(from - token.length, from);
-  const after = text.slice(to, to + token.length);
-  if (before === token && after === token) {
-    const next = text.slice(0, from - token.length) + text.slice(from, to) + text.slice(to + token.length);
-    return { value: next, selectionStart: from - token.length, selectionEnd: to - token.length };
+  // Markers selected together with the words belong to the runs around them.
+  while (from < to && MARKER_CHAR.test(text[from])) from += 1;
+  while (to > from && MARKER_CHAR.test(text[to - 1])) to -= 1;
+  let left = from;
+  while (left > 0 && MARKER_CHAR.test(text[left - 1])) left -= 1;
+  let right = to;
+  while (right < text.length && MARKER_CHAR.test(text[right])) right += 1;
+  let before = markerTokens(text.slice(left, from));
+  let after = markerTokens(text.slice(to, right));
+  // Something that is not a marker (a lone underscore) stays text.
+  if (!before) { before = []; left = from; }
+  if (!after) { after = []; right = to; }
+  const opening = before.lastIndexOf(token);
+  const closing = after.indexOf(token);
+  if (opening >= 0 && closing >= 0) {
+    before.splice(opening, 1);
+    after.splice(closing, 1);
+  } else {
+    before.push(token);
+    after.unshift(token);
   }
-  const selected = text.slice(from, to);
-  if (selected.startsWith(token) && selected.endsWith(token) && selected.length >= token.length * 2) {
-    const inner = selected.slice(token.length, selected.length - token.length);
-    return { value: text.slice(0, from) + inner + text.slice(to), selectionStart: from, selectionEnd: from + inner.length };
-  }
-  const next = text.slice(0, from) + token + selected + token + text.slice(to);
-  return { value: next, selectionStart: from + token.length, selectionEnd: to + token.length };
+  const prefix = before.join('');
+  const next = text.slice(0, left) + prefix + text.slice(from, to) + after.join('') + text.slice(right);
+  const selectionStart = left + prefix.length;
+  return { value: next, selectionStart, selectionEnd: selectionStart + (to - from) };
 }
 
 export type LineStyle = 'heading' | 'bullet' | 'number' | 'quote';

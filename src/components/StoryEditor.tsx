@@ -1,5 +1,5 @@
 import { Bold, Eye, Italic, List, ListOrdered, Pilcrow, Quote, Underline } from 'lucide-react';
-import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { clearSize, toggleInline, toggleLines, type InlineStyle, type LineStyle } from '../lib/storyMarkup';
 import { editStorySelection, type StoryTextEdit } from '../lib/storyText';
 import { StoryText } from './StoryText';
@@ -38,11 +38,23 @@ export function StoryEditor({
   const [preview, setPreview] = useState(false);
   const [notice, setNotice] = useState('');
 
+  // The selection comes back right after the new text is drawn, so the next button works on the same words.
+  const pendingSelection = useRef<StoryTextEdit | null>(null);
+  useLayoutEffect(() => {
+    const edit = pendingSelection.current;
+    if (!edit || !textarea.current) return;
+    pendingSelection.current = null;
+    textarea.current.focus();
+    textarea.current.setSelectionRange(edit.selectionStart, edit.selectionEnd);
+  });
   const restoreSelection = (edit: StoryTextEdit) => {
-    window.requestAnimationFrame(() => {
-      textarea.current?.focus();
-      textarea.current?.setSelectionRange(edit.selectionStart, edit.selectionEnd);
-    });
+    pendingSelection.current = edit;
+    if (edit.value === value && textarea.current) {
+      // Nothing changed, so nothing is redrawn: put the selection back now.
+      pendingSelection.current = null;
+      textarea.current.focus();
+      textarea.current.setSelectionRange(edit.selectionStart, edit.selectionEnd);
+    }
   };
 
   const commit = (edit: StoryTextEdit | null) => {

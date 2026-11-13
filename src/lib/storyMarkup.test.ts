@@ -29,6 +29,20 @@ describe('story formatting', () => {
     expect(toggleInline(on.value, on.selectionStart, on.selectionEnd, 'bold').value).toBe('Было тихо');
   });
 
+  it('takes one style off words that carry several, whichever was added first', () => {
+    let edit = toggleInline('Было тихо', 5, 9, 'italic');
+    edit = toggleInline(edit.value, edit.selectionStart, edit.selectionEnd, 'underline');
+    edit = toggleInline(edit.value, edit.selectionStart, edit.selectionEnd, 'bold');
+    expect(parseInline(edit.value)).toEqual([{ text: 'Было ', styles: [] }, { text: 'тихо', styles: ['bold', 'italic', 'underline'] }]);
+    edit = toggleInline(edit.value, edit.selectionStart, edit.selectionEnd, 'italic');
+    expect(edit.value).toBe('Было __**тихо**__');
+    edit = toggleInline(edit.value, edit.selectionStart, edit.selectionEnd, 'underline');
+    edit = toggleInline(edit.value, edit.selectionStart, edit.selectionEnd, 'bold');
+    expect(edit.value).toBe('Было тихо');
+    // Selecting the words together with their marks works the same.
+    expect(toggleInline('Было *__тихо__*', 5, 15, 'italic').value).toBe('Было __тихо__');
+  });
+
   it('turns lines into a list and back, and back to normal size', () => {
     const list = toggleLines('хлеб\nмолоко', 0, 11, 'number');
     expect(list.value).toBe('1. хлеб\n2. молоко');
