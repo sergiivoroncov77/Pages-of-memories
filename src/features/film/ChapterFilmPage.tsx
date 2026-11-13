@@ -65,6 +65,8 @@ function ChapterFilm({ chapter }: { chapter: Chapter }) {
   // The chapter's own music, kept on this device.
   const [ownMusic, setOwnMusic] = useState<File | null>(null);
   const [musicError, setMusicError] = useState('');
+  // Length of the chapter's own music, to compare with the film.
+  const [musicSeconds, setMusicSeconds] = useState<number | null>(null);
   const musicInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     let active = true;
@@ -130,7 +132,10 @@ function ChapterFilm({ chapter }: { chapter: Chapter }) {
     const own = options.musicStyle === 'custom' ? ownMusic : null;
     void player.setMusic(own ? { kind: 'file', file: own, loop: options.musicLoop }
       : { kind: 'style', style: options.musicStyle === 'custom' ? 'warm' : options.musicStyle })
-      .then((ok) => setMusicError(ok ? '' : 'Не удалось прочитать этот файл. Выберите MP3, M4A, OGG или WAV.'));
+      .then((seconds) => {
+        setMusicSeconds(own ? seconds : null);
+        setMusicError(seconds !== null ? '' : 'Не удалось прочитать этот файл. Выберите MP3, M4A, OGG или WAV.');
+      });
   }, [options.musicStyle, options.musicLoop, ownMusic, load.status]);
 
   const chooseMusic = async (file: File | null) => {
@@ -339,16 +344,28 @@ function ChapterFilm({ chapter }: { chapter: Chapter }) {
                 className={options.musicStyle === style.id ? 'is-active' : ''} onClick={() => setOption('musicStyle', style.id)}>
                 <strong>{style.label}</strong><small>{style.description}</small></button>)}
               <button type="button" role="radio" aria-checked={options.musicStyle === 'custom'} className={options.musicStyle === 'custom' ? 'is-active' : ''}
-                onClick={() => (ownMusic ? setOption('musicStyle', 'custom') : musicInput.current?.click())}>
+                onClick={() => { setOption('musicStyle', 'custom'); if (!ownMusic) musicInput.current?.click(); }}>
                 <strong>Своя музыка</strong><small>{ownMusic ? ownMusic.name : 'Файл с этого устройства'}</small></button>
             </div>
             <input ref={musicInput} type="file" accept="audio/*,.mp3,.m4a,.aac,.ogg,.wav,.flac" hidden onChange={(event) => { void chooseMusic(event.target.files?.[0] ?? null); }} />
-            {options.musicStyle === 'custom' && ownMusic ? <div className="film-music__own">
-              <div className="film-music__file"><Music size={16} aria-hidden="true" /><span>{ownMusic.name}</span>
+            {options.musicStyle === 'custom' ? <div className="film-music__own">
+              <div className="film-music__end">
+                <span id="music-end-label">Когда музыка закончится</span>
+                <div className="segmented segmented--two" role="radiogroup" aria-labelledby="music-end-label">
+                  <button type="button" role="radio" aria-checked={options.musicLoop} className={options.musicLoop ? 'is-active' : ''}
+                    onClick={() => setOption('musicLoop', true)}><RotateCcw size={16} aria-hidden="true" /><span>Начать заново</span></button>
+                  <button type="button" role="radio" aria-checked={!options.musicLoop} className={!options.musicLoop ? 'is-active' : ''}
+                    onClick={() => setOption('musicLoop', false)}><Square size={16} aria-hidden="true" /><span>Дальше без музыки</span></button>
+                </div>
+                <small className="field-note">{options.musicLoop
+                  ? 'Файл закончился — музыка начинается сначала и играет до конца фильма.'
+                  : 'Файл закончился — музыка закончилась, дальше фильм идёт без неё.'}
+                  {musicSeconds !== null && duration ? ` Музыка ${formatDuration(musicSeconds)}, фильм ${formatDuration(duration)}${musicSeconds >= duration ? ' — музыки хватит на весь фильм.' : '.'}` : ''}</small>
+              </div>
+              {ownMusic ? <div className="film-music__file"><Music size={16} aria-hidden="true" /><span>{ownMusic.name}</span>
                 <button type="button" className="text-button" onClick={() => musicInput.current?.click()}><Upload size={15} aria-hidden="true" /> Другой файл</button>
                 <button type="button" className="card-tool card-tool--danger" aria-label="Убрать свою музыку" onClick={() => { void forgetMusic(); }}><Trash2 size={15} /></button></div>
-              <Toggle checked={options.musicLoop} onChange={(value) => setOption('musicLoop', value)} label="Повторять по кругу"
-                description={options.musicLoop ? 'Если музыка короче фильма, она начнётся заново.' : 'Если музыка короче фильма, дальше фильм пойдёт без неё.'} />
+                : <button type="button" className="button button--secondary button--small" onClick={() => musicInput.current?.click()}><Upload size={16} aria-hidden="true" /> Выбрать файл музыки</button>}
               <small className="field-note">Файл хранится только на этом устройстве и войдёт в скачанный фильм.</small>
             </div> : null}
             {musicError ? <p className="field-message field-message--error" role="alert">{musicError}</p> : null}

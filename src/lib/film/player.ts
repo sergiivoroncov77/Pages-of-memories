@@ -272,7 +272,7 @@ export class FilmPlayer {
    * Choose the background music: a built-in style, or a file of the family's
    * own that either repeats or plays once and leaves the rest of the film quiet.
    */
-  async setMusic(track: { kind: 'style'; style: MusicStyle } | { kind: 'file'; file: Blob; loop: boolean }): Promise<boolean> {
+  async setMusic(track: { kind: 'style'; style: MusicStyle } | { kind: 'file'; file: Blob; loop: boolean }): Promise<number | null> {
     const context = this.ensureAudio();
     let buffer: Promise<AudioBuffer | null>;
     if (track.kind === 'style') {
@@ -287,14 +287,14 @@ export class FilmPlayer {
     this.musicLoading = loading;
     const decoded = await loading;
     // A later choice wins over one still loading.
-    if (this.musicLoading !== loading || this.disposed) return Boolean(decoded);
+    if (this.musicLoading !== loading || this.disposed) return decoded?.duration ?? null;
     const wasPlaying = this.playing;
     const time = this.currentTime;
     if (wasPlaying) this.stopPlayback();
     this.music = decoded;
     this.musicLoop = track.kind === 'style' || track.loop;
     if (wasPlaying) { this.offset = time; void this.play(); }
-    return Boolean(decoded);
+    return decoded?.duration ?? null;
   }
 
   setTimeline(timeline: FilmTimeline, { music }: { music: boolean }) {

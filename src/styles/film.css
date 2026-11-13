@@ -709,3 +709,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.film-music__end {
+  display: grid;
+  gap: 8px;
+}
+
+.film-music__end > span {
+  color: var(--ink);
+  font-weight: 600;
+}
