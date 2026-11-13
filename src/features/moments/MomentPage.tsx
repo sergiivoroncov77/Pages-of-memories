@@ -18,7 +18,9 @@ import { AuthorChoice } from './AuthorChoice';
 import { MomentDetailsForm } from './MomentDetailsForm';
 import { signerFor } from './signer';
 import { StoryComposer, type StoryDraft } from './StoryComposer';
+import type { StoryPreviewProps } from '../reader/StoryPreview';
 import { VoiceRecorder } from './VoiceRecorder';
+import { StoryText } from '../../components/StoryText';
 
 type MomentTab = 'story' | 'perspectives' | 'materials';
 const tabs: MomentTab[] = ['story', 'perspectives', 'materials'];
@@ -46,7 +48,7 @@ export function MomentPage() {
 }
 
 function MomentContent({ moment }: { moment: Moment }) {
-  const { chapters, books, perspectivesForMoment, reflectionsForMoment, mediaForStory, mediaAssets, getPerson, getMemory, addStory, addReflectionWithMedia, toggleMomentFavorite, updateMoment, updateStory, updateReflection, deleteMoment, deletePerspective, deleteReflection } = useAppState();
+  const { chapters, books, people, perspectivesForMoment, reflectionsForMoment, mediaForStory, mediaAssets, getPerson, getMemory, addStory, addReflectionWithMedia, toggleMomentFavorite, updateMoment, updateStory, updateReflection, deleteMoment, deletePerspective, deleteReflection } = useAppState();
   const cloud = useCloudSync();
   const navigate = useNavigate();
   const chapter = chapters.find((item) => item.id === moment.chapterId)!;
@@ -191,6 +193,8 @@ function MomentContent({ moment }: { moment: Moment }) {
     return {
       onEdit: () => { setEditingId(item.id); closeForm(); setShowEdit(false); },
       editor: editingId === item.id ? <PerspectiveEditor perspective={item} assets={mediaForStory(item.id)} momentTitle={moment.title} shared={shared}
+        preview={{ book, chapter, moment, people, others: perspectives.filter((other) => other.id !== item.id), primary: item.id === primary?.id,
+          authorName: getPerson(item.authorId ?? '')?.name }}
         me={me} myName={myName} signAs={signAs}
         onSave={async (patch, keep, files) => {
           const result = await updateStory(item.id, patch, keep, files);
@@ -220,7 +224,9 @@ function MomentContent({ moment }: { moment: Moment }) {
 
     {showForm ? <Card className="perspective-form-card" id="perspective-form"><div className="card-heading"><div>{formForMain && !primary ? <><p className="eyebrow">Основной рассказ</p><h2>Рассказ об этом моменте</h2><p>Напишите его и приложите голос или фото — он откроет момент в книге.</p></>
         : <><p className="eyebrow">Ещё один голос</p><h2>Добавить свой взгляд</h2><p>Напишите своими словами и, если хочется, приложите голос, фото или видео — всё сохранится одним рассказом.</p></>}</div><button type="button" className="icon-button" aria-label="Закрыть форму" disabled={isSaving} onClick={closeForm}><X size={20} /></button></div>
-      <StoryComposer key={String(startVoice) + formForMain} momentTitle={moment.title} startRecording={startVoice} saving={isSaving} error={error} onError={setError}
+      <StoryComposer key={String(startVoice) + formForMain} momentTitle={moment.title}
+        preview={{ book, chapter, moment, people, others: perspectives, primary: !primary && (formForMain || perspectives.length === 0),
+          authorName: anonymous ? undefined : myName ?? (newName.trim() || undefined) }} startRecording={startVoice} saving={isSaving} error={error} onError={setError}
         label={formForMain && !primary ? 'Как это было?' : 'Как вы это помните?'} submitLabel="Добавить в момент" onSubmit={submitStory} onCancel={closeForm}
         note={shared ? 'Файлы уйдут всем участникам книги через семейное хранилище.' : 'Файлы хранятся на этом устройстве; близким они уйдут вместе с файлом книги («Библиотека» → «Поделиться»).'}
         signature={<AuthorChoice myName={myName} anonymous={anonymous} onAnonymous={setAnonymous} newName={newName} onNewName={setNewName} disabled={isSaving} />} />
@@ -295,7 +301,7 @@ function PerspectiveCard({ perspective, author, assets, compact = false, primary
       </div> : null}</div>
     {editor ?? <>
       {/* Words first; the voice plays under them, photos and video follow. */}
-      {perspective.content ? <p className="perspective-card__content">{perspective.content}</p> : null}
+      {perspective.content ? <div className="perspective-card__content story-text"><StoryText text={perspective.content} /></div> : null}
       {perspective.type === 'audio' && !assets.length ? <p className="demo-media-note">Демонстрационный рассказ: аудиофайл не прикреплён.</p> : null}
       {voices.map((asset) => asset.url.startsWith('/demo/')
         ? <p key={asset.id} className="demo-media-note"><FileAudio size={21} aria-hidden="true" /><span>Демонстрационный материал. Настоящая аудиозапись не прикреплена.</span></p>
@@ -332,10 +338,11 @@ interface PerspectiveEditorProps {
   /** May throw: the message is shown in the form. */
   onSave: (patch: { content: string; authorId?: string }, keep: string[], files: MediaUploadWithBlob[]) => Promise<void>;
   onCancel: () => void;
+  preview: Omit<StoryPreviewProps, 'content' | 'files'>;
 }
 
 /** Change a story: its words, the voice, photos and video next to them, and how it is signed. */
-function PerspectiveEditor({ perspective, assets, momentTitle, shared, me, myName, signAs, onSave, onCancel }: PerspectiveEditorProps) {
+function PerspectiveEditor({ perspective, assets, momentTitle, shared, me, myName, signAs, onSave, onCancel, preview }: PerspectiveEditorProps) {
   // Someone else's name stays on their story; one's own story can go unsigned and back.
   const signable = !perspective.authorId || perspective.authorId === me;
   const [anonymous, setAnonymous] = useState(!perspective.authorId);
@@ -354,7 +361,7 @@ function PerspectiveEditor({ perspective, assets, momentTitle, shared, me, myNam
     }
   };
 
-  return <StoryComposer initialContent={perspective.content} existing={assets} momentTitle={momentTitle} label="Рассказ" submitLabel="Сохранить"
+  return <StoryComposer initialContent={perspective.content} existing={assets} momentTitle={momentTitle} label="Рассказ" submitLabel="Сохранить" preview={preview}
     saving={saving} error={error} onError={setError} onSubmit={submit} onCancel={onCancel}
     note={shared ? 'Убранные файлы удалятся у всех участников книги.' : 'Убранные файлы удалятся с этого устройства.'}
     signature={signable ? <AuthorChoice myName={myName} anonymous={anonymous} onAnonymous={setAnonymous} newName={newName} onNewName={setNewName} disabled={saving} /> : null} />;

@@ -5,6 +5,7 @@ import type { MediaAsset } from '../../data/types';
 import { formatDuration } from '../../lib/format';
 import { MAX_MEDIA_FILE_BYTES, prepareMediaFile, validateMediaFile, type MediaUploadWithBlob } from '../../lib/mediaFiles';
 import { useMediaUrl } from '../../lib/useMediaUrl';
+import { StoryPreview, type StoryPreviewProps } from '../reader/StoryPreview';
 import { useAudioRecorder, type Recording } from '../session/useAudioRecorder';
 import { VoiceRecorder } from './VoiceRecorder';
 
@@ -37,6 +38,8 @@ interface StoryComposerProps {
   /** Who signs: rendered under the attachments. */
   signature?: ReactNode;
   note?: string;
+  /** Where the story goes in the book, for a preview drawn as the book's own pages. */
+  preview?: Omit<StoryPreviewProps, 'content' | 'files'>;
   submitLabel: string;
   saving: boolean;
   error: string;
@@ -55,7 +58,7 @@ const nextKey = () => `pending-${(counter += 1)}`;
  * One form for one story: its words, and next to them a voice, photos or a
  * video — all saved together as a single story.
  */
-export function StoryComposer({ initialContent = '', existing = [], momentTitle, label, startRecording = false, signature, note,
+export function StoryComposer({ initialContent = '', existing = [], momentTitle, label, startRecording = false, signature, note, preview,
   submitLabel, saving, error, onError, onSubmit, onCancel }: StoryComposerProps) {
   const [content, setContent] = useState(initialContent);
   const [keep, setKeep] = useState(() => existing.map((asset) => asset.id));
@@ -115,10 +118,16 @@ export function StoryComposer({ initialContent = '', existing = [], momentTitle,
 
   const kept = existing.filter((asset) => keep.includes(asset.id));
   const count = kept.length + pending.length;
+  // Files just chosen are shown in the preview from memory, as they will look once saved.
+  const previewFiles: MediaAsset[] = [...kept, ...pending.map((item) => ({
+    id: item.key, type: item.media.type, url: item.previewUrl, mimeType: item.media.mimeType, fileName: item.media.fileName,
+    alt: item.media.alt, durationSeconds: item.media.durationSeconds, createdAt: ''
+  }))];
 
   return <form className="inline-form story-composer" onSubmit={submit} aria-busy={saving}>
     <StoryEditor label={label} autoFocus={!startRecording} value={content} onChange={setContent} rows={7} maxLength={30000} disabled={saving}
-      placeholder="Можно начать с одной детали…" />
+      placeholder="Можно начать с одной детали…"
+      renderPreview={preview ? (text) => <StoryPreview {...preview} content={text} files={previewFiles} /> : undefined} />
 
     <div className="field story-composer__files">
       <span>К рассказу {count ? <small>· {count} {count === 1 ? 'файл' : count < 5 ? 'файла' : 'файлов'}</small> : <small>необязательно</small>}</span>

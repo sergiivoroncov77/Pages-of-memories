@@ -45,11 +45,18 @@
   white-space: nowrap;
 }
 
-.voice-note__progress {
+.voice-note input.voice-note__progress,
+.voice-note input.voice-note__progress:focus {
+  background: transparent;
   min-width: 48px;
   height: 20px;
+  min-height: 0;
   flex: 1;
   margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   background: transparent;
   cursor: pointer;
   appearance: none;

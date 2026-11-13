@@ -111,3 +111,120 @@
     padding-inline: 9px;
   }
 }
+
+/* Formatting tools: grouped icon buttons and a size menu. */
+.story-editor__group {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.story-editor__group button {
+  min-width: 42px;
+  border: 0;
+  background: transparent;
+}
+
+.story-editor__size select {
+  min-height: 44px;
+  padding: 8px 30px 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background-color: var(--surface);
+  color: var(--ink-soft);
+  font: 500 0.86rem/1.35 var(--font-sans);
+}
+
+.story-editor__preview-toggle {
+  margin-left: auto;
+}
+
+/* The preview is the book's own page. */
+.story-editor__preview {
+  background: var(--surface-warm);
+}
+
+.story-preview {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+.story-preview__page {
+  position: relative;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 3px 10px 10px 3px;
+  box-shadow: var(--shadow-md);
+}
+
+.story-preview__nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ink-soft);
+  font: 500 0.9rem/1.3 var(--font-sans);
+}
+
+.story-editor__page {
+  padding: clamp(18px, 4vw, 36px);
+  border-radius: 3px 10px 10px 3px;
+  background: var(--paper-grain), linear-gradient(var(--paper), var(--paper-deep));
+  color: var(--paper-ink);
+  font-family: var(--font-serif);
+}
+
+/* Formatting inside a story: the same on the moment page, in the reader and in the preview. */
+.story-large {
+  font-size: 1.25em;
+  line-height: 1.4;
+}
+
+.story-heading {
+  margin: 0.9em 0 0.45em;
+  font: 700 1.15em/1.3 var(--font-serif);
+  text-indent: 0;
+}
+
+.story-text > .story-heading:first-child,
+.reader-story__text > .story-heading:first-child {
+  margin-top: 0;
+}
+
+.story-list {
+  margin: 0 0 0.8em;
+  padding-left: 1.5em;
+  line-height: 1.6;
+}
+
+.story-list li + li {
+  margin-top: 0.2em;
+}
+
+.story-quote {
+  margin: 0 0 0.8em;
+  padding: 0.1em 0 0.1em 0.9em;
+  border-left: 3px solid color-mix(in srgb, var(--primary) 55%, transparent);
+  font-style: italic;
+}
+
+.reader-story__text .story-list,
+.reader-story__text .story-quote,
+.reader-story__text .story-heading {
+  font-size: clamp(0.95rem, calc(var(--page-w) * 0.036), 1.08rem);
+}
+
+.reader-story__text .story-heading {
+  font-size: clamp(1.05rem, calc(var(--page-w) * 0.042), 1.25rem);
+}
+
+.story-text p {
+  margin: 0 0 0.8em;
+}
+
+.story-text p:last-child {
+  margin-bottom: 0;
+}

@@ -4,6 +4,7 @@ export { chronologicalMoments } from '../../data/library';
 import { formatDate, truncate } from '../format';
 import { chapterLabel, paginateText, readingSeconds } from './text';
 import { perspectiveAssets } from '../../data/mediaRefs';
+import { stripStoryMarkup } from '../storyMarkup';
 
 /**
  * The chapter film is described as plain data: a list of timed scenes plus
@@ -242,7 +243,7 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
     const seenPhotos = new Set<string>();
     perspectives.forEach((perspective) => {
       if (perspective.type === 'text' && options.includeText && perspective.content.trim()) {
-        const pages = paginateText(perspective.content, TEXT_PAGE_CHARS, { flatten: true });
+        const pages = paginateText(stripStoryMarkup(perspective.content), TEXT_PAGE_CHARS, { flatten: true });
         const author = personName(source, perspective.authorId);
         const photoId = photoIds.length ? photoIds[texts.length % photoIds.length] : undefined;
         pages.forEach((text, index) => texts.push({

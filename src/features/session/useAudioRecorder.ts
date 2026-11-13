@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { baseMimeType } from '../../lib/mediaStore';
+import { repairWebmBlob } from '../../lib/webmTimestamps';
 
 export type RecorderStatus = 'idle' | 'requesting' | 'recording' | 'paused' | 'stopping' | 'denied' | 'unsupported' | 'error';
 
@@ -174,10 +175,14 @@ export function useAudioRecorder() {
         release();
         recorderRef.current = null;
         const mimeType = baseMimeType(recorder.mimeType || chunksRef.current[0]?.type || 'audio/webm');
-        const blob = new Blob(chunksRef.current, { type: mimeType });
+        const raw = new Blob(chunksRef.current, { type: mimeType });
         chunksRef.current = [];
-        setStatus('idle');
-        resolve(blob.size ? { blob, mimeType, durationSeconds } : null);
+        if (!raw.size) { setStatus('idle'); resolve(null); return; }
+        // Close timestamp holes the browser may leave, so other players do not play minutes of silence.
+        void repairWebmBlob(raw).then((blob) => {
+          setStatus('idle');
+          resolve({ blob, mimeType, durationSeconds });
+        });
       };
       recorder.stop();
     });

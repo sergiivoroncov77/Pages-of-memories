@@ -4,6 +4,7 @@ import walkIllustration from '../../public/demo/photo-walk.svg?raw';
 import type { Chapter, MediaAsset, Moment, Person, Perspective, Reflection } from '../data/types';
 import { formatDate, pluralize } from './format';
 import { perspectiveAssets, perspectiveMediaIds } from '../data/mediaRefs';
+import { storyToHtml } from './storyMarkup';
 
 export interface BookExportInput {
   title: string;
@@ -110,7 +111,7 @@ function renderPerspective(perspective: Perspective, input: BookExportInput): st
   // Words first, then the files attached to them.
   return `<div class="perspective">
     <div class="perspective-meta"><strong>${escapeHtml(author)}</strong><span>${label}${perspective.isPrimary ? ' · Основной рассказ' : ''}</span></div>
-    ${perspective.content ? `<p class="preserve-lines">${escapeHtml(perspective.content)}</p>` : ''}
+    ${perspective.content ? `<div class="story-text">${storyToHtml(perspective.content)}</div>` : ''}
     ${rendered.join('')}
     ${note}
     ${perspective.caption ? `<p class="caption preserve-lines">${escapeHtml(perspective.caption)}</p>` : ''}
@@ -161,7 +162,7 @@ const bookStyles = `
   .moment{padding:34px 0;border-top:1px solid #d5d2c3;scroll-margin-top:20px}.moment h3{font-size:30px;line-height:1.2;font-weight:400;margin:8px 0}
   .tags{font-size:12px;color:#596448}.perspectives{display:grid;gap:18px}.perspective{padding:22px 24px;background:#fffcf5;border-left:3px solid #bcc6a8}
   .perspective-meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px 16px;font-size:12px;line-height:1.5;color:#556043}
-  .preserve-lines{white-space:pre-wrap}.perspective p:last-child{margin-bottom:0}.caption{font-size:15px;color:#606456}
+  .preserve-lines{white-space:pre-wrap}.story-text p{white-space:normal}.story-text blockquote{margin:0 0 1em;padding-left:16px;border-left:3px solid #c9b79c;font-style:italic}.story-heading{margin:1.2em 0 .5em;font-size:1.15em}.story-large{font-size:1.25em}.perspective p:last-child{margin-bottom:0}.caption{font-size:15px;color:#606456}
   figure{margin:20px 0}.perspective img,.perspective video{display:block;width:100%;max-height:520px;object-fit:contain}
   .perspective audio{display:block;width:100%;margin-top:18px}.perspective video{margin-top:18px}figcaption,.media-note{font-size:13px;line-height:1.6;color:#676b60}
   figcaption{margin-top:8px}.reflections{margin-top:22px;padding:20px 24px;background:#eaf0e1;font:15px/1.65 Arial,sans-serif}

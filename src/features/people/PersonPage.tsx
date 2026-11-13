@@ -14,6 +14,7 @@ import { formatDate, pluralize, truncate } from '../../lib/format';
 import { useCloudSync } from '../../sync/CloudSync';
 import { PersonForm } from './PersonForm';
 import { perspectiveMediaIds } from '../../data/mediaRefs';
+import { stripStoryMarkup } from '../../lib/storyMarkup';
 
 const statusCopy: Record<QuestionStatus, string> = {
   answered: 'Ответ сохранён',
@@ -149,7 +150,7 @@ export function PersonPage() {
               const chapter = chapters.find((item) => item.id === moment.chapterId);
               const photoIds = new Set(contributions.flatMap(perspectiveMediaIds));
               const photo = mediaAssets.find((asset) => photoIds.has(asset.id) && asset.type === 'photo');
-              const excerpt = contributions.find((perspective) => perspective.content.trim())?.content
+              const excerpt = stripStoryMarkup(contributions.find((perspective) => perspective.content.trim())?.content ?? '')
                 || contributions.find((perspective) => perspective.caption?.trim())?.caption
                 || moment.summary
                 || 'Откройте момент, чтобы посмотреть сохранённые материалы.';

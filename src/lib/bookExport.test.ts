@@ -93,7 +93,9 @@ describe('buildBookHtml', () => {
     const longText = `Начало\n\n${'Очень длинная семейная история. '.repeat(1000)}\nКонец`;
     input.perspectives = [{ ...input.perspectives[0], content: longText, caption: 'Подпись\nПродолжение' }];
     const html = buildBookHtml(input);
-    expect(html).toContain(longText);
+    // Paragraphs and line breaks of the story survive as HTML paragraphs and breaks.
+    expect(html).toContain('<p>Начало</p>');
+    expect(html).toContain('Очень длинная семейная история. '.repeat(999) + 'Очень длинная семейная история.<br>Конец</p>');
     expect(html).toContain('Подпись\nПродолжение');
     expect(html).toContain(input.dedication);
     expect(html).toContain('Наш дом\nИ его истории');

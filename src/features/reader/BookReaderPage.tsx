@@ -9,7 +9,7 @@ import type { MediaAsset } from '../../data/types';
 import { clothStyle } from '../../lib/cloth';
 import { chronologicalMoments } from '../../lib/film/timeline';
 import { pluralize } from '../../lib/format';
-import { splitStoryParagraphs } from '../../lib/storyText';
+import { StoryText } from '../../components/StoryText';
 import { useMediaQuery } from '../../lib/useMediaQuery';
 import { useMediaUrl } from '../../lib/useMediaUrl';
 import {
@@ -230,7 +230,7 @@ function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bo
   </div>;
 }
 
-interface PageViewProps {
+export interface PageViewProps {
   page: ReaderPage;
   number: number;
   total: number;
@@ -239,7 +239,7 @@ interface PageViewProps {
   onJump: (page: number) => void;
 }
 
-function PageView({ page, number, total, assets, chapterTitles, onJump }: PageViewProps) {
+export function PageView({ page, number, total, assets, chapterTitles, onJump }: PageViewProps) {
   const numbered = number > 0 && number < total - 1 && page.kind !== 'blank' && page.kind !== 'chapter';
   const head = 'chapterId' in page && page.kind !== 'chapter' ? <p className="reader-page__head">{chapterTitles.get(page.chapterId)}</p> : null;
   let body;
@@ -278,9 +278,9 @@ function PageView({ page, number, total, assets, chapterTitles, onJump }: PageVi
           {page.heading.narrators.length ? <p className="reader-story__narrators">Вспоминают: {page.heading.narrators.join(', ')}</p> : null}
         </header> : null}
         {!page.heading && page.voice && page.dropCap ? <p className="reader-kicker">Взгляд · {page.voice}</p> : null}
-        <div className={'reader-story__text ' + (page.dropCap ? 'has-drop-cap' : '')}>{splitStoryParagraphs(page.text).map((paragraph, index) => (
-          <p key={index} className={index === 0 && page.startsMidParagraph ? 'is-continuation' : undefined}>{paragraph}</p>
-        ))}</div>
+        <div className={'reader-story__text ' + (page.dropCap ? 'has-drop-cap' : '')}>
+          <StoryText text={page.text} firstClassName={page.startsMidParagraph ? 'is-continuation' : undefined} />
+        </div>
         {page.voice && page.heading ? <p className="reader-story__signature">— {page.voice}</p> : null}
         {page.voice && !page.heading && !page.dropCap ? <p className="reader-story__signature">— {page.voice}</p> : null}
         {page.audioIds?.map((id) => assets.get(id)).filter((asset): asset is MediaAsset => Boolean(asset))

@@ -6,6 +6,7 @@ import type { Moment, Perspective } from '../../data/types';
 import { formatDuration } from '../../lib/format';
 import { useCloudSync } from '../../sync/CloudSync';
 import { useAudioRecorder } from '../session/useAudioRecorder';
+import { stripStoryMarkup } from '../../lib/storyMarkup';
 
 const extensions: Record<string, string> = { 'audio/webm': 'webm', 'audio/mp4': 'm4a', 'audio/ogg': 'ogg' };
 
@@ -13,8 +14,8 @@ const extensions: Record<string, string> = { 'audio/webm': 'webm', 'audio/mp4': 
 export function NarrationPanel({ moments, disabled }: { moments: { moment: Moment; perspectives: Perspective[] }[]; disabled: boolean }) {
   const [activeId, setActiveId] = useState<string | null>(null);
   return <div className="narration-list">
-    {moments.map(({ moment, perspectives }) => <NarrationRow key={moment.id} moment={moment} script={perspectives.find((item) => item.id === moment.primaryPerspectiveId)?.content
-      ?? perspectives.find((item) => item.type === 'text')?.content ?? moment.summary}
+    {moments.map(({ moment, perspectives }) => <NarrationRow key={moment.id} moment={moment} script={stripStoryMarkup(perspectives.find((item) => item.id === moment.primaryPerspectiveId)?.content
+      ?? perspectives.find((item) => item.type === 'text')?.content ?? moment.summary)}
       open={activeId === moment.id} onOpen={() => setActiveId(moment.id)} onClose={() => setActiveId(null)} disabled={disabled || (activeId !== null && activeId !== moment.id)} />)}
   </div>;
 }

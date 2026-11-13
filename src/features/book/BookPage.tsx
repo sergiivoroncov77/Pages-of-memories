@@ -20,6 +20,7 @@ import { ChapterForm } from '../library/ChapterForm';
 import { ShareBookPanel } from '../library/ShareBookPanel';
 import { MomentDetailsForm, type MomentDetails } from '../moments/MomentDetailsForm';
 import { perspectiveMediaIds } from '../../data/mediaRefs';
+import { stripStoryMarkup } from '../../lib/storyMarkup';
 
 type Panel = 'none' | 'new-book' | 'edit-book' | 'share' | 'moment' | 'new-chapter';
 
@@ -335,7 +336,7 @@ export function BookPage() {
                 <Link to={'/moments/' + moment.id} className="moment-card__main">
                   {image ? <MediaImage className="moment-card__image" asset={image} /> : null}
                   <div className="moment-card__body"><div className="moment-card__topline"><span><CalendarDays size={15} aria-hidden="true" /> {moment.occurredAt ? formatDate(moment.occurredAt) : 'Дата не указана'}</span></div>
-                    <h3>{moment.title}</h3><p>{truncate(moment.summary || primary?.content || 'Добавьте первый рассказ на эту страницу.', 150)}</p>
+                    <h3>{moment.title}</h3><p>{truncate(moment.summary || stripStoryMarkup(primary?.content ?? '') || 'Добавьте первый рассказ на эту страницу.', 150)}</p>
                     <div className="moment-card__footer"><span className="moment-card__author">{author?.name ?? 'Пока без рассказчика'}</span><span className="avatar-stack" aria-label={participants.map((person) => person?.name).join(', ')}>{participants.slice(0, 3).map((person) => person ? <span key={person.id} aria-hidden="true" style={{ background: person.avatarColor }}>{person.initials}</span> : null)}</span></div>
                     <span className="moment-card__views">{perspectives.length} {pluralize(perspectives.length, 'взгляд', 'взгляда', 'взглядов')} <ArrowRight size={16} aria-hidden="true" /></span>
                   </div>
