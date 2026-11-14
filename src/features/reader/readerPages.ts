@@ -2,23 +2,48 @@ import type { Book, Chapter, MediaAsset, Moment, Person, Perspective, Reflection
 import { formatDate, truncate } from '../../lib/format';
 import { isAttachedMedia } from '../../lib/film/timeline';
 import { chapterLabel, toRoman } from '../../lib/film/text';
-import { paginateStoryText } from './readerPagination';
+import { parseStory } from '../../lib/storyMarkup';
+import { paginateStoryPages, type PaginationHint, type StoryTextPage } from './readerPagination';
 import { perspectiveAssets } from '../../data/mediaRefs';
+
+/** One story (or one view of a moment) on a story page: a page may hold several. */
+export interface StorySection {
+  /** The perspective the words belong to (the moment's id when it is its summary). */
+  id: string;
+  text: string;
+  /** The first line continues an author's line from the preceding page. */
+  startsMidParagraph: boolean;
+  separatorBefore: '' | ' ' | '\n' | '\n\n';
+  /** The section opens with its own kicker, «Взгляд · name». */
+  kicker?: string;
+  /** Recordings told with these words: small players open the section, before its text. */
+  audioIds?: string[];
+  /** A signature closes the section: its author's name. */
+  signature?: string;
+  /** A drop cap opens the primary story, when it starts with a letter. */
+  dropCap: boolean;
+  /** Only while measuring whether a section would fit: this many blank lines of text. */
+  reserveLines?: number;
+}
 
 /** One page of the page-flip reader. Pages are plain data so pagination is testable. */
 export type ReaderPage =
   | { kind: 'cover'; key: string; title: string; subtitle: string; coverAssetId?: string }
   | { kind: 'contents'; key: string; entries: { chapterId: string; label: string; title: string; page: number }[] }
   | { kind: 'chapter'; key: string; chapterId: string; numeral: string; label: string; title: string; description: string; momentCount: number }
-  | { kind: 'story'; key: string; chapterId: string; momentId: string; text: string; heading?: { title: string; date: string; narrators: string[] };
-      voice?: string; dropCap: boolean; continued: boolean; startsMidParagraph: boolean; separatorBefore: string;
-      /** Recordings told with these words: a small player follows the text on its last page. */
-      audioIds?: string[] }
+  | { kind: 'story'; key: string; chapterId: string; momentId: string; heading?: { title: string; date: string; narrators: string[] };
+      /** The page goes on with a story that began on an earlier page. */
+      continued: boolean; sections: StorySection[] }
   | { kind: 'photo'; key: string; chapterId: string; momentId: string; assetId: string; caption: string; author: string }
   | { kind: 'media'; key: string; chapterId: string; momentId: string; assetId: string; mediaType: 'audio' | 'video'; caption: string; author: string }
   | { kind: 'reflections'; key: string; chapterId: string; momentId: string; momentTitle: string; notes: { text: string; author: string; voiceId?: string }[] }
   | { kind: 'end'; key: string; title: string }
   | { kind: 'blank'; key: string };
+
+export type StoryPageData = Extract<ReaderPage, { kind: 'story' }>;
+
+/** "This candidate story page fits its page body with no vertical overflow." */
+export type PageFits = (candidate: StoryPageData) => boolean;
 
 export interface ReaderChapterSource {
   chapter: Chapter;
@@ -32,7 +57,7 @@ export interface ReaderSource {
   people: ReadonlyMap<string, Person>;
 }
 
-/** How much story text fits on a page; the reader measures its pages and passes a better estimate. */
+/** A rough guess of how much story text fits on a page; the reader measures real pages and only uses it as a first guess. */
 export interface PageBudget {
   firstPageChars: number;
   pageChars: number;
@@ -40,22 +65,50 @@ export interface PageBudget {
 
 export const DEFAULT_PAGE_BUDGET: PageBudget = { firstPageChars: 430, pageChars: 760 };
 
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+/** The size of story text in the reader, as in the stylesheet: a share of the page width between 17px and 21px, times the reader's text size. */
+export function storyFontSize(pageWidth: number, scale = 1, compact = false): number {
+  // A phone on its side has a wide, low page: there the text keeps its smallest size.
+  return (compact ? 17 : clamp(pageWidth * 0.045, 17, 21)) * scale;
+}
+
+function pagePaddingX(pageWidth: number, compact: boolean): number {
+  return compact ? 24 : clamp(pageWidth * 0.085, 18, 46);
+}
+
+/** About how many characters make a line of story text. */
+export function estimateLineChars(pageWidth: number, { compact = false, scale = 1 } = {}): number {
+  return Math.max(12, Math.floor((pageWidth - pagePaddingX(pageWidth, compact) * 2) / (storyFontSize(pageWidth, scale, compact) * 0.5)));
+}
+
 /** Estimate the characters of serif body text that fit on a page of the given size (CSS pixels). */
-export function estimatePageBudget(pageWidth: number, pageHeight: number, { compact = false } = {}): PageBudget {
-  const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-  const fontSize = clamp(pageWidth * 0.036, 15.2, 17.3);
+export function estimatePageBudget(pageWidth: number, pageHeight: number, { compact = false, scale = 1 } = {}): PageBudget {
+  const fontSize = storyFontSize(pageWidth, scale, compact);
   // The landscape reader uses narrower padding and a smaller title so the
   // estimate matches its actual text area rather than a tall portrait page.
-  const paddingX = compact ? 24 : clamp(pageWidth * 0.085, 18, 46);
   const chrome = compact ? 60 : clamp(pageWidth * 0.075, 18, 42) + clamp(pageWidth * 0.05, 12, 26) + 64;
-  const charsPerLine = (pageWidth - paddingX * 2) / (fontSize * 0.5);
-  const lineHeight = fontSize * 1.68;
+  const charsPerLine = estimateLineChars(pageWidth, { compact, scale });
+  const lineHeight = fontSize * 1.6;
   const lines = (pageHeight - chrome) / lineHeight - 1.5;
   const headingLines = (compact ? 100 : 150) / lineHeight;
   const round = (value: number, minimum: number) => Math.max(minimum, Math.floor(value / 40) * 40);
   return {
     firstPageChars: round(charsPerLine * (lines - headingLines) * 0.9, compact ? 60 : 160),
     pageChars: round(charsPerLine * lines * 0.9, compact ? 100 : 160)
+  };
+}
+
+/**
+ * A stand-in for measuring, for tests and for callers without a screen: counts
+ * characters. Players, kickers, signatures and reserved lines take some room.
+ */
+export function charCountFits(budget: PageBudget = DEFAULT_PAGE_BUDGET, lineChars = 36): PageFits {
+  return (page) => {
+    const used = page.sections.reduce((total, section, index) => total + section.text.length
+      + (section.audioIds?.length ?? 0) * 120 + (section.reserveLines ?? 0) * lineChars
+      + (section.kicker ? 60 : 0) + (section.signature ? 40 : 0) + (index > 0 ? 40 : 0), 0);
+    return used <= (page.heading ? budget.firstPageChars : budget.pageChars);
   };
 }
 
@@ -83,20 +136,43 @@ export function findPage(pages: ReaderPage[], anchor: PageAnchor): number {
   return Math.max(0, chapter);
 }
 
-export function buildReaderPages(source: ReaderSource, { firstPageChars, pageChars }: PageBudget = DEFAULT_PAGE_BUDGET): ReaderPage[] {
+/** A view with words continues the page before it only when at least this many lines of its text fit there. */
+export const MERGE_MIN_LINES = 3;
+
+export interface BuildOptions {
+  /** About how many characters a full page holds, to start from; learned while paginating. */
+  hint?: PaginationHint;
+  /** About how many characters make a line. */
+  lineChars?: number;
+}
+
+/** A drop cap only opens a paragraph that begins with a letter, not a digit or a quotation mark. */
+export function canHaveDropCap(text: string): boolean {
+  const first = parseStory(text)[0];
+  return first?.kind === 'paragraph' && /^\p{L}/u.test(first.lines[0]?.[0]?.text ?? '');
+}
+
+/**
+ * Build the book's pages. Story text is cut by `fits`, which says whether a
+ * candidate story page fits; the generator yields after each page and moment so
+ * a caller measuring in the browser can give the screen a moment in between.
+ */
+export function* paginateBook(source: ReaderSource, fits: PageFits, options: BuildOptions = {}): Generator<void, ReaderPage[]> {
   const pages: ReaderPage[] = [];
   const name = (id?: string) => (id && source.people.get(id)?.name) || 'Без указания автора';
+  const hint = options.hint ?? { chars: DEFAULT_PAGE_BUDGET.pageChars };
+  const paginate = { hint, lineChars: options.lineChars };
   pages.push({ kind: 'cover', key: 'cover', title: source.book.title, subtitle: source.book.subtitle, coverAssetId: source.book.coverMediaAssetId });
   const contents: Extract<ReaderPage, { kind: 'contents' }> = { kind: 'contents', key: 'contents', entries: [] };
   pages.push(contents);
 
-  source.chapters.forEach(({ chapter, moments }) => {
+  for (const { chapter, moments } of source.chapters) {
     contents.entries.push({ chapterId: chapter.id, label: chapterLabel(chapter.order), title: chapter.title, page: pages.length });
     pages.push({
       kind: 'chapter', key: 'chapter:' + chapter.id, chapterId: chapter.id, numeral: toRoman(chapter.order), label: chapterLabel(chapter.order),
       title: chapter.title, description: chapter.description, momentCount: moments.length
     });
-    moments.forEach(({ moment, perspectives, reflections }) => {
+    for (const { moment, perspectives, reflections } of moments) {
       const base = { chapterId: chapter.id, momentId: moment.id };
       // Any story with words opens the moment, whether it was written or told aloud with a few words.
       const told = (item: Perspective) => Boolean(item.content.trim()) && item.type !== 'photo' && item.type !== 'video';
@@ -105,29 +181,31 @@ export function buildReaderPages(source: ReaderSource, { firstPageChars, pageCha
       const filesOf = (item: Perspective) => perspectiveAssets(item, source.assets);
       const voicesOf = (item: Perspective) => filesOf(item).filter((asset) => asset.type === 'audio' && isAttachedMedia(asset)).map((asset) => asset.id);
       const wordsCount = perspectives.filter(told).length;
-      // The recordings open the story, before its words: each small player takes about two lines of the first page.
-      const budgetFor = (item: Perspective | undefined, first: number, rest: number) => {
-        const players = item ? voicesOf(item).length : 0;
-        return { firstPageChars: Math.max(80, first - 120 * players), pageChars: rest };
-      };
       const heading = {
         title: moment.title,
         date: moment.occurredAt ? formatDate(moment.occurredAt) : '',
         narrators: [...new Set(perspectives.map((item) => item.authorId).filter((id): id is string => Boolean(id)).map(name))]
       };
-      const opening = primary?.content ?? moment.summary;
-      const openingPages = paginateStoryText(opening, budgetFor(primary, firstPageChars, pageChars));
-      const [first = { text: '', startsMidParagraph: false, separatorBefore: '' }, ...restText] = openingPages;
-      const primaryVoices = primary ? voicesOf(primary) : [];
-      const signed = primary && wordsCount > 1 ? name(primary.authorId) : undefined;
-      pages.push({ kind: 'story', key: 'story:' + moment.id, ...base, heading, ...first, dropCap: Boolean(first.text), continued: false,
-        voice: restText.length === 0 ? signed : undefined, audioIds: primaryVoices.length ? primaryVoices : undefined });
-      restText.forEach((part, index, all) => pages.push({
-        kind: 'story', key: `story:${moment.id}:${index}`, ...base, ...part, dropCap: false, continued: true,
-        voice: index === all.length - 1 ? signed : undefined
-      }));
+      const storyPage = (key: string, sections: StorySection[], continued: boolean, withHeading = false): StoryPageData =>
+        ({ kind: 'story', key, ...base, heading: withHeading ? heading : undefined, continued, sections });
 
-      perspectives.forEach((perspective) => {
+      // The moment opens with its primary story (or its summary), under the heading.
+      const opening = primary?.content ?? moment.summary;
+      const openingId = primary?.id ?? moment.id;
+      const players = primary ? voicesOf(primary) : [];
+      const signed = primary && wordsCount > 1 ? name(primary.authorId) : undefined;
+      const openingSection = (part: StoryTextPage, index: number, last: boolean): StorySection => ({
+        // The drop cap opens the words wherever they begin: on the heading page, or on the next one when none fit there.
+        id: openingId, ...part, dropCap: part.separatorBefore === '' && !part.startsMidParagraph && canHaveDropCap(part.text),
+        audioIds: index === 0 && players.length ? players : undefined, signature: last ? signed : undefined
+      });
+      const openingPage = (index: number, section: StorySection) =>
+        storyPage(index === 0 ? 'story:' + moment.id : `story:${moment.id}:${index - 1}`, [section], index > 0, index === 0);
+      const written = yield* paginateStoryPages(opening, (part, index, last) => fits(openingPage(index, openingSection(part, index, last))), { ...paginate, emptyFirstPage: true });
+      const parts = written.length ? written : [{ text: '', startsMidParagraph: false, separatorBefore: '' as const }];
+      parts.forEach((part, index) => pages.push(openingPage(index, openingSection(part, index, index === parts.length - 1))));
+
+      for (const perspective of perspectives) {
         const author = name(perspective.authorId);
         const files = filesOf(perspective);
         // An older story's own file keeps the page key it always had.
@@ -135,11 +213,32 @@ export function buildReaderPages(source: ReaderSource, { firstPageChars, pageCha
         const withWords = told(perspective);
         const voices = voicesOf(perspective);
         if (withWords && perspective.id !== primary?.id) {
-          const parts = paginateStoryText(perspective.content, budgetFor(perspective, pageChars, pageChars));
-          parts.forEach((part, index) => pages.push({
-            kind: 'story', key: `voice:${perspective.id}:${index}`, ...base, ...part, dropCap: index === 0, continued: index > 0,
-            voice: author, audioIds: index === 0 && voices.length ? voices : undefined
-          }));
+          const sectionOf = (part: StoryTextPage, index: number): StorySection => ({
+            id: perspective.id, ...part, dropCap: false, kicker: index === 0 ? author : undefined,
+            signature: index > 0 ? author : undefined, audioIds: index === 0 && voices.length ? voices : undefined
+          });
+          const ownPage = (index: number, part: StoryTextPage) => storyPage(`voice:${perspective.id}:${index}`, [sectionOf(part, index)], index > 0);
+          // A short view goes on the page before it when that page is the one just before and has room for it.
+          const previous = pages[pages.length - 1];
+          let parts: StoryTextPage[] | undefined;
+          let joined: ((part: StoryTextPage) => StoryPageData) | undefined;
+          if (previous?.kind === 'story' && previous.momentId === moment.id) {
+            const onto = (section: StorySection): StoryPageData => ({ ...previous, sections: [...previous.sections, section] });
+            const room = fits(onto({ ...sectionOf({ text: '', startsMidParagraph: false, separatorBefore: '' }, 0), reserveLines: MERGE_MIN_LINES }));
+            if (room) {
+              const attempt = yield* paginateStoryPages(perspective.content,
+                (part, index) => index === 0 ? fits(onto(sectionOf(part, 0))) : fits(ownPage(index, part)), paginate);
+              if (attempt.length && fits(onto(sectionOf(attempt[0], 0)))) {
+                parts = attempt;
+                joined = (part) => onto(sectionOf(part, 0));
+              }
+            }
+          }
+          parts ??= yield* paginateStoryPages(perspective.content, (part, index) => fits(ownPage(index, part)), paginate);
+          parts.forEach((part, index) => {
+            if (index === 0 && joined) pages[pages.length - 1] = joined(part);
+            else pages.push(ownPage(index, part));
+          });
         }
         files.forEach((asset) => {
           const own = asset.id === perspective.mediaAssetId;
@@ -157,7 +256,7 @@ export function buildReaderPages(source: ReaderSource, { firstPageChars, pageCha
             pages.push({ kind: 'media', key: 'media:' + keyOf(asset), ...base, assetId: asset.id, mediaType: 'audio', caption: caption || 'Рассказ голосом', author });
           }
         });
-      });
+      }
 
       for (let index = 0; index < reflections.length; index += 3) {
         pages.push({
@@ -166,10 +265,20 @@ export function buildReaderPages(source: ReaderSource, { firstPageChars, pageCha
             voiceId: reflection.mediaAssetId && isAttachedMedia(source.assets.get(reflection.mediaAssetId)) ? reflection.mediaAssetId : undefined }))
         });
       }
-    });
-  });
+      yield;
+    }
+  }
   pages.push({ kind: 'end', key: 'end', title: source.book.title });
   return pages;
+}
+
+/** The book's pages at once: for tests and for callers that can wait. */
+export function buildReaderPages(source: ReaderSource, fits: PageFits = charCountFits(), options?: BuildOptions): ReaderPage[] {
+  const steps = paginateBook(source, fits, options);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
 }
 
 export interface PhysicalPage {

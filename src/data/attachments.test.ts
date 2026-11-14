@@ -60,8 +60,8 @@ describe('a story with words, voice and photos', () => {
       assets: new Map(snapshot.mediaAssets.map((item) => [item.id, item])),
       people: new Map()
     });
-    const story = pages.find((page) => page.kind === 'story' && page.text.includes('Слова и голос'));
-    expect(story && story.kind === 'story' ? story.audioIds : undefined).toEqual(['voice_1']);
+    const story = pages.find((page) => page.kind === 'story' && page.sections.some((section) => section.text.includes('Слова и голос')));
+    expect(story && story.kind === 'story' ? story.sections[0].audioIds : undefined).toEqual(['voice_1']);
     // The recording opens the story: it is on the story's first page, not after its last words.
     expect(pages.find((page) => page.kind === 'story' && page.momentId === momentId)).toBe(story);
     expect(pages.some((page) => page.kind === 'media' && page.assetId === 'voice_1')).toBe(false);

@@ -1,23 +1,25 @@
-import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Clapperboard, Maximize2, MessageCircle } from 'lucide-react';
+import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Clapperboard, Maximize2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { EmptyState } from '../../components/EmptyState';
-import { MediaImage } from '../../components/MediaImage';
-import { VoiceNote } from '../../components/VoiceNote';
 import type { MediaAsset } from '../../data/types';
 import { clothStyle } from '../../lib/cloth';
 import { chronologicalMoments } from '../../lib/film/timeline';
-import { pluralize } from '../../lib/format';
-import { StoryText } from '../../components/StoryText';
 import { useMediaQuery } from '../../lib/useMediaQuery';
-import { useMediaUrl } from '../../lib/useMediaUrl';
+import { PageView } from './PageView';
 import {
-  anchorOf, buildLeaves, buildReaderPages, DEFAULT_PAGE_BUDGET, estimatePageBudget, findPage, leavesTurnedFor, logicalForTurned, pageChapterId,
+  anchorOf, buildLeaves, estimateLineChars, estimatePageBudget, findPage, leavesTurnedFor, logicalForTurned, pageChapterId,
   type PageAnchor, type ReaderPage, type ReaderSource
 } from './readerPages';
+import { readTextSizeIndex, saveTextSizeIndex, TEXT_SIZES } from './textSize';
+import { useMeasuredPages } from './useMeasuredPages';
 
 const PAGE_RATIO = 0.7;
+/** Below this page width story text is not justified: short lines would open wide gaps between words. */
+const NARROW_PAGE = 440;
+/** Stands in for the book until its pages are measured; nothing is drawn from it. */
+const PENDING_PAGES: ReaderPage[] = [{ kind: 'blank', key: 'pending' }];
 
 export function BookReaderPage() {
   const { books, activeBook, chapters, moments, chaptersForBook, momentsForChapter, perspectivesForMoment, reflectionsForMoment, mediaAssets, people, snapshot } = useAppState();
@@ -61,12 +63,35 @@ function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bo
   const spread = useMediaQuery('(min-width: 900px)') && !compact;
   const [size, setSize] = useState({ width: 0, height: 0 });
   const pageWidth = spread ? Math.min(size.width / 2, size.height * PAGE_RATIO) : Math.min(size.width, compact ? 760 : 560);
-  const pageHeight = spread ? pageWidth / PAGE_RATIO : Math.min(size.height, Math.max(420, pageWidth / 0.6));
-  const budget = size.width ? estimatePageBudget(pageWidth, pageHeight, { compact }) : DEFAULT_PAGE_BUDGET;
-  const pages = useMemo(() => buildReaderPages(source, budget),
-    // The budget is rounded, so pages are rebuilt only when the text really fits differently.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [source, budget.firstPageChars, budget.pageChars]);
+  const pageHeight = spread ? pageWidth / PAGE_RATIO : Math.min(size.height, pageWidth / 0.5);
+  const narrow = pageWidth < NARROW_PAGE;
+  // The text size is the device's own choice; the pages are measured again when it changes.
+  const [sizeIndex, setSizeIndex] = useState(readTextSizeIndex);
+  const textSize = TEXT_SIZES[sizeIndex];
+  const changeTextSize = (step: number) => {
+    const next = Math.min(TEXT_SIZES.length - 1, Math.max(0, sizeIndex + step));
+    setSizeIndex(next);
+    saveTextSizeIndex(next);
+  };
+  const faceRef = useRef<HTMLDivElement>(null);
+  const known = size.width > 0 && size.height > 0;
+  const guess = estimatePageBudget(pageWidth, pageHeight, { compact, scale: textSize.scale });
+  const geometryKey = [spread ? 'spread' : 'single', compact ? 'compact' : '', pageWidth.toFixed(1), pageHeight.toFixed(1), textSize.scale].join('|');
+  const measured = useMeasuredPages({
+    source, faceRef, enabled: known, geometryKey,
+    lineChars: estimateLineChars(pageWidth, { compact, scale: textSize.scale }), pageChars: guess.pageChars
+  });
+  const ready = measured !== null && known;
+  const pages = measured ?? PENDING_PAGES;
+  const bookStyle = { ...cloth, '--page-w': pageWidth + 'px', '--page-h': pageHeight + 'px', '--reader-scale': textSize.scale } as CSSProperties;
+  // Until the pages are laid out again for a new text size or page size, the book keeps the text size they were
+  // laid out for, and a page never shows a scroll bar for the moment its words do not fit.
+  // New pages arrive only for the current layout (a stale one is dropped), so they take its text size in the same render.
+  const [shown, setShown] = useState({ pages: measured, key: geometryKey, scale: textSize.scale });
+  if (shown.pages !== measured) setShown({ pages: measured, key: geometryKey, scale: textSize.scale });
+  const relayout = shown.key !== geometryKey;
+  const shownStyle = { ...bookStyle, '--reader-scale': shown.scale } as CSSProperties;
+  const bookClass = narrow ? ' reader-book--narrow' : '';
   // The reader remembers the page itself, not its number: re-pagination on resize keeps the place.
   const [anchor, setAnchor] = useState<PageAnchor | null>(null);
   const current = anchor ? findPage(pages, anchor) : initialPage(pages, params);
@@ -104,6 +129,9 @@ function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bo
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
+    // Read the size at once too: a page that is not painting (a background tab) never reports it through the observer.
+    const box = stage.getBoundingClientRect();
+    setSize((previous) => previous.width > 0 ? previous : { width: box.width, height: box.height });
     const observer = new ResizeObserver(([entry]) => setSize({ width: entry.contentRect.width, height: entry.contentRect.height }));
     observer.observe(stage);
     return () => observer.disconnect();
@@ -111,8 +139,8 @@ function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bo
 
   // Resolve ?chapter= / ?moment= / ?page= once, against pages laid out for the real page size.
   useEffect(() => {
-    if (!anchor && size.width > 0 && pages[safeCurrent]) setAnchor(anchorOf(pages[safeCurrent]));
-  }, [anchor, size.width, pages, safeCurrent]);
+    if (!anchor && ready && pages[safeCurrent]) setAnchor(anchorOf(pages[safeCurrent]));
+  }, [anchor, ready, pages, safeCurrent]);
 
   useEffect(() => {
     if (!anchor) return;
@@ -135,7 +163,7 @@ function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bo
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
+      const target = event.target instanceof Element ? event.target : null;
       if (target?.closest('input, select, textarea, audio, video, [contenteditable="true"]')) return;
       if (event.key === 'ArrowRight' || event.key === 'PageDown') { event.preventDefault(); next(); }
       if (event.key === 'ArrowLeft' || event.key === 'PageUp') { event.preventDefault(); previous(); }
@@ -175,12 +203,12 @@ function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bo
   const closed = spread && turned === 0 ? 'is-closed-front' : spread && turned === leaves.length ? 'is-closed-back' : '';
   const visibleKeys = new Set(spread ? [leaves[turned - 1]?.back?.page.key, leaves[turned]?.front.page.key] : [leaves[turned]?.front.page.key]);
   const totalNumbered = pages.length - 2;
-  const pageLabel = safeCurrent === 0 ? 'Обложка' : safeCurrent === pages.length - 1 ? 'Последняя страница' : `Страница ${safeCurrent} из ${totalNumbered}`;
+  const pageLabel = !ready ? 'Раскладываем страницы…' : safeCurrent === 0 ? 'Обложка' : safeCurrent === pages.length - 1 ? 'Последняя страница' : `Страница ${safeCurrent} из ${totalNumbered}`;
 
   return <div className={'page page--reader' + (immersive ? ' is-immersive' : '')}>
     {hint ? <p className="reader-hint" role="status">Нажмите в центр страницы, чтобы вернуть меню</p> : null}
     <header className="reader-header">
-      <Link className="back-link" to="/book"><ArrowLeft size={20} aria-hidden="true" /> К книге</Link>
+      <Link className="back-link" to="/book" aria-label="К книге"><ArrowLeft size={20} aria-hidden="true" /> <span className="reader-header__back-label">К книге</span></Link>
       <h1 className="reader-header__title">{bookTitle}</h1>
       {contents ? <label className="reader-jump"><BookOpen size={17} aria-hidden="true" /><span className="visually-hidden">Перейти к главе</span>
         <select value={contents.entries.find((entry) => entry.chapterId === chapterId)?.chapterId ?? ''} onChange={(event) => {
@@ -190,14 +218,24 @@ function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bo
           <option value="">Содержание</option>
           {contents.entries.map((entry) => <option key={entry.chapterId} value={entry.chapterId}>{entry.label}: {entry.title}</option>)}
         </select></label> : null}
+      <div className="reader-size" role="group" aria-label={'Размер текста: ' + textSize.label}>
+        <button type="button" className="reader-size__button" onClick={() => changeTextSize(-1)} disabled={sizeIndex === 0}
+          aria-label="Текст мельче" title={'Текст мельче (сейчас ' + textSize.label + ')'}><span aria-hidden="true">А<small>−</small></span></button>
+        <button type="button" className="reader-size__button reader-size__button--large" onClick={() => changeTextSize(1)} disabled={sizeIndex === TEXT_SIZES.length - 1}
+          aria-label="Текст крупнее" title={'Текст крупнее (сейчас ' + textSize.label + ')'}><span aria-hidden="true">А<small>+</small></span></button>
+      </div>
       <button type="button" className="icon-button reader-header__immersive" onClick={toggleImmersive} aria-label="Скрыть меню для чтения" title="Скрыть меню (или нажмите в центр страницы)">
         <Maximize2 size={18} aria-hidden="true" />
       </button>
     </header>
 
-    <div ref={stageRef} className={'reader-stage ' + (spread ? 'reader-stage--spread' : 'reader-stage--single')} onPointerDown={onPointerDown} onPointerUp={onPointerUp}
+    <div ref={stageRef} className={'reader-stage ' + (spread ? 'reader-stage--spread' : 'reader-stage--single') + (ready ? ' is-paged' : '')} onPointerDown={onPointerDown} onPointerUp={onPointerUp}
       onPointerCancel={() => { pointer.current = null; }} aria-roledescription="книга" aria-label={bookTitle}>
-      {size.width > 0 ? <div className={'reader-book ' + closed + (hasTurned ? ' has-turned' : '')} style={{ ...cloth, '--page-w': pageWidth + 'px', '--page-h': pageHeight + 'px' } as CSSProperties}>
+      {/* Pages are measured here, unseen: the same size, text size and styles as a page of the book. */}
+      {known ? <div className={'reader-book reader-measure-host' + bookClass} style={bookStyle} aria-hidden="true" inert>
+        <div className="reader-leaf"><div ref={faceRef} className="reader-leaf__face reader-leaf__face--front" /></div>
+      </div> : null}
+      {ready ? <div className={'reader-book ' + closed + (hasTurned ? ' has-turned' : '') + bookClass + (relayout ? ' is-relayout' : '')} style={shownStyle}>
         {leaves.map((leaf, index) => {
           if (index < turned - 3 || index > turned + 2) return null;
           const isTurned = index < turned;
@@ -228,116 +266,4 @@ function Reader({ source, bookTitle, assets, cloth }: { source: ReaderSource; bo
       <button type="button" className="icon-button reader-controls__turn" onClick={next} disabled={turned >= maxTurned} aria-label="Следующая страница"><ChevronRight size={24} /></button>
     </nav>
   </div>;
-}
-
-export interface PageViewProps {
-  page: ReaderPage;
-  number: number;
-  total: number;
-  assets: Map<string, MediaAsset>;
-  chapterTitles: Map<string, string>;
-  onJump: (page: number) => void;
-}
-
-export function PageView({ page, number, total, assets, chapterTitles, onJump }: PageViewProps) {
-  const numbered = number > 0 && number < total - 1 && page.kind !== 'blank' && page.kind !== 'chapter';
-  const head = 'chapterId' in page && page.kind !== 'chapter' ? <p className="reader-page__head">{chapterTitles.get(page.chapterId)}</p> : null;
-  let body;
-  switch (page.kind) {
-    case 'cover': {
-      const cover = page.coverAssetId ? assets.get(page.coverAssetId) : undefined;
-      body = <div className="reader-cover">
-        <div className="reader-cover__frame">
-          <span className="reader-cover__eyebrow">Книга воспоминаний</span>
-          <h2>{page.title}</h2>
-          {cover ? <MediaImage asset={cover} className="reader-cover__photo" /> : <Fleuron className="reader-cover__mark" />}
-          {page.subtitle ? <p>{page.subtitle}</p> : null}
-        </div>
-        <span className="reader-cover__ribbon" aria-hidden="true" />
-      </div>;
-      break;
-    }
-    case 'contents':
-      body = <div className="reader-contents"><p className="reader-kicker">Оглавление</p><h2>Содержание</h2>
-        <ol>{page.entries.map((entry) => <li key={entry.chapterId}><button type="button" onClick={() => onJump(entry.page)}>
-          <span><small>{entry.label}</small>{entry.title}</span><i aria-hidden="true" /><b>{entry.page}</b>
-        </button></li>)}</ol>
-        <Fleuron /></div>;
-      break;
-    case 'chapter':
-      body = <div className="reader-chapter"><span className="reader-chapter__numeral" aria-hidden="true">{page.numeral}</span>
-        <p className="reader-kicker">{page.label}</p><h2>{page.title}</h2><Fleuron />
-        {page.description ? <p className="reader-chapter__description">{page.description}</p> : null}
-        <small>{page.momentCount} {pluralize(page.momentCount, 'момент', 'момента', 'моментов')}</small></div>;
-      break;
-    case 'story':
-      body = <div className="reader-story">
-        {page.heading ? <header className="reader-story__heading">
-          {page.heading.date ? <p className="reader-kicker">{page.heading.date}</p> : null}
-          <h2>{page.heading.title}</h2>
-          {page.heading.narrators.length ? <p className="reader-story__narrators">Вспоминают: {page.heading.narrators.join(', ')}</p> : null}
-        </header> : null}
-        {!page.heading && page.voice && page.dropCap ? <p className="reader-kicker">Взгляд · {page.voice}</p> : null}
-        {/* The recordings come first, in the order they were added, then the words. */}
-        {page.audioIds?.length ? <div className="reader-story__voices">{page.audioIds.map((id) => assets.get(id)).filter((asset): asset is MediaAsset => Boolean(asset))
-          .map((asset) => <VoiceNote key={asset.id} asset={asset} label={page.voice ? 'Голос: ' + page.voice : 'Послушать рассказ'} className="reader-story__voice" />)}</div> : null}
-        <div className={'reader-story__text ' + (page.dropCap ? 'has-drop-cap' : '')}>
-          <StoryText text={page.text} firstClassName={page.startsMidParagraph ? 'is-continuation' : undefined} />
-        </div>
-        {page.voice && page.heading ? <p className="reader-story__signature">— {page.voice}</p> : null}
-        {page.voice && !page.heading && !page.dropCap ? <p className="reader-story__signature">— {page.voice}</p> : null}
-      </div>;
-      break;
-    case 'photo': {
-      const asset = assets.get(page.assetId);
-      body = <figure className="reader-photo">
-        <div className="reader-photo__print">{asset ? <MediaImage asset={asset} alt={asset.alt ?? page.caption} /> : null}</div>
-        <figcaption>{page.caption ? <span>{page.caption}</span> : null}<small>{page.author}</small></figcaption>
-      </figure>;
-      break;
-    }
-    case 'media': {
-      const asset = assets.get(page.assetId);
-      body = <div className={'reader-media reader-media--' + page.mediaType}>
-        <h3>{page.author}</h3>{page.caption ? <p>{page.caption}</p> : null}
-        {asset ? page.mediaType === 'audio' ? <VoiceNote asset={asset} label={page.caption || 'Рассказ голосом'} /> : <ReaderVideo asset={asset} /> : null}</div>;
-      break;
-    }
-    case 'reflections':
-      body = <div className="reader-notes"><p className="reader-kicker"><MessageCircle size={14} aria-hidden="true" /> Отклики близких</p>
-        <h3>{page.momentTitle}</h3>
-        {page.notes.map((note, index) => {
-          const voice = note.voiceId ? assets.get(note.voiceId) : undefined;
-          return <blockquote key={index} className="reader-note">{note.text ? <p>{note.text}</p> : null}
-            {voice ? <VoiceNote asset={voice} label="Отклик голосом" /> : null}<cite>{note.author}</cite></blockquote>;
-        })}</div>;
-      break;
-    case 'end':
-      body = <div className="reader-cover reader-cover--back"><div className="reader-cover__frame"><Fleuron className="reader-cover__mark" />
-        <p>История продолжается.<br />Каждый новый рассказ — ещё одна страница.</p><span className="reader-cover__eyebrow">{page.title}</span></div></div>;
-      break;
-    default:
-      body = <Fleuron className="reader-fleuron--blank" />;
-  }
-  return <article className={'reader-page reader-page--' + page.kind}>
-    {head}
-    <div className="reader-page__body">{body}</div>
-    {numbered ? <footer className="reader-page__number">{number}</footer> : null}
-  </article>;
-}
-
-/** A small symmetric flourish, drawn so it never depends on a symbol font. */
-function Fleuron({ className = '' }: { className?: string }) {
-  return <svg className={'reader-fleuron ' + className} viewBox="0 0 64 26" aria-hidden="true" focusable="false">
-    <path d="M32 6 37 13 32 20 27 13Z" fill="currentColor" />
-    <path d="M25 13C18 13 15 5 9 7 4 9 5 16 10 16c4 0 4-5 1-5M39 13c7 0 10-8 16-6 5 2 4 9-1 9-4 0-4-5-1-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-  </svg>;
-}
-
-function ReaderVideo({ asset }: { asset: MediaAsset }) {
-  const media = useMediaUrl(asset);
-  if (media.status !== 'ready') {
-    return <p className="muted-copy">{media.status === 'loading' ? 'Загружаем видео…' : media.offline ? 'Видео в облаке: оно откроется, когда появится интернет.' : 'Видео не найдено на этом устройстве.'}</p>;
-  }
-  return <video className="reader-media__video" src={media.url} controls playsInline preload="metadata" onError={media.retry} />;
 }

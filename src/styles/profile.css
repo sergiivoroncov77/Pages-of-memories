@@ -70,7 +70,7 @@
   width: 34px;
   height: 34px;
   border-width: 2px;
-  font-size: 0.72rem;
+  font-size: 0.75rem;
 }
 
 .profile-chip__name {
@@ -81,7 +81,7 @@
 
 .profile-chip__name small {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.75rem;
 }
 
 .profile-chip__name strong {

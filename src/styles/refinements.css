@@ -75,7 +75,7 @@ button:disabled { cursor: not-allowed; }
 .moment-card__favorite { top: 10px; right: 10px; width: 44px; height: 44px; border: 1px solid var(--line-strong); background: var(--surface); box-shadow: var(--shadow-sm); }
 .moment-card__favorite.is-active { background: var(--primary-soft); color: var(--primary-dark); }
 .moment-card__views { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--primary-dark); font-size: .84rem; font-weight: 700; margin-top: 16px; }
-.avatar-stack span { width: 31px; height: 31px; font-size: .66rem; }
+.avatar-stack span { width: 31px; height: 31px; font-size: .75rem; }
 .moment-meta-bar { gap: 10px 22px; margin: -5px 0 24px; font-size: .86rem; }
 .moment-tabs { gap: 8px; padding-block: 5px 12px; margin-bottom: 24px; }
 .moment-tabs button { min-height: 46px; padding: 0 17px; font-size: .95rem; background: transparent; }

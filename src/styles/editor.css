@@ -90,14 +90,15 @@
   color: var(--muted);
 }
 
-.story-editor__preview p {
+/* The plain text preview only: the book page preview keeps the reader's own styles. */
+.story-editor__page p {
   margin: 0 0 1em;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font: 1.05rem/1.75 var(--font-serif);
 }
 
-.story-editor__preview p:last-child {
+.story-editor__page p:last-child {
   margin-bottom: 0;
 }
 

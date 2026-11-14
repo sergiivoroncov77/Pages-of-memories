@@ -2,6 +2,7 @@
 
 .voice-note {
   display: flex;
+  min-width: 0;
   max-width: 100%;
   align-items: center;
   gap: 10px;
@@ -20,6 +21,7 @@
 }
 
 .voice-note__play {
+  position: relative;
   display: grid;
   width: 32px;
   height: 32px;
@@ -32,6 +34,17 @@
   cursor: pointer;
 }
 
+/* Compact to the eye, 44px to a finger. */
+.voice-note__play::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  content: '';
+}
+
 .voice-note__play:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--primary) 45%, transparent);
   outline-offset: 2px;
@@ -39,6 +52,7 @@
 
 .voice-note__label {
   overflow: hidden;
+  min-width: 0;
   max-width: 40%;
   flex-shrink: 1;
   text-overflow: ellipsis;
@@ -48,7 +62,7 @@
 .voice-note input.voice-note__progress,
 .voice-note input.voice-note__progress:focus {
   background: transparent;
-  min-width: 48px;
+  min-width: 0;
   height: 20px;
   min-height: 0;
   flex: 1;
@@ -107,6 +121,7 @@
 
 .reader-story__voices {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   margin: 4px 0 14px;
 }
@@ -144,6 +159,9 @@
 
 .page--reader.is-immersive {
   height: calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  /* Without the header and the controls the book takes the one row left, also where the page is a grid (landscape phone). */
+  grid-template-rows: minmax(0, 1fr);
+  row-gap: 0;
 }
 
 .page--reader.is-immersive .reader-stage {
@@ -314,4 +332,16 @@
 
 .moment-editor__locked {
   margin-top: 4px;
+}
+
+/* A reflection told aloud on a small phone: the player gets the room of the icon and its own label. */
+@media (max-width: 420px) {
+  .reflection-card:has(.voice-note) > svg,
+  .reflection-card .voice-note__label {
+    display: none;
+  }
+
+  .reflection-card .voice-note {
+    gap: 8px;
+  }
 }

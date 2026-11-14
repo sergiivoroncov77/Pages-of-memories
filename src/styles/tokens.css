@@ -32,7 +32,7 @@
   --mobile-nav-height: 76px;
   --content-max: 1180px;
   --font-sans: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-serif: Georgia, "Times New Roman", serif;
+  --font-serif: "PT Serif", Georgia, "Times New Roman", serif;
 }
 
 .is-high-contrast {

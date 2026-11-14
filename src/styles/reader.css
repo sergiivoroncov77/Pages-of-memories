@@ -23,11 +23,35 @@
   --paper-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .9 0 0 0 0 .75 0 0 0 .045 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
+/* The reader owns the whole screen: header on top, controls at the bottom, the stage takes what is left. */
+.app-shell:has(.page--reader) {
+  min-height: 100dvh;
+}
+
+.app-main:has(.page--reader) {
+  --reader-pad: 12px;
+  padding-block: calc(var(--reader-pad) + env(safe-area-inset-top)) calc(var(--reader-pad) + env(safe-area-inset-bottom));
+}
+
 .page--reader {
   display: flex;
+  height: calc(100dvh - var(--reader-pad, 12px) * 2 - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   max-width: 1320px;
   flex-direction: column;
   gap: 12px;
+}
+
+.reader-header,
+.reader-controls {
+  flex-shrink: 0;
+}
+
+/* Below the width where the app shows its top bar and bottom navigation, the reader hides them. */
+@media (max-width: 759px) {
+  .app-shell:has(.page--reader) > .mobile-topbar,
+  .app-shell:has(.page--reader) > .mobile-nav {
+    display: none;
+  }
 }
 
 .reader-header {
@@ -80,19 +104,121 @@
 .reader-stage {
   position: relative;
   display: grid;
-  height: clamp(460px, calc(100dvh - 220px), 920px);
+  flex: 1;
+  min-height: 0;
   place-items: center;
   perspective: 3400px;
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
-  /* The entrance fades the stage, never the preserve-3d book: opacity there would flatten the leaves. */
+}
+
+/* The entrance fades the stage, never the preserve-3d book: opacity there would flatten the leaves.
+   It plays once the pages are measured and the book appears. */
+.reader-stage.is-paged {
   animation: book-open-in 900ms var(--turn-ease) backwards;
+}
+
+/* Where pages are measured: invisible, never in the way, but laid out exactly like a page of the book. */
+.reader-book.reader-measure-host,
+.story-preview__page.reader-measure-host {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: none;
+  transition: none;
+}
+
+.reader-book.reader-measure-host::before,
+.reader-book.reader-measure-host::after {
+  display: none;
+}
+
+.reader-measure-host .reader-leaf {
+  transition: none;
+}
+
+/* The text size button: a small and a large letter. */
+/* Text size: smaller and larger, side by side like one control. */
+.reader-size {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.reader-size__button {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 700 0.95rem/1 var(--font-serif);
+  cursor: pointer;
+}
+
+.reader-size__button + .reader-size__button {
+  border-left: 1px solid var(--line);
+}
+
+.reader-size__button--large {
+  font-size: 1.2rem;
+}
+
+.reader-size__button small {
+  margin-left: 1px;
+  font: 600 0.75em/1 var(--font-sans, inherit);
+}
+
+.reader-size__button:hover:not(:disabled) {
+  background: var(--surface-warm);
+}
+
+.reader-size__button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -3px;
+}
+
+.reader-size__button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+@media (max-width: 380px) {
+  .reader-header {
+    gap: 8px;
+  }
+
+  .reader-jump {
+    padding-left: 10px;
+  }
+
+  .reader-header .icon-button {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+}
+
+/* A small phone: the arrow alone leads back, so the chapter list keeps room for its name. */
+@media (max-width: 420px) {
+  .reader-header__back-label {
+    display: none;
+  }
+
+  .reader-size__button {
+    width: 38px;
+  }
 }
 
 .reader-stage--single {
   overflow: hidden;
-  height: max(420px, calc(100dvh - 72px - env(safe-area-inset-top) - var(--mobile-nav-height) - env(safe-area-inset-bottom) - 160px));
   margin-inline: -8px;
   padding-inline: 8px;
   perspective: 1700px;
@@ -290,7 +416,7 @@
   min-height: 1.1em;
   margin: 0 0 12px;
   color: var(--paper-muted);
-  font: 600 0.66rem/1.2 var(--font-sans);
+  font: 600 0.75rem/1.2 var(--font-sans);
   letter-spacing: 0.18em;
   text-align: center;
   text-transform: uppercase;
@@ -301,6 +427,7 @@
   flex: 1;
   min-height: 0;
   flex-direction: column;
+  overflow-x: clip;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
@@ -309,6 +436,11 @@
 
 .reader-page__body > * {
   margin-block: auto;
+}
+
+/* For the moment the pages are laid out again (text size or screen changed), no scroll bar flashes on a page. */
+.reader-book.is-relayout .reader-page__body {
+  overflow-y: hidden;
 }
 
 .reader-page--story .reader-page__body > *,
@@ -331,7 +463,7 @@
   gap: 6px;
   margin: 0 0 10px;
   color: var(--primary);
-  font: 700 0.68rem/1.3 var(--font-sans);
+  font: 700 0.75rem/1.3 var(--font-sans);
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
@@ -411,7 +543,7 @@
 
 .reader-cover__eyebrow {
   color: var(--gilt);
-  font: 700 0.66rem/1.3 var(--font-sans);
+  font: 700 0.75rem/1.3 var(--font-sans);
   letter-spacing: 0.22em;
   text-transform: uppercase;
 }
@@ -567,23 +699,71 @@
   font-style: italic;
 }
 
-.reader-story > .reader-kicker {
+/* Story text: sized by the page's width and the reader's text size (1, 1.15 or 1.3). */
+.reader-story {
+  --story-size: calc(clamp(17px, calc(var(--page-w) * 0.045), 21px) * var(--reader-scale, 1));
+}
+
+/* A view that goes on a page after another story opens with its own kicker and some air above it. */
+.reader-story__section + .reader-story__section {
+  margin-top: 28px;
+}
+
+.reader-story__section > .reader-kicker {
   display: flex;
 }
 
-.reader-story__text p {
-  margin: 0 0 0.7em;
-  font-size: clamp(0.95rem, calc(var(--page-w) * 0.036), 1.08rem);
-  line-height: 1.68;
-  text-align: justify;
-  text-indent: 1.4em;
-  white-space: pre-line;
-  hyphens: auto;
+.reader-story__text {
+  font-size: var(--story-size);
+  line-height: 1.6;
 }
 
+/* Every line the author began is a line of its own with an indent; a blank line adds the gap. */
+.reader-story__text p {
+  margin: 0;
+  text-align: justify;
+  text-indent: 1.4em;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+  hyphenate-limit-chars: 6 3 3;
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+}
+
+/* A narrow page: short lines justified would open gaps between words. */
+.reader-book--narrow .reader-story__text p {
+  text-align: start;
+}
+
+.reader-story__text p.story-line--end {
+  margin-bottom: 0.7em;
+}
+
+.reader-story__text > p:last-child {
+  margin-bottom: 0;
+}
+
+/* No indent after a heading or a kicker, under a drop cap, or where a paragraph goes on from the page before. */
 .reader-story__text p.is-continuation,
+.reader-story__text p.is-flush,
+.reader-story__text .story-heading + p,
 .reader-story__text.has-drop-cap p:first-child {
   text-indent: 0;
+}
+
+/* Headings, lists and quotes in the book follow the same size (they have their own in the editor's stylesheet). */
+.reader-story .reader-story__text .story-list,
+.reader-story .reader-story__text .story-quote {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.reader-story .reader-story__text .story-heading {
+  font-size: calc(var(--story-size) * 1.15);
+}
+
+.reader-story__reserve {
+  height: calc(var(--lines, 3) * 1.6 * var(--story-size));
 }
 
 .reader-story__text.has-drop-cap p:first-child::first-letter {
@@ -600,7 +780,7 @@
 }
 
 .reader-story__signature {
-  margin: 4px 0 0;
+  margin: 8px 0 0;
   color: var(--primary);
   font: 600 0.75rem/1.3 var(--font-sans);
   letter-spacing: 0.12em;
@@ -951,6 +1131,38 @@ input[type='range'].range,
     margin-bottom: 6px;
   }
 
+  /* A wide, low page: sizes that follow the page's width would be far too big for its height. */
+  .reader-story {
+    --story-size: calc(17px * var(--reader-scale, 1));
+  }
+
+  .reader-chapter__numeral {
+    margin-bottom: 0;
+    font-size: 2.6rem;
+  }
+
+  .reader-chapter h2 {
+    font-size: 1.5rem;
+  }
+
+  .reader-chapter .reader-fleuron {
+    margin-block: 6px;
+  }
+
+  .reader-chapter__description {
+    max-width: none;
+    margin-bottom: 6px;
+    line-height: 1.35;
+  }
+
+  .reader-notes {
+    gap: 8px;
+  }
+
+  .reader-note {
+    padding: 12px 14px 8px;
+  }
+
   .reader-cover__frame {
     gap: 8px;
     padding: 14px 18px;
@@ -998,7 +1210,8 @@ input[type='range'].range,
     --turn-time: 1ms;
   }
 
-  .reader-stage {
+  .reader-stage,
+  .reader-stage.is-paged {
     animation: none;
   }
 }

@@ -2,8 +2,10 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { storyType } from '../../data/mutations';
 import type { Book, Chapter, MediaAsset, Moment, Person, Perspective } from '../../data/types';
-import { PageView } from './BookReaderPage';
-import { buildReaderPages, estimatePageBudget, type ReaderPage } from './readerPages';
+import { PageView } from './PageView';
+import { buildReaderPages, charCountFits, estimateLineChars, estimatePageBudget, type ReaderPage, type ReaderSource } from './readerPages';
+import { readTextSizeIndex, TEXT_SIZES } from './textSize';
+import { useMeasuredPages } from './useMeasuredPages';
 
 const DRAFT_ID = 'preview-draft';
 const DRAFT_AUTHOR = 'preview-author';
@@ -43,32 +45,48 @@ export function StoryPreview({ book, chapter, moment, others, people, content, f
   }, []);
 
   const pageHeight = Math.round(width / PAGE_RATIO);
-  const budget = estimatePageBudget(width, pageHeight);
-  const pages = useMemo<ReaderPage[]>(() => {
+  const measureFace = useRef<HTMLDivElement>(null);
+  const source = useMemo<ReaderSource>(() => {
     const draft: Perspective = {
       id: DRAFT_ID, momentId: moment.id, authorId: DRAFT_AUTHOR, type: storyType(content, files), content: content.trim(),
       attachmentIds: files.map((file) => file.id), createdAt: new Date().toISOString(), isPrimary: primary
     };
     const draftMoment = primary ? { ...moment, primaryPerspectiveId: DRAFT_ID } : moment;
-    const all = buildReaderPages({
+    return {
       book,
       chapters: [{ chapter, moments: [{ moment: draftMoment, perspectives: [...(primary ? [draft] : []), ...others, ...(primary ? [] : [draft])], reflections: [] }] }],
       assets: new Map(files.map((file) => [file.id, file])),
       people: new Map([...people.map((person) => [person.id, person] as const), [DRAFT_AUTHOR, { id: DRAFT_AUTHOR, name: authorName || 'Без указания автора' } as Person]])
-    }, budget);
-    const ownPage = (page: ReaderPage) => page.key.includes(DRAFT_ID);
+    };
+  }, [book, chapter, moment, others, people, content, files, authorName, primary]);
+  // The preview reads the text size this device uses in the book.
+  const [scale] = useState(() => TEXT_SIZES[readTextSizeIndex()].scale);
+  const budget = estimatePageBudget(width, pageHeight, { scale });
+  // The pages are measured like the reader's; until then (and while typing) a character estimate stands in.
+  const measured = useMeasuredPages({
+    source, faceRef: measureFace, enabled: true, geometryKey: `${width}x${pageHeight}x${scale}`, lineChars: estimateLineChars(width, { scale }), pageChars: budget.pageChars, debounceMs: 200
+  });
+  const pages = useMemo<ReaderPage[]>(() => {
+    const all = measured ?? buildReaderPages(source, charCountFits(budget, estimateLineChars(width, { scale })));
+    // The draft's own pages: its photos and recordings, and every story page that holds a section of its words. A short view
+    // may share a page with the story before it, and then the page is shown whole, as the book will have it.
+    const ownPage = (page: ReaderPage) => page.key.includes(DRAFT_ID) || (page.kind === 'story' && page.sections.some((section) => section.id === DRAFT_ID));
     const opening = (page: ReaderPage) => page.kind === 'story' && page.key.startsWith('story:' + moment.id);
     // The opening pages are the draft's when it is the main story; otherwise only its own pages.
     return all.filter((page) => ownPage(page) || (primary && opening(page)));
-  }, [book, chapter, moment, others, people, content, files, authorName, primary, budget.firstPageChars, budget.pageChars]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [measured, source, moment.id, primary, width, scale, budget.firstPageChars, budget.pageChars]); // eslint-disable-line react-hooks/exhaustive-deps
+  const narrow = width < 440 ? ' reader-book--narrow' : '';
 
   const current = Math.min(index, Math.max(0, pages.length - 1));
   const chapterTitles = useMemo(() => new Map([[chapter.id, chapter.title]]), [chapter]);
   const assets = useMemo(() => new Map(files.map((file) => [file.id, file])), [files]);
 
-  return <div className="story-preview" ref={frame}>
+  return <div className="story-preview" ref={frame} style={{ position: 'relative' }}>
+    <div className={'story-preview__page reader-measure-host' + narrow} style={{ '--page-w': width + 'px', '--page-h': pageHeight + 'px', '--reader-scale': scale, width, height: pageHeight } as CSSProperties} aria-hidden="true" inert>
+      <div ref={measureFace} className="reader-leaf__face reader-leaf__face--front" />
+    </div>
     {pages.length ? <>
-      <div className="story-preview__page" style={{ '--page-w': width + 'px', '--page-h': pageHeight + 'px', width, height: pageHeight } as CSSProperties}>
+      <div className={'story-preview__page' + narrow} style={{ '--page-w': width + 'px', '--page-h': pageHeight + 'px', '--reader-scale': scale, width, height: pageHeight } as CSSProperties}>
         <PageView page={pages[current]} number={current + 3} total={pages.length + 10} assets={assets} chapterTitles={chapterTitles} onJump={() => undefined} />
       </div>
       {pages.length > 1 ? <div className="story-preview__nav">

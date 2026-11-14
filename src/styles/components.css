@@ -553,7 +553,7 @@
   border-radius: var(--radius-pill);
   background: rgba(35, 28, 24, 0.72);
   color: #fff;
-  font-size: 0.74rem;
+  font-size: 0.75rem;
   font-weight: 750;
   backdrop-filter: blur(10px);
 }

@@ -177,7 +177,7 @@ p {
   gap: 3px;
   border-radius: 14px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.75rem;
   font-weight: 700;
   transition: color 160ms ease, background 160ms ease;
 }
@@ -226,7 +226,7 @@ p {
 .brand small {
   overflow: hidden;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 0.75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -379,7 +379,7 @@ p {
 
   .sidebar__note small {
     color: var(--muted);
-    font-size: 0.74rem;
+    font-size: 0.75rem;
     line-height: 1.35;
   }
 }
