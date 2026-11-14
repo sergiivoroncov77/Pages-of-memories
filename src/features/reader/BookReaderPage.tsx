@@ -278,13 +278,14 @@ export function PageView({ page, number, total, assets, chapterTitles, onJump }:
           {page.heading.narrators.length ? <p className="reader-story__narrators">Вспоминают: {page.heading.narrators.join(', ')}</p> : null}
         </header> : null}
         {!page.heading && page.voice && page.dropCap ? <p className="reader-kicker">Взгляд · {page.voice}</p> : null}
+        {/* The recordings come first, in the order they were added, then the words. */}
+        {page.audioIds?.length ? <div className="reader-story__voices">{page.audioIds.map((id) => assets.get(id)).filter((asset): asset is MediaAsset => Boolean(asset))
+          .map((asset) => <VoiceNote key={asset.id} asset={asset} label={page.voice ? 'Голос: ' + page.voice : 'Послушать рассказ'} className="reader-story__voice" />)}</div> : null}
         <div className={'reader-story__text ' + (page.dropCap ? 'has-drop-cap' : '')}>
           <StoryText text={page.text} firstClassName={page.startsMidParagraph ? 'is-continuation' : undefined} />
         </div>
         {page.voice && page.heading ? <p className="reader-story__signature">— {page.voice}</p> : null}
         {page.voice && !page.heading && !page.dropCap ? <p className="reader-story__signature">— {page.voice}</p> : null}
-        {page.audioIds?.map((id) => assets.get(id)).filter((asset): asset is MediaAsset => Boolean(asset))
-          .map((asset) => <VoiceNote key={asset.id} asset={asset} label={page.voice ? 'Голос: ' + page.voice : 'Послушать рассказ'} className="reader-story__voice" />)}
       </div>;
       break;
     case 'photo': {

@@ -23,7 +23,7 @@ var APP = 'family-stories';
 var VERSION = 2;
 // Выпуск кода. Приложение сравнивает его со своим и предлагает владельцу обновить скрипт.
 // Увеличивайте при каждом изменении этого файла или appsscript.json.
-var RELEASE = 1;
+var RELEASE = 2;
 var DRIVE = 'https://www.googleapis.com';
 var ROOT_FOLDER_NAME = 'Истории близких — семейное хранилище';
 var INVITE_DAYS = 30;
@@ -644,17 +644,29 @@ function deniedDeletions_(entities, changes, memberId, creatorId, manager) {
 
 /**
  * Чужие правки: участник меняет только своё имя и рассказчиков, которых
- * добавил сам, и слова только своих рассказов и откликов. Чужие правки не
- * принимаются, и устройство получает запись обратно.
+ * добавил сам, и слова только своих рассказов и откликов. Название, дату и
+ * главу момента меняет только тот, кто его добавил (и создатель книги);
+ * озвучку для фильма и отметку «избранное» в чужом моменте — любой. Чужие
+ * правки не принимаются, и устройство получает запись обратно.
  */
 function deniedEdits_(entities, changes, memberId, book) {
   var membership = book.members[memberId];
   var own = membership && membership.personId ? 'person:' + membership.personId : '';
   return changes.filter(function (change) {
-    if (change.deleted || change.key === own || !/^(person|perspective|reflection):/.test(change.key)) return false;
+    if (change.deleted || change.key === own || !/^(person|perspective|reflection|moment):/.test(change.key)) return false;
     var entry = entities[change.key];
-    return !!entry && !entry.deleted && ownerOf_(entry, book) !== memberId;
+    if (!entry || entry.deleted || ownerOf_(entry, book) === memberId) return false;
+    if (change.key.indexOf('moment:') === 0) return momentDetails_(entry.data) !== momentDetails_(change.data);
+    return true;
   }).map(function (change) { return change.key; });
+}
+
+/** Всё в моменте, кроме того, что может менять любой участник: основного рассказа, озвучки, избранного и времени правки. */
+var OPEN_MOMENT_FIELDS = { primaryPerspectiveId: true, narrationMediaAssetId: true, narrations: true, favorite: true, updatedAt: true };
+function momentDetails_(data) {
+  var kept = {};
+  Object.keys(data || {}).sort().forEach(function (key) { if (!OPEN_MOMENT_FIELDS[key]) kept[key] = data[key]; });
+  return JSON.stringify(kept);
 }
 
 function cleanChange_(change) {

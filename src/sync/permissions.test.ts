@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { freshBookState } from './cloudState';
-import { canEdit, renameBlocker } from './permissions';
+import { canEdit, canManageMoment, renameBlocker } from './permissions';
 
 describe('renaming people of a shared book', () => {
   const book = freshBookState({ title: 'Книга бабушки', creatorId: 'member_owner', creatorName: 'Сергей', canManage: false, personId: 'person_me',
@@ -35,5 +35,18 @@ describe('changing the words of a shared book', () => {
     expect(canEdit(book, 'member_mama', { type: 'perspective', id: 'story_new' })).toBe(true);
     // A book of this device alone: everything is its own.
     expect(canEdit(undefined, 'member_mama', { type: 'perspective', id: 'story_mama' })).toBe(true);
+  });
+});
+
+describe('changing a moment of a shared book', () => {
+  const book = freshBookState({ title: 'Книга бабушки', creatorId: 'member_owner', canManage: false,
+    fingerprints: { 'moment:moment_owner': 'x', 'moment:moment_mama': 'y' }, owners: { 'moment:moment_mama': 'member_mama' } });
+
+  it('lets only whoever added the moment and the book creator change its title, date and chapter', () => {
+    expect(canManageMoment(book, 'member_mama', 'moment_mama')).toBe(true);
+    expect(canManageMoment(book, 'member_mama', 'moment_owner')).toBe(false);
+    expect(canManageMoment(book, 'member_mama', 'moment_new')).toBe(true);
+    expect(canManageMoment({ ...book, canManage: true }, 'member_owner', 'moment_mama')).toBe(true);
+    expect(canManageMoment(undefined, 'member_mama', 'moment_owner')).toBe(true);
   });
 });

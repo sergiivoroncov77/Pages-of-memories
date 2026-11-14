@@ -24,6 +24,15 @@ export function canEdit(book: CloudBookState | undefined, memberId: string | und
 }
 
 /**
+ * Whether this device may change a moment's title, date and chapter, or delete
+ * it: in a shared book only whoever added the moment and the book's creator.
+ */
+export function canManageMoment(book: CloudBookState | undefined, memberId: string | undefined, momentId: string): boolean {
+  if (!book || book.detached || !memberId || book.canManage) return true;
+  return ownerOf(book, memberId, 'moment', momentId) === memberId;
+}
+
+/**
  * Why this phone may not delete a record of a shared book, or null when it may.
  * It mirrors the storage: a member deletes only what they added, and a moment
  * or a chapter only when nothing someone else added is inside; the book's

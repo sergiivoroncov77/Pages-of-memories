@@ -105,8 +105,10 @@
   color: var(--paper-muted);
 }
 
-.reader-story__voice {
-  margin-top: 12px;
+.reader-story__voices {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 14px;
 }
 
 .reader-note .voice-note {

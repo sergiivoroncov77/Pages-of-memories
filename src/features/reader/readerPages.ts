@@ -105,9 +105,11 @@ export function buildReaderPages(source: ReaderSource, { firstPageChars, pageCha
       const filesOf = (item: Perspective) => perspectiveAssets(item, source.assets);
       const voicesOf = (item: Perspective) => filesOf(item).filter((asset) => asset.type === 'audio' && isAttachedMedia(asset)).map((asset) => asset.id);
       const wordsCount = perspectives.filter(told).length;
-      // A small player under the text takes about two lines of the page.
-      const budgetFor = (item: Perspective | undefined, first: number, rest: number) => item && voicesOf(item).length
-        ? { firstPageChars: Math.max(80, first - 120), pageChars: Math.max(120, rest - 120) } : { firstPageChars: first, pageChars: rest };
+      // The recordings open the story, before its words: each small player takes about two lines of the first page.
+      const budgetFor = (item: Perspective | undefined, first: number, rest: number) => {
+        const players = item ? voicesOf(item).length : 0;
+        return { firstPageChars: Math.max(80, first - 120 * players), pageChars: rest };
+      };
       const heading = {
         title: moment.title,
         date: moment.occurredAt ? formatDate(moment.occurredAt) : '',
@@ -119,10 +121,10 @@ export function buildReaderPages(source: ReaderSource, { firstPageChars, pageCha
       const primaryVoices = primary ? voicesOf(primary) : [];
       const signed = primary && wordsCount > 1 ? name(primary.authorId) : undefined;
       pages.push({ kind: 'story', key: 'story:' + moment.id, ...base, heading, ...first, dropCap: Boolean(first.text), continued: false,
-        voice: restText.length === 0 ? signed : undefined, audioIds: restText.length === 0 && primaryVoices.length ? primaryVoices : undefined });
+        voice: restText.length === 0 ? signed : undefined, audioIds: primaryVoices.length ? primaryVoices : undefined });
       restText.forEach((part, index, all) => pages.push({
         kind: 'story', key: `story:${moment.id}:${index}`, ...base, ...part, dropCap: false, continued: true,
-        voice: index === all.length - 1 ? signed : undefined, audioIds: index === all.length - 1 && primaryVoices.length ? primaryVoices : undefined
+        voice: index === all.length - 1 ? signed : undefined
       }));
 
       perspectives.forEach((perspective) => {
@@ -136,7 +138,7 @@ export function buildReaderPages(source: ReaderSource, { firstPageChars, pageCha
           const parts = paginateStoryText(perspective.content, budgetFor(perspective, pageChars, pageChars));
           parts.forEach((part, index) => pages.push({
             kind: 'story', key: `voice:${perspective.id}:${index}`, ...base, ...part, dropCap: index === 0, continued: index > 0,
-            voice: author, audioIds: index === parts.length - 1 && voices.length ? voices : undefined
+            voice: author, audioIds: index === 0 && voices.length ? voices : undefined
           }));
         }
         files.forEach((asset) => {

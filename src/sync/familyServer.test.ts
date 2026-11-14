@@ -329,6 +329,26 @@ describe('family server (Code.gs)', () => {
     expect((byCreator.entities as { key: string; owner: string }[]).find((item) => item.key === 'perspective:perspective_mama')?.owner).toBe((mama.member as { id: string }).id);
   });
 
+  it('changes the title, date and chapter of a moment only for whoever added it and the creator; voice-overs anyone', () => {
+    const { server, ownerToken } = ownerWithBook();
+    const mama = server.post({ action: 'acceptInvite', code: invite(server, ownerToken), name: 'Ольга' });
+    const mamaToken = mama.token as string;
+    const moment = (extra: Record<string, unknown>) => ({ id: 'moment_owner', bookId: 'book_1', chapterId: 'c1', title: 'Первый класс', summary: '', tags: [],
+      createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', favorite: false, ...extra });
+    const sync = (token: string, sinceRev: number, data: Record<string, unknown>) =>
+      server.post({ action: 'sync', token, bookId: 'book_1', sinceRev, changes: [{ key: 'moment:moment_owner', data }] });
+    expect(sync(ownerToken, 0, moment({})).denied).toEqual([]);
+    // Mama may not rename the creator's moment or move it to another chapter.
+    expect(sync(mamaToken, 1, moment({ title: 'Чужое название', updatedAt: '2026-02-01T00:00:00Z' })).denied).toEqual(['moment:moment_owner']);
+    expect(sync(mamaToken, 1, moment({ chapterId: 'c2' })).denied).toEqual(['moment:moment_owner']);
+    // She may read someone's view aloud for the film, and mark it as a favourite.
+    expect(sync(mamaToken, 1, moment({ narrations: { story_1: 'file_1' }, favorite: true, updatedAt: '2026-02-01T00:00:00Z' })).denied).toEqual([]);
+    // Her own moment is hers to change; the creator changes anything.
+    expect(server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 2, changes: [{ key: 'moment:moment_mama', data: { ...moment({}), id: 'moment_mama' } }] }).denied).toEqual([]);
+    expect(server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 3, changes: [{ key: 'moment:moment_mama', data: { ...moment({}), id: 'moment_mama', title: 'Мой' } }] }).denied).toEqual([]);
+    expect(sync(ownerToken, 4, moment({ title: 'Первый класс, 1985' })).denied).toEqual([]);
+  });
+
   it('signs a person in on another device with a one-time link; every device is equal and can be disconnected', () => {
     const server = loadFamilyServer();
     const phone = server.post({ action: 'claim', name: 'Сергей', deviceName: 'Android · Chrome' });

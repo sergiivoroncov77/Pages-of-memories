@@ -49,7 +49,7 @@ describe('a story with words, voice and photos', () => {
     expect(() => updatePerspectiveInSnapshot(snapshot, 'story_1', { content: '', attachmentIds: [] })).toThrow();
   });
 
-  it('shows the words first in the reader with the voice as a small player, and no separate voice page', () => {
+  it('opens the story in the reader with its voice as a small player, before the words, and no separate voice page', () => {
     const { snapshot, momentId } = withStory(demo());
     const moment = snapshot.moments.find((item) => item.id === momentId)!;
     const book = snapshot.books.find((item) => item.id === moment.bookId)!;
@@ -62,6 +62,8 @@ describe('a story with words, voice and photos', () => {
     });
     const story = pages.find((page) => page.kind === 'story' && page.text.includes('Слова и голос'));
     expect(story && story.kind === 'story' ? story.audioIds : undefined).toEqual(['voice_1']);
+    // The recording opens the story: it is on the story's first page, not after its last words.
+    expect(pages.find((page) => page.kind === 'story' && page.momentId === momentId)).toBe(story);
     expect(pages.some((page) => page.kind === 'media' && page.assetId === 'voice_1')).toBe(false);
     expect(pages.some((page) => page.kind === 'photo' && page.assetId === 'photo_1')).toBe(true);
   });

@@ -10,7 +10,7 @@ import { mediaStore, notifyMediaStored } from '../lib/mediaStore';
 import { makePhotoPreview } from '../lib/photoPreview';
 import { CloudError, cloudErrorMessage, createDriveTransfer, deviceLink, inviteLink } from './cloudApi';
 import { createCloudStateStore, type CloudBookState, type CloudConnection, type CloudState } from './cloudState';
-import { canEdit, deletionBlocker, renameBlocker, sharedBooksWithPerson, type DeletionTarget } from './permissions';
+import { canEdit, canManageMoment, deletionBlocker, renameBlocker, sharedBooksWithPerson, type DeletionTarget } from './permissions';
 import { createSyncEngine, type CloudDevice, type CloudMember, type DeviceLinkPreview, type DownloadProgress, type InvitePreview, type RemoteBook } from './syncEngine';
 
 /*
@@ -62,6 +62,8 @@ interface CloudSyncValue {
   deletionBlocker: (bookId: string | undefined, target: DeletionTarget) => string | null;
   /** Whether this phone may change the words of a story or a reflection: in a shared book, only its author's. */
   canEdit: (bookId: string, target: { type: 'perspective' | 'reflection'; id: string }) => boolean;
+  /** Title, date, chapter and deletion of a moment: its author's and the book creator's. */
+  canManageMoment: (bookId: string, momentId: string) => boolean;
   /** Shared books on this phone where the person tells or is invited. */
   sharedBooksWithPerson: (personId: string) => string[];
   syncNow: () => Promise<void>;
@@ -350,6 +352,7 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
     deletionBlocker: (bookId, target) => (bookId && state.connection
       ? deletionBlocker(snapshot, linked[bookId], state.connection.memberId, target) : null),
     canEdit: (bookId, target) => canEdit(state.connection ? linked[bookId] : undefined, state.connection?.memberId, target),
+    canManageMoment: (bookId, momentId) => canManageMoment(state.connection ? linked[bookId] : undefined, state.connection?.memberId, momentId),
     sharedBooksWithPerson: (personId) => (state.connection ? sharedBooksWithPerson(snapshot, linked, personId) : []),
     syncNow,
     connectOwner: async (url, name) => {

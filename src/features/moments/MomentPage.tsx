@@ -63,6 +63,8 @@ function MomentContent({ moment }: { moment: Moment }) {
   const shared = cloud.isShared(book.id);
   const everyone = shared ? ' у всех участников книги' : '';
   const momentBlocker = cloud.deletionBlocker(book.id, { type: 'moment', id: moment.id });
+  // Title, date, chapter and deleting the moment: whoever added it and the book's creator.
+  const canManageMoment = cloud.canManageMoment(book.id, moment.id);
   // A story kept from an interview lives in the answer and is changed there.
   const canDeletePerspective = (item: Perspective) => !item.sourceMemoryId
     && !cloud.deletionBlocker(book.id, { type: 'perspective', id: item.id });
@@ -221,7 +223,7 @@ function MomentContent({ moment }: { moment: Moment }) {
     if (item.sourceMemoryId) return getMemory(item.sourceMemoryId) ? { editTo: '/memories/' + item.sourceMemoryId } : {};
     if (!cloud.canEdit(book.id, { type: 'perspective', id: item.id })) return {};
     // The main story is part of the moment: one form for both.
-    if (item.id === primary?.id) return { onEdit: openMomentEditor };
+    if (item.id === primary?.id && canManageMoment) return { onEdit: openMomentEditor };
     return {
       onEdit: () => { setEditingId(item.id); closeForm(); setShowEdit(false); },
       editor: editingId === item.id ? <PerspectiveEditor perspective={item} assets={mediaForStory(item.id)} momentTitle={moment.title} shared={shared}
@@ -243,10 +245,10 @@ function MomentContent({ moment }: { moment: Moment }) {
 
   return <div className="page page--moment">
     <PageHeader eyebrow={book.title + ' · ' + chapter.title} title={moment.title} description={moment.summary} backTo="/book"
-      action={<div className="page-action-group moment-actions"><button type="button" className="button button--secondary button--small" aria-expanded={showEdit} onClick={() => (showEdit ? setShowEdit(false) : openMomentEditor())}><Pencil size={17} aria-hidden="true" /> Изменить момент</button><Link to={'/read?moment=' + moment.id} className="button button--ghost button--small"><BookOpen size={17} aria-hidden="true" /> В книге</Link><Link to={'/chapters/' + chapter.id + '/film'} className="button button--ghost button--small"><Clapperboard size={17} aria-hidden="true" /> Фильм главы</Link><button type="button" className={'icon-button ' + (moment.favorite ? 'is-favorite' : '')} aria-label={moment.favorite ? 'Убрать из избранного' : 'Добавить в избранное'} aria-pressed={moment.favorite} onClick={() => toggleMomentFavorite(moment.id)}><Heart size={21} fill={moment.favorite ? 'currentColor' : 'none'} /></button></div>} />
-    <div className="moment-meta-bar"><span><CalendarDays size={17} aria-hidden="true" /> {moment.occurredAt ? formatDate(moment.occurredAt) : 'Дата не указана'}</span><span><Users size={17} aria-hidden="true" /> {participants.length} {pluralize(participants.length, 'рассказчик', 'рассказчика', 'рассказчиков')}</span><span><MessageCircle size={17} aria-hidden="true" /> {reflections.length} {pluralize(reflections.length, 'отклик', 'отклика', 'откликов')}</span></div>
+      action={<div className="page-action-group moment-actions">{canManageMoment ? <button type="button" className="button button--secondary button--small" aria-expanded={showEdit} onClick={() => (showEdit ? setShowEdit(false) : openMomentEditor())}><Pencil size={17} aria-hidden="true" /> Изменить момент</button> : null}<Link to={'/read?moment=' + moment.id} className="button button--ghost button--small"><BookOpen size={17} aria-hidden="true" /> В книге</Link><Link to={'/chapters/' + chapter.id + '/film'} className="button button--ghost button--small"><Clapperboard size={17} aria-hidden="true" /> Фильм главы</Link><button type="button" className={'icon-button ' + (moment.favorite ? 'is-favorite' : '')} aria-label={moment.favorite ? 'Убрать из избранного' : 'Добавить в избранное'} aria-pressed={moment.favorite} onClick={() => toggleMomentFavorite(moment.id)}><Heart size={21} fill={moment.favorite ? 'currentColor' : 'none'} /></button></div>} />
+    <div className="moment-meta-bar"><span><CalendarDays size={17} aria-hidden="true" /> {moment.occurredAt ? formatDate(moment.occurredAt) : 'Дата не указана'}</span><span><Users size={17} aria-hidden="true" /> {participants.length} {pluralize(participants.length, 'рассказчик', 'рассказчика', 'рассказчиков')}</span><span><MessageCircle size={17} aria-hidden="true" /> {reflections.length} {pluralize(reflections.length, 'отклик', 'отклика', 'откликов')}</span>{canManageMoment ? null : <span className="moment-meta-bar__note">Название, дату и главу меняет автор момента или создатель книги</span>}</div>
 
-    {showEdit ? <Card className="moment-edit-form"><div className="card-heading"><div><p className="eyebrow">Название, глава, дата и основной рассказ</p><h2>Изменить момент</h2></div><button type="button" className="icon-button" aria-label="Закрыть редактирование" onClick={() => setShowEdit(false)}><X size={20} /></button></div><MomentEditor key={moment.id + String(showEdit)} initial={moment} chapters={chapters.filter((item) => item.bookId === book.id)} submitLabel="Сохранить момент"
+    {showEdit && canManageMoment ? <Card className="moment-edit-form"><div className="card-heading"><div><p className="eyebrow">Название, глава, дата и основной рассказ</p><h2>Изменить момент</h2></div><button type="button" className="icon-button" aria-label="Закрыть редактирование" onClick={() => setShowEdit(false)}><X size={20} /></button></div><MomentEditor key={moment.id + String(showEdit)} initial={moment} chapters={chapters.filter((item) => item.bookId === book.id)} submitLabel="Сохранить момент"
         story={primary && !mainLocked ? { content: primary.content, files: mediaForStory(primary.id) } : undefined} storyLocked={mainLocked}
         preview={{ book, chapter, moment, people, others: perspectives.filter((item) => item.id !== primary?.id), primary: true,
           authorName: primary ? getPerson(primary.authorId ?? '')?.name : anonymous ? undefined : myName ?? (newName.trim() || undefined) }}
