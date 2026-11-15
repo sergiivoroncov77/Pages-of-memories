@@ -4,6 +4,7 @@ import { useAppState } from '../app/AppState';
 import { cleanName, profileStore, useProfile } from '../app/profile';
 import { newSelfPerson, resignInBook } from '../data/library';
 import type { AppSnapshot, Person } from '../data/types';
+import { requestAppUpdate } from '../lib/appUpdate';
 import { clearCloudMediaCache, notifyCloudMedia, notifyFilesChanged, setCloudMediaSource, takeCachedOriginal } from '../lib/cloudMedia';
 import { guessDeviceName } from '../lib/deviceName';
 import { mediaStore, notifyMediaStored } from '../lib/mediaStore';
@@ -178,6 +179,8 @@ export function CloudSyncProvider({ children }: { children: ReactNode }) {
       return result;
     } catch (failure) {
       const offline = failure instanceof CloudError && failure.code === 'offline';
+      // The storage takes books only from the current app: fetch it, the page reloads with it.
+      if (failure instanceof CloudError && failure.code === 'app_outdated') requestAppUpdate();
       setStatus(offline ? 'offline' : 'error');
       setError(failure instanceof CloudError && failure.code === 'unauthorized'
         ? 'Это устройство отключено от семейного хранилища. Книги остались на нём; чтобы снова получать изменения, откройте приглашение ещё раз.'

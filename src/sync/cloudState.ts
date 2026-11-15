@@ -47,7 +47,19 @@ export interface CloudBookState {
   canManage?: boolean;
   title?: string;
   lastSyncAt?: string;
+  /**
+   * The form of the records this device last took the book in (SYNC_FORMAT). An
+   * older app kept stories without the fields it did not know (attachments,
+   * voice reflections, voice-overs); a newer one takes the book again once.
+   */
+  format?: number;
 }
+
+/**
+ * Raised when records gain fields an older app would drop on this device:
+ * 2 — stories with several files, voice reflections, voice-overs of views.
+ */
+export const SYNC_FORMAT = 2;
 
 export interface CloudState {
   version: 1;
@@ -95,7 +107,8 @@ function parseBook(value: unknown): CloudBookState | null {
     creatorName: text(value.creatorName),
     canManage: typeof value.canManage === 'boolean' ? value.canManage : undefined,
     title: text(value.title),
-    lastSyncAt: text(value.lastSyncAt)
+    lastSyncAt: text(value.lastSyncAt),
+    format: typeof value.format === 'number' ? value.format : undefined
   };
 }
 

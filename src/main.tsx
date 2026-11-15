@@ -19,7 +19,14 @@ import '@fontsource/pt-serif/latin-700.css';
 import '@fontsource/pt-serif/latin-700-italic.css';
 import './styles/global.css';
 
-registerSW({ immediate: true });
+// Every time the app opens or the page is reloaded it asks the site for a new version at once; a new one takes over
+// and reloads the page by itself. Nothing is checked in the background in between.
+registerSW({
+  immediate: true,
+  onRegisteredSW(_url, registration) {
+    if (registration && navigator.onLine) void registration.update().catch(() => undefined);
+  }
+});
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

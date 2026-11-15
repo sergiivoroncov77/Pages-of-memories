@@ -6,7 +6,9 @@
 export type CloudErrorCode =
   | 'offline' | 'not_script' | 'unauthorized' | 'claimed' | 'not_member' | 'book_not_found' | 'forbidden'
   | 'invite_not_found' | 'invite_expired' | 'busy' | 'drive_error' | 'bad_request' | 'too_large' | 'server_error'
-  | 'exists' | 'media_failed' | 'local_write' | 'device_not_found' | 'link_not_found' | 'link_expired';
+  | 'exists' | 'media_failed' | 'local_write' | 'device_not_found' | 'link_not_found' | 'link_expired'
+  /** The storage refuses to exchange with an app older than the records' form: it must update first. */
+  | 'app_outdated';
 
 export class CloudError extends Error {
   readonly code: CloudErrorCode;

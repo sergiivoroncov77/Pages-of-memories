@@ -101,6 +101,6 @@ describe('updating the storage script from the app', () => {
     const text = (source.replace(/^var RELEASE = \d+;$/m, '') + manifest).replace(/\r\n/g, '\n');
     const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
     const fingerprint = [...digest.slice(0, 8)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
-    expect({ release: APP_SCRIPT_RELEASE, fingerprint }).toEqual({ release: 2, fingerprint: 'd11a385510d7fa92' });
+    expect({ release: APP_SCRIPT_RELEASE, fingerprint }).toEqual({ release: 3, fingerprint: 'cb28b4980b196f68' });
   });
 });

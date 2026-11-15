@@ -18,7 +18,8 @@ import type { AppSnapshot } from '../data/types';
 import { createMemoryMediaStore, storedMediaUrl } from '../lib/mediaStore';
 import { loadFamilyServer, type FamilyServer } from '../../server/google-apps-script/dev/fakeGoogle.mjs';
 import { createDriveTransfer, type FetchLike } from './cloudApi';
-import { createCloudStateStore, freshBookState } from './cloudState';
+import { createCloudStateStore, freshBookState, SYNC_FORMAT } from './cloudState';
+import { collectBookEntities, entityHash } from './bookEntities';
 import { deletionBlocker } from './permissions';
 import { createSyncEngine } from './syncEngine';
 
@@ -152,6 +153,52 @@ describe('cloud sync engine', () => {
     expect(await mama.blobs.get('media_photo1')).toBeUndefined();
     expect(mama.store.get().books[setup.bookId].keepFiles).toBe(false);
     expect(mama.snapshot.mediaAssets.some((asset) => asset.id === 'media_photo1')).toBe(true);
+  });
+
+  it('gives a relative a story with words, a photo and a voice attached', async () => {
+    const { owner, mama, setup } = await ownerAndMama();
+    const photo = createMediaAsset({ type: 'photo', url: storedMediaUrl('media_att_photo'), mimeType: 'image/jpeg', sizeBytes: 2 }, 'media_att_photo');
+    const voice = createMediaAsset({ type: 'audio', url: storedMediaUrl('media_att_voice'), mimeType: 'audio/mpeg', sizeBytes: 2 }, 'media_att_voice');
+    await owner.blobs.put(photo.id, new Blob([new Uint8Array([1, 2])], { type: 'image/jpeg' }));
+    await owner.blobs.put(voice.id, new Blob([new Uint8Array([3, 4])], { type: 'audio/mpeg' }));
+    const story = createPerspective({ momentId: setup.momentId, type: 'text', content: 'Слова, фото и голос', attachmentIds: [photo.id, voice.id] });
+    owner.edit((snapshot) => addPerspectiveToSnapshot(addMediaAssetToSnapshot(addMediaAssetToSnapshot(snapshot, photo), voice), story));
+    await owner.engine.syncBook(setup.bookId);
+    await mama.engine.syncBook(setup.bookId);
+    const received = mama.snapshot.perspectives.find((item) => item.id === story.id);
+    expect(received?.attachmentIds).toEqual([photo.id, voice.id]);
+    expect(mama.snapshot.mediaAssets.map((asset) => asset.id)).toEqual(expect.arrayContaining([photo.id, voice.id]));
+    expect(mama.engine.hasFile(photo.id)).toBe(true);
+    expect(mama.engine.hasFile(voice.id)).toBe(true);
+  });
+
+  it('takes the book again once on a device where an older app dropped the files next to a story', async () => {
+    const { owner, mama, setup } = await ownerAndMama();
+    const photo = createMediaAsset({ type: 'photo', url: storedMediaUrl('media_lost_photo'), mimeType: 'image/jpeg', sizeBytes: 2 }, 'media_lost_photo');
+    await owner.blobs.put(photo.id, new Blob([new Uint8Array([1, 2])], { type: 'image/jpeg' }));
+    const story = createPerspective({ momentId: setup.momentId, type: 'text', content: 'Слова и фото', attachmentIds: [photo.id] });
+    owner.edit((snapshot) => addPerspectiveToSnapshot(addMediaAssetToSnapshot(snapshot, photo), story));
+    await owner.engine.syncBook(setup.bookId);
+    await mama.engine.syncBook(setup.bookId);
+    // What the older app kept: the story without its photo, remembered as exchanged, in the old form.
+    mama.edit((snapshot) => ({ ...snapshot,
+      perspectives: snapshot.perspectives.map((item) => (item.id === story.id ? { ...item, attachmentIds: undefined } : item)),
+      mediaAssets: snapshot.mediaAssets.filter((asset) => asset.id !== photo.id) }));
+    const kept = collectBookEntities(mama.snapshot, setup.bookId, mama.store.get().books[setup.bookId]);
+    mama.store.update((state) => ({ ...state, books: { ...state.books, [setup.bookId]: { ...state.books[setup.bookId],
+      fingerprints: Object.fromEntries([...kept].map(([key, data]) => [key, entityHash(data)])), format: undefined } } }));
+    expect(mama.engine.hasLocalChanges(setup.bookId)).toBe(false);
+
+    await mama.engine.syncBook(setup.bookId);
+    expect(mama.snapshot.perspectives.find((item) => item.id === story.id)?.attachmentIds).toEqual([photo.id]);
+    expect(mama.snapshot.mediaAssets.some((asset) => asset.id === photo.id)).toBe(true);
+    expect(mama.store.get().books[setup.bookId].format).toBe(SYNC_FORMAT);
+    // Once: the next sync goes on from where it is.
+    const rev = mama.store.get().books[setup.bookId].rev;
+    await mama.engine.syncBook(setup.bookId);
+    expect(mama.store.get().books[setup.bookId].rev).toBe(rev);
+    // Nothing of the owner's was sent back over.
+    expect(owner.snapshot.perspectives.find((item) => item.id === story.id)?.attachmentIds).toEqual([photo.id]);
   });
 
   it('keeps on the device a file that is not uploaded yet when its space is freed', async () => {

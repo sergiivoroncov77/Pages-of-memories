@@ -23,7 +23,7 @@ var APP = 'family-stories';
 var VERSION = 2;
 // Выпуск кода. Приложение сравнивает его со своим и предлагает владельцу обновить скрипт.
 // Увеличивайте при каждом изменении этого файла или appsscript.json.
-var RELEASE = 2;
+var RELEASE = 3;
 var DRIVE = 'https://www.googleapis.com';
 var ROOT_FOLDER_NAME = 'Истории близких — семейное хранилище';
 var INVITE_DAYS = 30;
@@ -542,7 +542,18 @@ function claimablePerson_(book, personId, memberId) {
  * слова только своих рассказов и откликов; создатель книги — что угодно. Отклонённые удаления и правки возвращаются
  * устройству, и оно восстанавливает записи.
  */
+/**
+ * Форма записей книги, которую понимает приложение (SYNC_FORMAT в приложении).
+ * Старое приложение сохранило бы рассказы без того, чего не знает (файлы рядом
+ * со словами, голосовые отклики, озвучку), поэтому с ним хранилище не
+ * обменивается, пока его не обновят.
+ */
+var MIN_APP_FORMAT = 2;
+
 function sync_(member, request) {
+  if (!(Number(request.format) >= MIN_APP_FORMAT)) {
+    throw error_('app_outdated', 'На этом устройстве старая версия приложения. Закройте его и откройте снова (или обновите страницу) — загрузится новая, и книга обновится.');
+  }
   var book = requireBook_(member, request.bookId);
   var since = Math.max(0, Math.floor(Number(request.sinceRev) || 0));
   var changes = Array.isArray(request.changes) ? request.changes : [];

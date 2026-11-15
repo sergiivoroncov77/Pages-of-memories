@@ -59,12 +59,12 @@ describe('family server (Code.gs)', () => {
     const { server } = ownerWithBook();
     expect(server.post({ action: 'me' })).toMatchObject({ ok: false, error: 'unauthorized' });
     expect(server.post({ action: 'me', token: 'nope' })).toMatchObject({ ok: false, error: 'unauthorized' });
-    expect(server.post({ action: 'sync', token: 'nope', bookId: 'book_1', sinceRev: 0, changes: [] })).toMatchObject({ error: 'unauthorized' });
+    expect(server.post({ action: 'sync', format: 2, token: 'nope', bookId: 'book_1', sinceRev: 0, changes: [] })).toMatchObject({ error: 'unauthorized' });
   });
 
   it('invites a relative who then reads and writes the book', () => {
     const { server, ownerToken } = ownerWithBook();
-    const pushed = server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 0,
+    const pushed = server.post({ action: 'sync', format: 2, token: ownerToken, bookId: 'book_1', sinceRev: 0,
       changes: [{ key: 'book:book_1', data: { id: 'book_1', title: 'Книга бабушки Веры' } }, { key: 'chapter:c1', data: { id: 'c1', title: 'Детство' } }] });
     expect(pushed).toMatchObject({ ok: true, rev: 2, title: 'Книга бабушки Веры' });
 
@@ -74,13 +74,13 @@ describe('family server (Code.gs)', () => {
     expect(accepted).toMatchObject({ ok: true, member: { name: 'Мама', admin: false }, book: { id: 'book_1', personId: 'person_mama', canManage: false } });
     const mamaToken = accepted.token as string;
 
-    const pulled = server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 0, changes: [] });
+    const pulled = server.post({ action: 'sync', format: 2, token: mamaToken, bookId: 'book_1', sinceRev: 0, changes: [] });
     expect((pulled.entities as { key: string }[]).map((item) => item.key).sort()).toEqual(['book:book_1', 'chapter:c1']);
 
     // Mama's moment is taken; deleting the owner's chapter is refused and the chapter comes back.
     const ownerId = (server.post({ action: 'me', token: ownerToken }).member as { id: string }).id;
     const mamaId = (accepted.member as { id: string }).id;
-    const added = server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 2,
+    const added = server.post({ action: 'sync', format: 2, token: mamaToken, bookId: 'book_1', sinceRev: 2,
       changes: [{ key: 'moment:m1', data: { id: 'm1', title: 'Сенокос' } }, { key: 'chapter:c1', deleted: true }] });
     expect(added).toMatchObject({ rev: 3, denied: ['chapter:c1'] });
     expect(added.entities).toEqual([
@@ -88,15 +88,15 @@ describe('family server (Code.gs)', () => {
       { key: 'moment:m1', rev: 3, data: { id: 'm1', title: 'Сенокос' }, owner: mamaId }
     ]);
 
-    const ownerView = server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 2, changes: [] });
+    const ownerView = server.post({ action: 'sync', format: 2, token: ownerToken, bookId: 'book_1', sinceRev: 2, changes: [] });
     expect((ownerView.entities as { key: string }[]).map((item) => item.key).sort()).toEqual(['moment:m1']);
-    const quiet = server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 3, changes: [] });
+    const quiet = server.post({ action: 'sync', format: 2, token: ownerToken, bookId: 'book_1', sinceRev: 3, changes: [] });
     expect(quiet).toMatchObject({ ok: true, rev: 3, entities: [] });
   });
 
   it('lets a relative delete only what they added, and the creator anything', () => {
     const { server, ownerToken } = ownerWithBook();
-    const sync = (token: string, changes: unknown[]) => server.post({ action: 'sync', token, bookId: 'book_1', sinceRev: 0, changes });
+    const sync = (token: string, changes: unknown[]) => server.post({ action: 'sync', format: 2, token, bookId: 'book_1', sinceRev: 0, changes });
     const keysOf = (reply: Record<string, unknown>) => (reply.denied as string[]).sort();
     sync(ownerToken, [
       { key: 'book:book_1', data: { id: 'book_1', title: 'Книга бабушки' } },
@@ -140,7 +140,7 @@ describe('family server (Code.gs)', () => {
 
   it('stores Russian text intact in the Drive file', () => {
     const { server, ownerToken } = ownerWithBook();
-    server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [{ key: 'moment:m1', data: { id: 'm1', title: 'Ёлка у бабушки — «чудо»' } }] });
+    server.post({ action: 'sync', format: 2, token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [{ key: 'moment:m1', data: { id: 'm1', title: 'Ёлка у бабушки — «чудо»' } }] });
     const stateFile = [...server.fake.drive.files.values()].find((file) => file.name === 'book.json')!;
     const raw = new TextDecoder().decode(stateFile.content);
     expect(/^[\x20-\x7e]*$/.test(raw)).toBe(true);
@@ -169,7 +169,7 @@ describe('family server (Code.gs)', () => {
     expect(members.map((item) => item.name).sort()).toEqual(['Брат', 'Мама', 'Сергей']);
     const brotherId = members.find((item) => item.name === 'Брат')!.id;
     expect(server.post({ action: 'removeMember', token: mamaToken, bookId: 'book_mama', memberId: brotherId })).toMatchObject({ ok: true });
-    expect(server.post({ action: 'sync', token: brother.token as string, bookId: 'book_mama', sinceRev: 0, changes: [] })).toMatchObject({ ok: false, error: 'not_member' });
+    expect(server.post({ action: 'sync', format: 2, token: brother.token as string, bookId: 'book_mama', sinceRev: 0, changes: [] })).toMatchObject({ ok: false, error: 'not_member' });
 
     // The link he used is cancelled with him: neither his phone nor a new one gets back in.
     expect(server.post({ action: 'acceptInvite', code: brotherCode, token: brother.token })).toMatchObject({ ok: false, error: 'invite_not_found' });
@@ -219,7 +219,7 @@ describe('family server (Code.gs)', () => {
 
   it('validates change keys and payloads', () => {
     const { server, ownerToken } = ownerWithBook();
-    const bad = (changes: unknown[]) => server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 0, changes });
+    const bad = (changes: unknown[]) => server.post({ action: 'sync', format: 2, token: ownerToken, bookId: 'book_1', sinceRev: 0, changes });
     expect(bad([{ key: 'script:alert', data: { id: 'alert' } }])).toMatchObject({ ok: false, error: 'bad_request' });
     expect(bad([{ key: 'moment:m1', data: { id: 'other' } }])).toMatchObject({ ok: false, error: 'bad_request' });
     expect(bad([{ key: 'moment:m1', data: 'text' }])).toMatchObject({ ok: false, error: 'bad_request' });
@@ -238,9 +238,9 @@ describe('family server (Code.gs)', () => {
     const preview = server.fake.drive.handle({ method: 'PUT', url: server.fake.drive.handle({ method: 'POST', url: '/upload/drive/v3/files?uploadType=resumable',
       headers: { authorization: `Bearer ${access.accessToken}` }, body: JSON.stringify({ name: 'preview.jpg', parents: [folderId] }) }).headers.location, body: new Uint8Array([1]) });
     const previewId = JSON.parse(new TextDecoder().decode(preview.body)).id as string;
-    server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [{ key: 'file:media_1', data: { fileId, previewId } }] });
+    server.post({ action: 'sync', format: 2, token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [{ key: 'file:media_1', data: { fileId, previewId } }] });
     expect(server.fake.drive.liveFilesUnder(folderId)).toHaveLength(2);
-    server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 1, changes: [{ key: 'file:media_1', deleted: true }] });
+    server.post({ action: 'sync', format: 2, token: ownerToken, bookId: 'book_1', sinceRev: 1, changes: [{ key: 'file:media_1', deleted: true }] });
     expect(server.fake.drive.liveFilesUnder(folderId)).toHaveLength(0);
   });
 
@@ -250,7 +250,7 @@ describe('family server (Code.gs)', () => {
     expect(server.post({ action: 'deleteBook', token: mamaToken, bookId: 'book_1' })).toMatchObject({ ok: false, error: 'forbidden' });
     expect(server.post({ action: 'leaveBook', token: ownerToken, bookId: 'book_1' })).toMatchObject({ ok: false, error: 'forbidden' });
     expect(server.post({ action: 'deleteBook', token: ownerToken, bookId: 'book_1' })).toMatchObject({ ok: true });
-    expect(server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 0, changes: [] })).toMatchObject({ ok: false, error: 'book_not_found' });
+    expect(server.post({ action: 'sync', format: 2, token: mamaToken, bookId: 'book_1', sinceRev: 0, changes: [] })).toMatchObject({ ok: false, error: 'book_not_found' });
     const folder = [...server.fake.drive.files.values()].find((file) => file.name === 'Книга бабушки')!;
     expect(folder.trashed).toBe(true);
   });
@@ -287,12 +287,12 @@ describe('family server (Code.gs)', () => {
 
   it('takes a person’s new name only from the creator, the person, or whoever added them', () => {
     const { server, ownerToken } = ownerWithBook();
-    server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [
+    server.post({ action: 'sync', format: 2, token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [
       { key: 'person:person_mama', data: { id: 'person_mama', name: 'Мама' } },
       { key: 'person:person_grandpa', data: { id: 'person_grandpa', name: 'Дедушка' } }
     ] });
     const mamaToken = server.post({ action: 'acceptInvite', code: invite(server, ownerToken), name: 'Ольга' }).token as string;
-    const renamed = server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 2, changes: [
+    const renamed = server.post({ action: 'sync', format: 2, token: mamaToken, bookId: 'book_1', sinceRev: 2, changes: [
       { key: 'person:person_mama', data: { id: 'person_mama', name: 'Ольга' } },
       { key: 'person:person_grandpa', data: { id: 'person_grandpa', name: 'Дед' } },
       { key: 'person:person_aunt', data: { id: 'person_aunt', name: 'Тётя' } }
@@ -301,9 +301,9 @@ describe('family server (Code.gs)', () => {
     const names = Object.fromEntries((renamed.entities as { key: string; data: { name: string } }[]).map((item) => [item.key, item.data.name]));
     expect(names).toEqual({ 'person:person_mama': 'Ольга', 'person:person_grandpa': 'Дедушка', 'person:person_aunt': 'Тётя' });
     // The aunt is Mama's: she may rename her; the creator renames anyone.
-    expect(server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 4, changes: [
+    expect(server.post({ action: 'sync', format: 2, token: mamaToken, bookId: 'book_1', sinceRev: 4, changes: [
       { key: 'person:person_aunt', data: { id: 'person_aunt', name: 'Тётя Люба' } }] }).denied).toEqual([]);
-    expect(server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 5, changes: [
+    expect(server.post({ action: 'sync', format: 2, token: ownerToken, bookId: 'book_1', sinceRev: 5, changes: [
       { key: 'person:person_mama', data: { id: 'person_mama', name: 'Ольга Ивановна' } }] }).denied).toEqual([]);
   });
 
@@ -313,10 +313,10 @@ describe('family server (Code.gs)', () => {
     const mamaToken = mama.token as string;
     const story = (content: string) => ({ id: 'perspective_mama', momentId: 'moment_1', type: 'text', content, createdAt: '2026-01-01T00:00:00Z', isPrimary: false });
     const note = (text: string) => ({ id: 'reflection_owner', momentId: 'moment_1', text, createdAt: '2026-01-01T00:00:00Z' });
-    expect(server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 0, changes: [{ key: 'perspective:perspective_mama', data: story('Мой рассказ') }] }).denied).toEqual([]);
-    expect(server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [{ key: 'reflection:reflection_owner', data: note('Отклик') }] }).denied).toEqual([]);
+    expect(server.post({ action: 'sync', format: 2, token: mamaToken, bookId: 'book_1', sinceRev: 0, changes: [{ key: 'perspective:perspective_mama', data: story('Мой рассказ') }] }).denied).toEqual([]);
+    expect(server.post({ action: 'sync', format: 2, token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [{ key: 'reflection:reflection_owner', data: note('Отклик') }] }).denied).toEqual([]);
     // Mama edits her own story, not the creator's reflection: that one comes back unchanged.
-    const edited = server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 2, changes: [
+    const edited = server.post({ action: 'sync', format: 2, token: mamaToken, bookId: 'book_1', sinceRev: 2, changes: [
       { key: 'perspective:perspective_mama', data: story('Мой рассказ, дополненный') },
       { key: 'reflection:reflection_owner', data: note('Чужие слова') }
     ] });
@@ -324,9 +324,17 @@ describe('family server (Code.gs)', () => {
     const texts = Object.fromEntries((edited.entities as { key: string; data: { content?: string; text?: string } }[]).map((item) => [item.key, item.data.content ?? item.data.text]));
     expect(texts).toEqual({ 'perspective:perspective_mama': 'Мой рассказ, дополненный', 'reflection:reflection_owner': 'Отклик' });
     // The creator manages the book; the story stays Mama's.
-    const byCreator = server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 3, changes: [{ key: 'perspective:perspective_mama', data: { ...story('Мой рассказ, дополненный'), isPrimary: true } }] });
+    const byCreator = server.post({ action: 'sync', format: 2, token: ownerToken, bookId: 'book_1', sinceRev: 3, changes: [{ key: 'perspective:perspective_mama', data: { ...story('Мой рассказ, дополненный'), isPrimary: true } }] });
     expect(byCreator.denied).toEqual([]);
     expect((byCreator.entities as { key: string; owner: string }[]).find((item) => item.key === 'perspective:perspective_mama')?.owner).toBe((mama.member as { id: string }).id);
+  });
+
+  it('takes books only from an app that knows the current form of the records', () => {
+    const { server, ownerToken } = ownerWithBook();
+    // An older app does not say which form it knows: it would keep stories without their files.
+    expect(server.post({ action: 'sync', token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [] })).toMatchObject({ ok: false, error: 'app_outdated' });
+    expect(server.post({ action: 'sync', format: 1, token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [] })).toMatchObject({ ok: false, error: 'app_outdated' });
+    expect(server.post({ action: 'sync', format: 2, token: ownerToken, bookId: 'book_1', sinceRev: 0, changes: [] })).toMatchObject({ ok: true });
   });
 
   it('changes the title, date and chapter of a moment only for whoever added it and the creator; voice-overs anyone', () => {
@@ -336,7 +344,7 @@ describe('family server (Code.gs)', () => {
     const moment = (extra: Record<string, unknown>) => ({ id: 'moment_owner', bookId: 'book_1', chapterId: 'c1', title: 'Первый класс', summary: '', tags: [],
       createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z', favorite: false, ...extra });
     const sync = (token: string, sinceRev: number, data: Record<string, unknown>) =>
-      server.post({ action: 'sync', token, bookId: 'book_1', sinceRev, changes: [{ key: 'moment:moment_owner', data }] });
+      server.post({ action: 'sync', format: 2, token, bookId: 'book_1', sinceRev, changes: [{ key: 'moment:moment_owner', data }] });
     expect(sync(ownerToken, 0, moment({})).denied).toEqual([]);
     // Mama may not rename the creator's moment or move it to another chapter.
     expect(sync(mamaToken, 1, moment({ title: 'Чужое название', updatedAt: '2026-02-01T00:00:00Z' })).denied).toEqual(['moment:moment_owner']);
@@ -344,8 +352,8 @@ describe('family server (Code.gs)', () => {
     // She may read someone's view aloud for the film, and mark it as a favourite.
     expect(sync(mamaToken, 1, moment({ narrations: { story_1: 'file_1' }, favorite: true, updatedAt: '2026-02-01T00:00:00Z' })).denied).toEqual([]);
     // Her own moment is hers to change; the creator changes anything.
-    expect(server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 2, changes: [{ key: 'moment:moment_mama', data: { ...moment({}), id: 'moment_mama' } }] }).denied).toEqual([]);
-    expect(server.post({ action: 'sync', token: mamaToken, bookId: 'book_1', sinceRev: 3, changes: [{ key: 'moment:moment_mama', data: { ...moment({}), id: 'moment_mama', title: 'Мой' } }] }).denied).toEqual([]);
+    expect(server.post({ action: 'sync', format: 2, token: mamaToken, bookId: 'book_1', sinceRev: 2, changes: [{ key: 'moment:moment_mama', data: { ...moment({}), id: 'moment_mama' } }] }).denied).toEqual([]);
+    expect(server.post({ action: 'sync', format: 2, token: mamaToken, bookId: 'book_1', sinceRev: 3, changes: [{ key: 'moment:moment_mama', data: { ...moment({}), id: 'moment_mama', title: 'Мой' } }] }).denied).toEqual([]);
     expect(sync(ownerToken, 4, moment({ title: 'Первый класс, 1985' })).denied).toEqual([]);
   });
 

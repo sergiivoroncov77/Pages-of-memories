@@ -22,7 +22,7 @@ import {
   type MediaAccess,
   type MediaTransfer
 } from './cloudApi';
-import { freshBookState, type CloudBookState, type CloudConnection, type CloudStateStore } from './cloudState';
+import { freshBookState, SYNC_FORMAT, type CloudBookState, type CloudConnection, type CloudStateStore } from './cloudState';
 import { mayRename } from './permissions';
 
 export interface SyncEnvironment {
@@ -265,7 +265,7 @@ export function createSyncEngine(env: SyncEnvironment) {
     const before = bookState(bookId);
     if (!before) return { pulled: 0, denied: 0 };
     const sent = generation;
-    const reply = await call<SyncReply>('sync', { bookId, sinceRev: before.rev, changes });
+    const reply = await call<SyncReply>('sync', { bookId, sinceRev: before.rev, changes, format: SYNC_FORMAT });
     const afterReply = bookState(bookId);
     if (!afterReply || sent !== generation || afterReply.detached) return { pulled: 0, denied: 0 };
     // Records edited on this phone while the request was out win over what came back.
@@ -452,11 +452,19 @@ export function createSyncEngine(env: SyncEnvironment) {
         updateBook(bookId, restart);
         book = bookState(bookId)!;
       }
+      if (book.rev > 0 && (book.format ?? 1) < SYNC_FORMAT && !hasLocalChanges(bookId)) {
+        // Taken by an older app, which dropped what it did not know (files next to a story's words...): take the book
+        // again. Only once nothing waits to be sent, so no edit made here is lost; until then it is sent first.
+        generation += 1;
+        updateBook(bookId, restart);
+        book = bookState(bookId)!;
+      }
       if (book.rev === 0) {
         // Joining: take what is already there before sending anything, so
         // files that are already on Drive are not uploaded twice.
         const local = collectBookEntities(env.getSnapshot(), bookId, scopeOf(book));
         outcome.pulled += (await exchange(bookId, [], local)).pulled;
+        updateBook(bookId, (current) => ({ ...current, format: SYNC_FORMAT }));
       }
       const upload = await uploadMissing(bookId);
       outcome.uploaded = upload.uploaded;
