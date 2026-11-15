@@ -74,7 +74,8 @@ describe('chapter film timeline', () => {
     expect(momentOrder).toEqual(['moment_summer', 'moment_table']);
     const summer = timeline.scenes.filter((scene) => scene.momentId === 'moment_summer').map((scene) => scene.kind);
     // The demo recording has no file, so its words are shown as a page of their own.
-    expect(summer).toEqual(['moment', 'text', 'text', 'text', 'photo', 'voice', 'reflections']);
+    // Every story first, in words or aloud, then its photos.
+    expect(summer).toEqual(['moment', 'text', 'text', 'text', 'voice', 'photo', 'reflections']);
     expect(timeline.stats).toMatchObject({ moments: 2, photos: 2, voices: 1, reflections: 2 });
 
     // Scenes are back to back and the film ends when the last one does.
@@ -88,6 +89,39 @@ describe('chapter film timeline', () => {
     const voice = timeline.scenes.find((scene) => scene.kind === 'voice')!;
     expect(timeline.cues).toEqual([{ assetId: voiceAsset.id, kind: 'voice', start: voice.start + 0.6, duration: 12 }]);
     expect(voice.duration).toBeCloseTo(13.2, 5);
+  });
+
+  it('shows the photos of a story and of the views of its author over the time of the story, then one by one', () => {
+    const photo = (id: string): MediaAsset => ({ id, type: 'photo', url: 'idb:' + id, mimeType: 'image/jpeg', createdAt: '2026-10-01T10:00:00.000Z' });
+    const assets = new Map(['p1', 'p2', 'p3', 'p4', 'p5'].map((id) => [id, photo(id)] as const));
+    const base = { momentId: 'm1', createdAt: '2026-10-01T10:00:00.000Z', isPrimary: false };
+    const long = Array.from({ length: 40 }, (_, index) => `Предложение номер ${index + 1} о первом классе и школе.`).join(' ');
+    const story: Perspective = { ...base, id: 'story', authorId: 'dima', type: 'text', content: long, attachmentIds: ['p1', 'p2', 'p3'], isPrimary: true };
+    const view: Perspective = { ...base, id: 'view', authorId: 'dima', type: 'photo', content: 'Во дворе', mediaAssetId: 'p4' };
+    const other: Perspective = { ...base, id: 'other', authorId: 'olya', type: 'photo', content: 'Чужое', mediaAssetId: 'p5' };
+    const moment = { id: 'm1', bookId: 'b', chapterId: 'c', title: 'Первоклассник', summary: '', tags: [], primaryPerspectiveId: 'story',
+      createdAt: '2026-10-01T10:00:00.000Z', updatedAt: '2026-10-01T10:00:00.000Z', favorite: false };
+    const source: FilmSource = { bookTitle: 'Книга', chapter: { id: 'c', bookId: 'b', title: 'Школа', order: 1 } as FilmSource['chapter'],
+      moments: [{ moment, perspectives: [story, view, other], reflections: [] }], assets, people: new Map() };
+    const timeline = buildFilmTimeline(source, DEFAULT_FILM_OPTIONS, { durations: new Map(), photos: new Set(assets.keys()) });
+    const pages = timeline.scenes.filter((scene) => scene.kind === 'text');
+    expect(pages.length).toBeGreaterThan(1);
+    // Dima's own photos and the photo of his view (Olya's is not his) run over the whole story, apart from its pages:
+    // every page knows where in the story it begins, and each photo has a quarter of the story's time.
+    const span = pages.reduce((sum, scene) => sum + scene.duration, 0);
+    let offset = 0;
+    pages.forEach((scene) => {
+      if (scene.kind !== 'text') return;
+      expect(scene.photoIds).toEqual(['p1', 'p2', 'p3', 'p4']);
+      expect(scene.photoKey).toBe('text:story');
+      expect(scene.photoOffset).toBeCloseTo(offset, 1);
+      expect(scene.photoSpan).toBeCloseTo(span, 1);
+      expect(scene.photoId).toBe(['p1', 'p2', 'p3', 'p4'][Math.min(3, Math.floor(offset / (span / 4)))]);
+      offset += scene.duration;
+    });
+    // Then the photos one by one, after the words.
+    const kinds = timeline.scenes.filter((scene) => scene.momentId === 'm1').map((scene) => scene.kind);
+    expect(kinds.lastIndexOf('text')).toBeLessThan(kinds.indexOf('photo'));
   });
 
   it('plays the voice of a story while its words are on screen, not after them', () => {

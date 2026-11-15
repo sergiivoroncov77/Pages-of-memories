@@ -423,18 +423,35 @@ export class FilmRenderer {
   private text(ctx: Ctx, scene: TextScene, local: number, assets: FilmAssets) {
     const { width: W, height: H, unit: u, portrait } = this;
     this.paperBackground(ctx);
-    const photo = scene.photoId ? assets.photos.get(scene.photoId) : undefined;
+    // The story's photos take turns over the whole story, apart from its pages: a photo goes on unchanged when a page
+    // turns (same tilt, same slow drift), and the next one fades in when its share of the story begins.
+    const photos = (scene.photoIds?.length ? scene.photoIds : scene.photoId ? [scene.photoId] : [])
+      .map((id) => assets.photos.get(id)).filter((item): item is PreparedPhoto => Boolean(item));
+    const photo = photos[0];
     let box = { x: W * 0.14, y: H * 0.16, width: W * 0.72, height: H * 0.68 };
     if (photo) {
-      const rotation = (seededRandom(scene.id, 5) > 0.5 ? 1 : -1) * 0.045;
-      ctx.globalAlpha = appear(local, 0.1, 1.2);
-      if (portrait) {
-        this.print(ctx, photo, W / 2, H * 0.25, W * 0.74, H * 0.3, rotation, scene.id, local / scene.duration);
-        box = { x: W * 0.1, y: H * 0.47, width: W * 0.8, height: H * 0.43 };
+      const offset = scene.photoOffset ?? 0;
+      const span = Math.max(scene.photoSpan ?? scene.duration, 0.1);
+      const storyTime = offset + local;
+      const slot = span / photos.length;
+      const slotIndex = Math.min(photos.length - 1, Math.max(0, Math.floor(storyTime / slot)));
+      const key = scene.photoKey ?? scene.id;
+      const drawSlot = (index: number, alpha: number) => {
+        const rotation = (seededRandom(key + ':' + index, 5) > 0.5 ? 1 : -1) * 0.045;
+        const progress = clamp01((storyTime - index * slot) / slot);
+        ctx.globalAlpha = alpha;
+        if (portrait) this.print(ctx, photos[index], W / 2, H * 0.25, W * 0.74, H * 0.3, rotation, key + ':' + index, progress);
+        else this.print(ctx, photos[index], W * 0.28, H * 0.5, W * 0.36, H * 0.66, rotation, key + ':' + index, progress);
+      };
+      const intoSlot = storyTime - slotIndex * slot;
+      if (slotIndex > 0 && intoSlot < 1) {
+        drawSlot(slotIndex - 1, 1 - easeInOut(intoSlot));
+        drawSlot(slotIndex, easeInOut(intoSlot));
       } else {
-        this.print(ctx, photo, W * 0.28, H * 0.5, W * 0.36, H * 0.66, rotation, scene.id, local / scene.duration);
-        box = { x: W * 0.52, y: H * 0.13, width: W * 0.41, height: H * 0.74 };
+        // Only the story's very first photo appears; on later pages it is already there.
+        drawSlot(slotIndex, storyTime < 1.3 ? appear(storyTime, 0.1, 1.2) : 1);
       }
+      box = portrait ? { x: W * 0.1, y: H * 0.47, width: W * 0.8, height: H * 0.43 } : { x: W * 0.52, y: H * 0.13, width: W * 0.41, height: H * 0.74 };
       ctx.globalAlpha = 1;
     }
     const authorSpace = 56 * u;
