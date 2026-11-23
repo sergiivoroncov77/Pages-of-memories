@@ -672,6 +672,12 @@
   font-size: 0.82rem;
 }
 
+/* One relative across several books: the books are named under the relation. */
+.person-card__heading p.person-card__books {
+  margin-top: 2px;
+  font-style: italic;
+}
+
 .person-card__count {
   display: inline-flex;
   align-items: center;
@@ -679,4 +685,12 @@
   margin-top: 9px;
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+/* A relative with records in several books: which books, under the bio. */
+.profile-card__books {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-style: italic;
 }

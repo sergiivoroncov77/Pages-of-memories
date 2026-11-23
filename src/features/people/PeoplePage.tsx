@@ -8,6 +8,7 @@ import { Avatar } from '../../components/Avatar';
 import { PersonCard } from '../../components/PersonCard';
 import { useCloudSync } from '../../sync/CloudSync';
 import { PersonForm } from './PersonForm';
+import { groupPeople } from '../../data/personGroups';
 
 export function PeoplePage() {
   const { people: everyone, books, memories, moments, perspectives, activeBook, createPerson } = useAppState();
@@ -24,9 +25,12 @@ export function PeoplePage() {
     ...memories.map((memory) => memory.personId),
     ...perspectives.filter((perspective) => momentIds.has(perspective.momentId)).map((perspective) => perspective.authorId)
   ]);
-  const active = people.filter((person) => authors.has(person.id));
-  const waiting = people.filter((person) => !authors.has(person.id));
-  const invitePerson = waiting[0] ?? people[0];
+  // One card for a relative who has a record in several books.
+  const groups = groupPeople(people, { moments, perspectives });
+  const active = groups.filter((group) => group.members.some((person) => authors.has(person.id)));
+  const waiting = groups.filter((group) => !group.members.some((person) => authors.has(person.id)));
+  const myGroups = groupPeople(me, { moments, perspectives });
+  const invitePerson = waiting[0]?.person ?? people[0];
 
   return (
     <div className="page">
@@ -69,8 +73,8 @@ export function PeoplePage() {
       ) : null}
 
       {active.length > 0 ? <div className="people-list people-list--spacious">
-        {active.map((person) => (
-          <PersonCard key={person.id} person={person} />
+        {active.map((group) => (
+          <PersonCard key={group.person.id} person={group.person} group={group} />
         ))}
       </div> : null}
 
@@ -83,8 +87,8 @@ export function PeoplePage() {
             </div>
           </div>
           <div className="people-list">
-            {waiting.map((person) => (
-              <PersonCard key={person.id} person={person} />
+            {waiting.map((group) => (
+              <PersonCard key={group.person.id} person={group.person} group={group} />
             ))}
           </div>
         </section>
@@ -100,12 +104,12 @@ export function PeoplePage() {
             <Link to="/profile" className="button button--secondary button--small"><UserRound size={17} aria-hidden="true" /> Профиль</Link>
           </div>
           <ul className="profile-books">
-            {me.map((person) => (
+            {myGroups.map(({ person, ids }) => (
               <li key={person.id} className="profile-books__item">
                 <Avatar person={person} size="small" />
                 <div className="profile-books__copy">
                   <strong>{person.name}<span className="me-badge">вы</span></strong>
-                  <span>{books.filter((book) => cloud.myPersonId(book.id) === person.id).map((book) => `«${book.title}»`).join(', ') || 'Книга удалена с этого устройства'}</span>
+                  <span>{books.filter((book) => ids.has(cloud.myPersonId(book.id) ?? '')).map((book) => `«${book.title}»`).join(', ') || 'Книга удалена с этого устройства'}</span>
                 </div>
               </li>
             ))}
