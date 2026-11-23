@@ -1,6 +1,7 @@
 import { FileAudio, FileVideo, ImagePlus, Mic, Paperclip, X } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { StoryEditor } from '../../components/StoryEditor';
+import { mediaCaption } from '../../data/mediaRefs';
 import type { MediaAsset } from '../../data/types';
 import { formatDuration } from '../../lib/format';
 import { MAX_MEDIA_FILE_BYTES, prepareMediaFile, validateMediaFile, type MediaUploadWithBlob } from '../../lib/mediaFiles';
@@ -23,8 +24,10 @@ export interface StoryDraft {
   content: string;
   /** Files the story already had and keeps, in order. */
   keep: string[];
-  /** New files, in order. */
+  /** New files, in order, each with its caption. */
   files: MediaUploadWithBlob[];
+  /** New captions of kept files, by file id: only those that changed. */
+  captions: Record<string, string>;
 }
 
 interface StoryComposerProps {
@@ -67,6 +70,9 @@ export function StoryComposer({ initialContent = '', existing = [], momentTitle,
   const [content, setContent] = useState(initialContent);
   const [keep, setKeep] = useState(() => existing.map((asset) => asset.id));
   const [pending, setPending] = useState<PendingFile[]>([]);
+  // Captions by file id (kept files) or pending key (new files).
+  const [captions, setCaptions] = useState<Record<string, string>>(() => Object.fromEntries(existing.map((asset) => [asset.id, mediaCaption(asset, initialContent)])));
+  const setCaption = (key: string, text: string) => setCaptions((current) => ({ ...current, [key]: text }));
   const [showRecorder, setShowRecorder] = useState(startRecording);
   const [take, setTake] = useState<Recording | null>(null);
   const recorder = useAudioRecorder();
@@ -94,7 +100,7 @@ export function StoryComposer({ initialContent = '', existing = [], momentTitle,
     if (!next) return;
     if (next.blob.size > MAX_MEDIA_FILE_BYTES) { onError('Запись не помещается в книгу: до 50 МБ на файл. Запишите рассказ частями.'); return; }
     add({ type: 'audio', url: '', mimeType: next.mimeType, blob: next.blob, sizeBytes: next.blob.size, durationSeconds: next.durationSeconds,
-      fileName: `Голос — ${momentTitle}.${extensions[next.mimeType] ?? 'webm'}`, alt: `Голос: ${momentTitle}` });
+      fileName: `Голос — ${momentTitle}.${extensions[next.mimeType] ?? 'webm'}`, alt: undefined });
     setTake(null);
     setShowRecorder(false);
     onError('');
@@ -118,15 +124,18 @@ export function StoryComposer({ initialContent = '', existing = [], momentTitle,
     if (recording) { onError('Сначала нажмите «Готово», чтобы закончить запись.'); return; }
     if (!optional && !content.trim() && !keep.length && !pending.length) { onError('Напишите рассказ или прикрепите голос, фото или видео.'); return; }
     onError('');
-    void onSubmit({ content, keep, files: pending.map((item) => item.media) });
+    const changed = Object.fromEntries(existing.filter((asset) => keep.includes(asset.id) && (captions[asset.id] ?? '').trim() !== mediaCaption(asset, initialContent))
+      .map((asset) => [asset.id, (captions[asset.id] ?? '').trim()]));
+    void onSubmit({ content, keep, captions: changed,
+      files: pending.map((item) => ({ ...item.media, alt: captions[item.key]?.trim() || undefined })) });
   };
 
   const kept = existing.filter((asset) => keep.includes(asset.id));
   const count = kept.length + pending.length;
   // Files just chosen are shown in the preview from memory, as they will look once saved.
-  const previewFiles: MediaAsset[] = [...kept, ...pending.map((item) => ({
+  const previewFiles: MediaAsset[] = [...kept.map((asset) => ({ ...asset, alt: captions[asset.id]?.trim() || undefined })), ...pending.map((item) => ({
     id: item.key, type: item.media.type, url: item.previewUrl, mimeType: item.media.mimeType, fileName: item.media.fileName,
-    alt: item.media.alt, durationSeconds: item.media.durationSeconds, createdAt: ''
+    alt: captions[item.key]?.trim() || undefined, durationSeconds: item.media.durationSeconds, createdAt: ''
   }))];
 
   return <form className="inline-form story-composer" onSubmit={submit} aria-busy={saving}>
@@ -139,10 +148,12 @@ export function StoryComposer({ initialContent = '', existing = [], momentTitle,
       <span>К рассказу {count ? <small>· {count} {count === 1 ? 'файл' : count < 5 ? 'файла' : 'файлов'}</small> : <small>необязательно</small>}</span>
       {kept.length || pending.length ? <ul className="attachment-list">
         {kept.map((asset) => <li key={asset.id}><StoredAttachment asset={asset} />
+          <CaptionField type={asset.type} value={captions[asset.id] ?? ''} onChange={(text) => setCaption(asset.id, text)} disabled={saving} />
           <button type="button" className="card-tool card-tool--danger" aria-label={'Убрать ' + describe(asset)} disabled={saving}
             onClick={() => setKeep((ids) => ids.filter((id) => id !== asset.id))}><X size={16} /></button></li>)}
         {pending.map((item) => <li key={item.key}><AttachmentPreview type={item.media.type} url={item.previewUrl} name={item.media.fileName}
           duration={item.media.durationSeconds} />
+          <CaptionField type={item.media.type} value={captions[item.key] ?? ''} onChange={(text) => setCaption(item.key, text)} disabled={saving} />
           <button type="button" className="card-tool card-tool--danger" aria-label="Убрать файл" disabled={saving} onClick={() => removePending(item.key)}><X size={16} /></button></li>)}
       </ul> : null}
       {showRecorder || recording || take ? <div className="story-composer__recorder">
@@ -166,6 +177,13 @@ export function StoryComposer({ initialContent = '', existing = [], momentTitle,
       <button type="button" className="button button--ghost" disabled={saving} onClick={() => { recorder.cancel(); onCancel(); }}>Отмена</button>
     </div>
   </form>;
+}
+
+/** The words under a photo or a recording, written right where it is added. */
+function CaptionField({ type, value, onChange, disabled }: { type: MediaAsset['type']; value: string; onChange: (text: string) => void; disabled: boolean }) {
+  const example = 'Подпись, например: ' + (type === 'photo' ? 'тётя Нина и тётя Лена, 1978 год' : type === 'audio' ? 'папа вспоминает переезд' : 'выпускной, 1985 год');
+  return <label className="attachment__caption"><span className="visually-hidden">Подпись к {describe({ type })}</span>
+    <input type="text" value={value} maxLength={300} placeholder={example} disabled={disabled} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
 const describe = (asset: Pick<MediaAsset, 'type'>) => asset.type === 'photo' ? 'фото' : asset.type === 'video' ? 'видео' : 'запись';

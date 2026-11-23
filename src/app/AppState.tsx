@@ -67,7 +67,7 @@ import {
   updatePerspectiveInSnapshot,
   updateReflectionInSnapshot
 } from '../data/mutations';
-import { perspectiveAssets, perspectiveMediaIds } from '../data/mediaRefs';
+import { captionMediaAssets, perspectiveAssets, perspectiveMediaIds } from '../data/mediaRefs';
 import type {
   AppSettings,
   AppSnapshot,
@@ -147,7 +147,8 @@ interface AppStateValue {
   /** A story with its words and any number of attached files (voice, photos, video). */
   addStory: (input: Omit<Parameters<typeof createPerspective>[0], 'type' | 'mediaAssetId' | 'attachmentIds'>, files: MediaUploadWithBlob[]) => Promise<StorageWriteResult>;
   /** Change a story's words and files: keep some of its files, attach new ones; files let go are removed once unused. */
-  updateStory: (id: string, patch: { content: string; caption?: string; authorId?: string }, keep: string[], files: MediaUploadWithBlob[]) => Promise<StorageWriteResult>;
+  /** `captions`: new captions of kept files, by file id. */
+  updateStory: (id: string, patch: { content: string; caption?: string; authorId?: string }, keep: string[], files: MediaUploadWithBlob[], captions?: Record<string, string>) => Promise<StorageWriteResult>;
   /** Files of a story in display order. */
   mediaForStory: (perspectiveId: string) => MediaAsset[];
   addMediaAsset: (input: Parameters<typeof createMediaAsset>[0]) => MediaAsset;
@@ -568,11 +569,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return addPerspectiveToSnapshot(current, perspective);
   });
 
-  const updateStory: AppStateValue['updateStory'] = (id, patch, keep, files) => {
+  const updateStory: AppStateValue['updateStory'] = (id, patch, keep, files, captions = {}) => {
     const before = snapshotRef.current.perspectives.find((item) => item.id === id);
     const letGo = before ? perspectiveMediaIds(before).filter((assetId) => !keep.includes(assetId)) : [];
     return commitWithFiles(files, letGo, (current, assets) =>
-      updatePerspectiveInSnapshot(current, id, { ...patch, attachmentIds: [...keep, ...assets.map((asset) => asset.id)] }));
+      updatePerspectiveInSnapshot(captionMediaAssets(current, captions), id, { ...patch, attachmentIds: [...keep, ...assets.map((asset) => asset.id)] }));
   };
 
   const addReflectionWithMedia: AppStateValue['addReflectionWithMedia'] = (input, voice) =>

@@ -39,7 +39,7 @@ function StorySectionView({ section, heading, measuring, assets }: { section: St
     {section.audioIds?.length ? <div className="reader-story__voices">{measuring
       ? section.audioIds.map((id) => <VoiceStandIn key={id} label={voice} className="reader-story__voice" />)
       : section.audioIds.map((id) => assets.get(id)).filter((asset): asset is MediaAsset => Boolean(asset))
-        .map((asset) => <VoiceNote key={asset.id} asset={asset} label={voice} className="reader-story__voice" />)}</div> : null}
+        .map((asset) => <VoiceNote key={asset.id} asset={asset} label={section.audioCaptions?.[asset.id] || voice} className="reader-story__voice" />)}</div> : null}
     <div className={'reader-story__text' + (section.dropCap ? ' has-drop-cap' : '')}>
       <StoryText text={section.text} bookLines firstClassName={flush ? (section.startsMidParagraph ? 'is-continuation' : 'is-flush') : undefined} />
     </div>
@@ -50,7 +50,7 @@ function StorySectionView({ section, heading, measuring, assets }: { section: St
 
 export function PageView({ page, number, total, assets, chapterTitles, onJump, measuring = false }: PageViewProps) {
   const numbered = number > 0 && number < total - 1 && page.kind !== 'blank' && page.kind !== 'chapter';
-  const head = 'chapterId' in page && page.kind !== 'chapter' ? <p className="reader-page__head">{chapterTitles.get(page.chapterId)}</p> : null;
+  const head = 'chapterId' in page && page.kind !== 'chapter' && page.kind !== 'moments' ? <p className="reader-page__head">{chapterTitles.get(page.chapterId)}</p> : null;
   let body;
   switch (page.kind) {
     case 'cover': {
@@ -72,6 +72,13 @@ export function PageView({ page, number, total, assets, chapterTitles, onJump, m
           <span><small>{entry.label}</small>{entry.title}</span><i aria-hidden="true" /><b>{entry.page}</b>
         </button></li>)}</ol>
         <Fleuron /></div>;
+      break;
+    case 'moments':
+      body = <div className="reader-contents reader-contents--moments"><p className="reader-kicker">{page.label}{page.continued ? ' · продолжение' : ''}</p><h2>{page.title}</h2>
+        <ol>{page.entries.map((entry) => <li key={entry.momentId}><button type="button" onClick={() => onJump(entry.page)}>
+          <span>{entry.date ? <small>{entry.date}</small> : null}{entry.title}</span><i aria-hidden="true" /><b>{entry.page}</b>
+        </button></li>)}</ol>
+        {page.continued ? null : <Fleuron />}</div>;
       break;
     case 'chapter':
       body = <div className="reader-chapter"><span className="reader-chapter__numeral" aria-hidden="true">{page.numeral}</span>

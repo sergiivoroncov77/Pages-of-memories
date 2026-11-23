@@ -57,11 +57,17 @@ function setSpacing(ctx: Ctx, value: string) {
   if ('letterSpacing' in ctx) (ctx as Ctx & { letterSpacing: string }).letterSpacing = value;
 }
 
-interface TextLayout { lines: string[]; size: number; lineHeight: number; height: number; width: number }
+interface TextLayout {
+  lines: string[]; size: number; lineHeight: number; height: number; width: number;
+  /** Where each line's top is, below the first: a new paragraph adds a little air. */
+  tops: number[];
+}
 
-function wrap(ctx: Ctx, text: string, maxWidth: number): string[] {
+/** Lines of a text; `starts` gets the index of every line that opens a paragraph after the first. */
+function wrap(ctx: Ctx, text: string, maxWidth: number, starts?: Set<number>): string[] {
   const lines: string[] = [];
-  text.split('\n').forEach((paragraph) => {
+  text.split('\n').forEach((paragraph, index) => {
+    if (index > 0) starts?.add(lines.length);
     let line = '';
     paragraph.split(/\s+/).filter(Boolean).forEach((word) => {
       const candidate = line ? line + ' ' + word : word;
@@ -85,31 +91,51 @@ interface FitOptions {
   minSize: number;
   lineHeight?: number;
   maxLines?: number;
+  /** Extra room before a paragraph, in lines. */
+  paragraphGap?: number;
 }
 
 /** Wrap a text into the box using the largest font size that fits. */
 function fitText(ctx: Ctx, text: string, options: FitOptions): TextLayout {
   const ratio = options.lineHeight ?? 1.3;
+  const gap = options.paragraphGap ?? 0;
   const maxLines = options.maxLines ?? Infinity;
-  const measure = (size: number, lines: string[]): TextLayout => ({
-    lines, size, lineHeight: size * ratio, height: lines.length * size * ratio,
-    width: Math.max(0, ...lines.map((line) => ctx.measureText(line).width))
-  });
+  const place = (size: number, lines: string[], starts: Set<number>): TextLayout => {
+    const lineHeight = size * ratio;
+    const tops: number[] = [];
+    let y = 0;
+    lines.forEach((_, index) => {
+      if (index > 0) y += lineHeight + (starts.has(index) ? lineHeight * gap : 0);
+      tops.push(y);
+    });
+    return { lines, size, lineHeight, tops, height: lines.length ? y + lineHeight : 0,
+      width: Math.max(0, ...lines.map((line) => ctx.measureText(line).width)) };
+  };
   for (let size = options.maxSize; size > options.minSize; size -= 2) {
     ctx.font = options.font(size);
-    const lines = wrap(ctx, text, options.maxWidth);
-    if (lines.length <= maxLines && lines.length * size * ratio <= options.maxHeight) return measure(size, lines);
+    const starts = new Set<number>();
+    const layout = place(size, wrap(ctx, text, options.maxWidth, starts), starts);
+    if (layout.lines.length <= maxLines && layout.height <= options.maxHeight) return layout;
   }
   ctx.font = options.font(options.minSize);
-  let lines = wrap(ctx, text, options.maxWidth);
+  const starts = new Set<number>();
+  let lines = wrap(ctx, text, options.maxWidth, starts);
+  let layout = place(options.minSize, lines, starts);
+  if (layout.lines.length > maxLines || layout.height > options.maxHeight) {
+    // Paragraph breaks give way to plain lines before any words are cut.
+    const flat = new Set<number>();
+    lines = wrap(ctx, text.replace(/\s*\n\s*/g, ' '), options.maxWidth, flat);
+    layout = place(options.minSize, lines, flat);
+  }
   const fitting = Math.max(1, Math.min(maxLines, Math.floor(options.maxHeight / (options.minSize * ratio))));
   if (lines.length > fitting) {
     lines = lines.slice(0, fitting);
     let last = lines[fitting - 1];
     while (last.length > 1 && ctx.measureText(last + '…').width > options.maxWidth) last = last.slice(0, -1);
     lines[fitting - 1] = last.trimEnd() + '…';
+    layout = place(options.minSize, lines, new Set());
   }
-  return measure(options.minSize, lines);
+  return layout;
 }
 
 function drawLines(ctx: Ctx, layout: TextLayout, x: number, top: number, align: CanvasTextAlign, reveal?: (index: number) => number) {
@@ -120,7 +146,7 @@ function drawLines(ctx: Ctx, layout: TextLayout, x: number, top: number, align: 
     const amount = reveal ? reveal(index) : 1;
     if (amount <= 0) return;
     ctx.globalAlpha = base * amount;
-    ctx.fillText(line, x, top + layout.lineHeight * index + layout.size * 0.95 + (1 - amount) * 10);
+    ctx.fillText(line, x, top + layout.tops[index] + layout.size * 0.95 + (1 - amount) * 10);
   });
   ctx.globalAlpha = base;
 }
@@ -457,17 +483,11 @@ export class FilmRenderer {
     const authorSpace = 56 * u;
     const body = this.layout(ctx, scene.id + ':body', scene.text, {
       font: (size) => `italic ${size}px ${SERIF}`, maxWidth: box.width, maxHeight: box.height - authorSpace,
-      maxSize: (photo ? 34 : 40) * u, minSize: 19 * u, lineHeight: 1.45
+      maxSize: (photo ? 34 : 40) * u, minSize: 19 * u, lineHeight: 1.45, paragraphGap: 0.45
     });
     const top = box.y + (box.height - authorSpace - body.height) / 2;
     const align: CanvasTextAlign = photo && !portrait ? 'left' : 'center';
     const x = align === 'left' ? box.x : box.x + box.width / 2;
-    ctx.font = `${120 * u}px ${SERIF}`;
-    ctx.fillStyle = C.accent;
-    ctx.globalAlpha = 0.18 * appear(local, 0.2);
-    ctx.textAlign = align;
-    ctx.fillText('«', align === 'left' ? x - 16 * u : x, top + 34 * u);
-    ctx.globalAlpha = 1;
     ctx.font = `italic ${body.size}px ${SERIF}`;
     ctx.fillStyle = C.ink;
     drawLines(ctx, body, x, top, align, (line) => appear(local, 0.45 + line * 0.2, 0.8));

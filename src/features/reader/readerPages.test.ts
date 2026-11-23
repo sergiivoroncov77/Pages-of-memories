@@ -47,6 +47,34 @@ const photo = (id: string): MediaAsset => ({ id, type: 'photo', url: 'blob:' + i
 const words = (count: number, word = 'слово') => Array.from({ length: count }, () => word).join(' ');
 
 describe('book reader pages', () => {
+  it('opens every chapter with the list of its moments and where each begins', () => {
+    const pages = buildReaderPages(source());
+    const chapters = pages.flatMap((page, index) => page.kind === 'chapter' ? [index] : []);
+    chapters.forEach((index) => {
+      const chapter = pages[index] as Extract<ReaderPage, { kind: 'chapter' }>;
+      const contents = pages[index + 1];
+      if (!chapter.momentCount) return;
+      expect(contents.kind).toBe('moments');
+      if (contents.kind !== 'moments') return;
+      expect(contents.chapterId).toBe(chapter.chapterId);
+      contents.entries.forEach((entry) => {
+        const first = pages[entry.page];
+        expect(first.kind).toBe('story');
+        expect('momentId' in first && first.momentId).toBe(entry.momentId);
+      });
+    });
+  });
+
+  it('carries a long list of moments over to the next page', () => {
+    const base = source();
+    const template = base.chapters[0].moments[0];
+    const many = Array.from({ length: 11 }, (_, index) => ({ ...template, moment: { ...template.moment, id: 'm' + index, title: 'Момент ' + index } }));
+    const pages = buildReaderPages({ ...base, chapters: [{ chapter: base.chapters[0].chapter, moments: many }] });
+    const lists = pages.filter((page): page is Extract<ReaderPage, { kind: 'moments' }> => page.kind === 'moments');
+    expect(lists.map((page) => page.entries.length)).toEqual([8, 3]);
+    expect(lists.map((page) => page.continued)).toEqual([false, true]);
+  });
+
   it('accounts for the shorter title and narrower padding of a landscape phone', () => {
     const compact = estimatePageBudget(560, 240, { compact: true });
     expect(compact.firstPageChars).toBeLessThan(160);

@@ -4,7 +4,7 @@ import { isAttachedMedia } from '../../lib/film/timeline';
 import { chapterLabel, toRoman } from '../../lib/film/text';
 import { parseStory } from '../../lib/storyMarkup';
 import { paginateStoryPages, type PaginationHint, type StoryTextPage } from './readerPagination';
-import { perspectiveAssets } from '../../data/mediaRefs';
+import { mediaCaption, perspectiveAssets } from '../../data/mediaRefs';
 
 /** One story (or one view of a moment) on a story page: a page may hold several. */
 export interface StorySection {
@@ -18,6 +18,8 @@ export interface StorySection {
   kicker?: string;
   /** Recordings told with these words: small players open the section, before its text. */
   audioIds?: string[];
+  /** The words written under those recordings, by id. */
+  audioCaptions?: Record<string, string>;
   /** A signature closes the section: its author's name. */
   signature?: string;
   /** A drop cap opens the primary story, when it starts with a letter. */
@@ -31,6 +33,8 @@ export type ReaderPage =
   | { kind: 'cover'; key: string; title: string; subtitle: string; coverAssetId?: string }
   | { kind: 'contents'; key: string; entries: { chapterId: string; label: string; title: string; page: number }[] }
   | { kind: 'chapter'; key: string; chapterId: string; numeral: string; label: string; title: string; description: string; momentCount: number }
+  /** The chapter's own contents, after its opener: its moments and where they begin. */
+  | { kind: 'moments'; key: string; chapterId: string; label: string; title: string; continued: boolean; entries: { momentId: string; title: string; date: string; page: number }[] }
   | { kind: 'story'; key: string; chapterId: string; momentId: string; heading?: { title: string; date: string; narrators: string[] };
       /** The page goes on with a story that began on an earlier page. */
       continued: boolean; sections: StorySection[] }
@@ -136,6 +140,9 @@ export function findPage(pages: ReaderPage[], anchor: PageAnchor): number {
   return Math.max(0, chapter);
 }
 
+/** How many moments a page of a chapter's contents lists. */
+export const MOMENTS_PER_PAGE = 8;
+
 /** A view with words continues the page before it only when at least this many lines of its text fit there. */
 export const MERGE_MIN_LINES = 3;
 
@@ -172,6 +179,14 @@ export function* paginateBook(source: ReaderSource, fits: PageFits, options: Bui
       kind: 'chapter', key: 'chapter:' + chapter.id, chapterId: chapter.id, numeral: toRoman(chapter.order), label: chapterLabel(chapter.order),
       title: chapter.title, description: chapter.description, momentCount: moments.length
     });
+    // Right after the opener, the chapter's moments, a few to a page.
+    const momentContents: Extract<ReaderPage, { kind: 'moments' }>[] = [];
+    for (let index = 0; index < moments.length; index += MOMENTS_PER_PAGE) {
+      const page: Extract<ReaderPage, { kind: 'moments' }> = { kind: 'moments', key: `moments:${chapter.id}:${index / MOMENTS_PER_PAGE}`,
+        chapterId: chapter.id, label: chapterLabel(chapter.order), title: chapter.title, continued: index > 0, entries: [] };
+      momentContents.push(page);
+      pages.push(page);
+    }
     for (const { moment, perspectives, reflections } of moments) {
       const base = { chapterId: chapter.id, momentId: moment.id };
       // Any story with words opens the moment, whether it was written or told aloud with a few words.
@@ -180,12 +195,16 @@ export function* paginateBook(source: ReaderSource, fits: PageFits, options: Bui
         ?? perspectives.find((item) => item.type === 'text' && item.content.trim()) ?? perspectives.find(told);
       const filesOf = (item: Perspective) => perspectiveAssets(item, source.assets);
       const voicesOf = (item: Perspective) => filesOf(item).filter((asset) => asset.type === 'audio' && isAttachedMedia(asset)).map((asset) => asset.id);
+      const voiceCaptions = (item: Perspective) => Object.fromEntries(filesOf(item).filter((asset) => asset.type === 'audio')
+        .map((asset) => [asset.id, mediaCaption(asset, item.content)]).filter(([, caption]) => caption));
       const wordsCount = perspectives.filter(told).length;
       const heading = {
         title: moment.title,
         date: moment.occurredAt ? formatDate(moment.occurredAt) : '',
         narrators: [...new Set(perspectives.map((item) => item.authorId).filter((id): id is string => Boolean(id)).map(name))]
       };
+      momentContents[Math.floor(momentContents.flatMap((page) => page.entries).length / MOMENTS_PER_PAGE)]
+        ?.entries.push({ momentId: moment.id, title: moment.title, date: heading.date, page: pages.length });
       const storyPage = (key: string, sections: StorySection[], continued: boolean, withHeading = false): StoryPageData =>
         ({ kind: 'story', key, ...base, heading: withHeading ? heading : undefined, continued, sections });
 
@@ -197,7 +216,8 @@ export function* paginateBook(source: ReaderSource, fits: PageFits, options: Bui
       const openingSection = (part: StoryTextPage, index: number, last: boolean): StorySection => ({
         // The drop cap opens the words wherever they begin: on the heading page, or on the next one when none fit there.
         id: openingId, ...part, dropCap: part.separatorBefore === '' && !part.startsMidParagraph && canHaveDropCap(part.text),
-        audioIds: index === 0 && players.length ? players : undefined, signature: last ? signed : undefined
+        audioIds: index === 0 && players.length ? players : undefined, audioCaptions: index === 0 && primary ? voiceCaptions(primary) : undefined,
+        signature: last ? signed : undefined
       });
       const openingPage = (index: number, section: StorySection) =>
         storyPage(index === 0 ? 'story:' + moment.id : `story:${moment.id}:${index - 1}`, [section], index > 0, index === 0);
@@ -215,7 +235,8 @@ export function* paginateBook(source: ReaderSource, fits: PageFits, options: Bui
         if (withWords && perspective.id !== primary?.id) {
           const sectionOf = (part: StoryTextPage, index: number): StorySection => ({
             id: perspective.id, ...part, dropCap: false, kicker: index === 0 ? author : undefined,
-            signature: index > 0 ? author : undefined, audioIds: index === 0 && voices.length ? voices : undefined
+            signature: index > 0 ? author : undefined, audioIds: index === 0 && voices.length ? voices : undefined,
+            audioCaptions: index === 0 ? voiceCaptions(perspective) : undefined
           });
           const ownPage = (index: number, part: StoryTextPage) => storyPage(`voice:${perspective.id}:${index}`, [sectionOf(part, index)], index > 0);
           // A short view goes on the page before it when that page is the one just before and has room for it.
@@ -244,7 +265,8 @@ export function* paginateBook(source: ReaderSource, fits: PageFits, options: Bui
           const own = asset.id === perspective.mediaAssetId;
           // A photo or video story's words are its caption; files next to a story carry their own.
           const describes = own || perspective.type === 'photo' || perspective.type === 'video';
-          const caption = describes ? perspective.caption || perspective.content || asset.alt || '' : asset.alt || perspective.caption || '';
+          // A caption written under the file itself comes first.
+          const caption = mediaCaption(asset, perspective.content) || (describes ? perspective.caption || perspective.content || '' : perspective.caption || '');
           if (asset.type === 'photo' && (!own || perspective.type === 'photo' || perspective.type === 'text')) {
             pages.push({ kind: 'photo', key: 'photo:' + keyOf(asset), ...base, assetId: asset.id, caption, author });
           }

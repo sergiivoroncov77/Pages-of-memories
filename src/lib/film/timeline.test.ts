@@ -138,6 +138,16 @@ describe('chapter film timeline', () => {
     expect(timeline.quietSpans).toContainEqual({ start: words.start + 0.6, end: words.start + 12.6 });
   });
 
+  it('keeps the paragraphs of a story on its film pages', () => {
+    const source = childhoodSource();
+    source.moments.forEach((entry) => {
+      entry.perspectives = entry.perspectives.map((item) => item.id === 'perspective_voice' ? { ...item, content: 'Первый абзац.\nВторой абзац.' } : item);
+    });
+    const timeline = buildFilmTimeline(source, DEFAULT_FILM_OPTIONS, available);
+    const words = timeline.scenes.find((scene) => scene.id === 'text:perspective_voice:0');
+    expect(words && 'text' in words ? words.text : '').toBe('Первый абзац.\nВторой абзац.');
+  });
+
   it('leaves reflections, texts and voices out on request and skips demo audio without a file', () => {
     const source = childhoodSource();
     const timeline = buildFilmTimeline(source, { ...DEFAULT_FILM_OPTIONS, includeReflections: false, includeText: false, includeVoices: false }, available);

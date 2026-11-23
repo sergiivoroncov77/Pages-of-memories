@@ -255,7 +255,9 @@
 }
 
 .attachment-list > li {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "file remove" "caption caption";
   align-items: center;
   gap: 8px;
   padding: 8px;
@@ -264,7 +266,38 @@
   background: var(--surface);
 }
 
+.attachment-list > li > .card-tool {
+  grid-area: remove;
+}
+
+/* The caption is written right under the file it belongs to. */
+.attachment__caption {
+  display: block;
+  grid-area: caption;
+}
+
+.attachment__caption input {
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-warm);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem; /* 16px: a phone does not zoom in on the field */
+  font-style: italic;
+}
+
+.attachment__caption input:focus {
+  border-color: var(--primary);
+  outline: none;
+  background: var(--surface);
+  font-style: normal;
+}
+
 .attachment {
+  grid-area: file;
   display: flex;
   min-width: 0;
   flex: 1;
@@ -344,4 +377,20 @@
   .reflection-card .voice-note {
     gap: 8px;
   }
+}
+
+/* A photo on the moment page with the words written under it, as on a print. */
+.captioned-asset {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.captioned-asset figcaption {
+  color: var(--ink-soft);
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 0.92rem;
+  font-style: italic;
+  line-height: 1.35;
+  text-align: center;
 }

@@ -3,7 +3,7 @@ import type { Chapter, MediaAsset, Moment, Person, Perspective, Reflection } fro
 export { chronologicalMoments } from '../../data/library';
 import { formatDate, truncate } from '../format';
 import { chapterLabel, paginateText, readingSeconds } from './text';
-import { perspectiveAssets } from '../../data/mediaRefs';
+import { mediaCaption, perspectiveAssets } from '../../data/mediaRefs';
 import type { MusicStyle } from './music';
 import { stripStoryMarkup } from '../storyMarkup';
 
@@ -312,7 +312,7 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
       if (narratedViews.includes(perspective)) return;
       const told = perspective.type === 'text' || perspective.type === 'audio';
       if (told && options.includeText && perspective.content.trim()) {
-        const pages = paginateText(stripStoryMarkup(perspective.content), TEXT_PAGE_CHARS, { flatten: true });
+        const pages = paginateText(stripStoryMarkup(perspective.content), TEXT_PAGE_CHARS);
         const author = personName(source, perspective.authorId);
         const pool = photosFor(perspective);
         const own = pages.map((text, index): Draft => ({
@@ -356,7 +356,7 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
         if ((perspective.type !== 'photo' && asset.id === perspective.mediaAssetId) || !photoIds.includes(asset.id) || seenPhotos.has(asset.id)) return;
         seenPhotos.add(asset.id);
         const author = personName(source, perspective.authorId);
-        const caption = asset.id === perspective.mediaAssetId || perspective.type === 'photo' ? perspective.caption || perspective.content || '' : asset.alt || perspective.caption || '';
+        const caption = mediaCaption(asset, perspective.content) || (asset.id === perspective.mediaAssetId || perspective.type === 'photo' ? perspective.caption || perspective.content || '' : perspective.caption || '');
         photos.push({
           id: 'photo:' + sceneId(perspective, asset), kind: 'photo', momentId: moment.id, transition: 'fade', duration: PHOTO_SECONDS,
           label: 'Фото: ' + truncate(caption || asset.alt || 'без подписи', 40),
@@ -417,7 +417,7 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
       const drafts: Draft[] = [];
       const told = perspective.type === 'text' || perspective.type === 'audio';
       if (told && options.includeText && perspective.content.trim()) {
-        const pages = paginateText(stripStoryMarkup(perspective.content), TEXT_PAGE_CHARS, { flatten: true });
+        const pages = paginateText(stripStoryMarkup(perspective.content), TEXT_PAGE_CHARS);
         const pool = photosFor(perspective);
         pages.forEach((text, index) => drafts.push({
           id: `text:${perspective.id}:${index}`, kind: 'text', momentId: moment.id, transition: 'fade',
@@ -429,7 +429,7 @@ export function buildFilmTimeline(source: FilmSource, options: FilmOptions, avai
       filesOf(perspective, 'photo').forEach((asset) => {
         if (!availability.photos.has(asset.id) || seenPhotos.has(asset.id)) return;
         seenPhotos.add(asset.id);
-        const caption = asset.id === perspective.mediaAssetId || perspective.type === 'photo' ? perspective.caption || perspective.content || '' : asset.alt || perspective.caption || '';
+        const caption = mediaCaption(asset, perspective.content) || (asset.id === perspective.mediaAssetId || perspective.type === 'photo' ? perspective.caption || perspective.content || '' : perspective.caption || '');
         drafts.push({ id: 'photo:' + sceneId(perspective, asset), kind: 'photo', momentId: moment.id, transition: 'fade', duration: PHOTO_SECONDS,
           label: 'Фото: ' + truncate(caption || 'без подписи', 40), assetId: asset.id, caption, author });
         stats.photos += 1;

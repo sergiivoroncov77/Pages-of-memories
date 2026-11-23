@@ -8,6 +8,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { PageHeader } from '../../components/PageHeader';
 import { VoiceNote } from '../../components/VoiceNote';
 import type { MediaAsset, Moment, Person, Perspective, PerspectiveType, Reflection } from '../../data/types';
+import { mediaCaption } from '../../data/mediaRefs';
 import { formatDate, formatDuration, pluralize } from '../../lib/format';
 import { findRecordedDuration } from '../../lib/mediaDuration';
 import { MAX_MEDIA_FILE_BYTES, prepareMediaFile, validateMediaFile, type MediaUploadWithBlob } from '../../lib/mediaFiles';
@@ -150,7 +151,7 @@ function MomentContent({ moment }: { moment: Moment }) {
     if (draft && primary && !anything) throw new Error('Основной рассказ не может быть пустым. Чтобы убрать его, удалите карточку рассказа значком корзины.');
     updateMoment(moment.id, details);
     if (draft && primary) {
-      const result = await updateStory(primary.id, { content: draft.content, authorId: primary.authorId }, draft.keep, draft.files);
+      const result = await updateStory(primary.id, { content: draft.content, authorId: primary.authorId }, draft.keep, draft.files, draft.captions);
       if (!result.ok) throw new Error(result.error.message);
     } else if (draft && anything) {
       const authorId = await signAs(anonymous);
@@ -230,8 +231,8 @@ function MomentContent({ moment }: { moment: Moment }) {
         preview={{ book, chapter, moment, people, others: perspectives.filter((other) => other.id !== item.id), primary: item.id === primary?.id,
           authorName: getPerson(item.authorId ?? '')?.name }}
         me={me} myName={myName} signAs={signAs}
-        onSave={async (patch, keep, files) => {
-          const result = await updateStory(item.id, patch, keep, files);
+        onSave={async (patch, keep, files, captions) => {
+          const result = await updateStory(item.id, patch, keep, files, captions);
           if (!result.ok) throw new Error(result.error.message);
           setEditingId('');
           setNotice(item.type === 'text' || item.content ? 'Рассказ изменён.' : 'Материал изменён.');
@@ -283,7 +284,7 @@ function MomentContent({ moment }: { moment: Moment }) {
         {others.length ? <section className="moment-section"><div className="section__heading"><div><p className="eyebrow">Другие голоса</p><h2>Дополнения к истории</h2></div><button type="button" className="text-button" onClick={() => changeTab('perspectives')}>Все взгляды</button></div><div className="perspective-preview-list">{others.slice(0, 2).map((item) => <PerspectiveCard key={item.id} perspective={item} author={getPerson(item.authorId ?? '')} assets={mediaForStory(item.id)} compact />)}</div></section> : null}
       </div><aside className="moment-reading-aside"><Card><div className="card-heading card-heading--compact"><h2>Участники</h2><Users size={20} aria-hidden="true" /></div><div className="participant-list">{participants.length ? participants.map((person) => <Link to={'/people/' + person.id} className="participant" key={person.id}><Avatar person={person} size="small" /><span><strong>{person.name}</strong><small>{person.relation}</small></span></Link>) : <p className="muted-copy">Первый рассказчик можете быть вы.</p>}</div></Card><Card tone="warm"><h2>А как это помните вы?</h2><p>Другая деталь, фотография, рассказ голосом — всё поможет сохранить этот день.</p><div className="moment-aside-actions"><button type="button" className="button button--primary" onClick={() => openForm()} aria-expanded={showForm} aria-controls="perspective-form"><Plus size={18} aria-hidden="true" /> Добавить взгляд</button><button type="button" className="button button--secondary" onClick={() => openForm(true)}><Mic size={18} aria-hidden="true" /> Рассказать голосом</button></div></Card></aside></div> : null}
       {tab === 'perspectives' ? <section className="moment-section"><div className="section__heading"><div><p className="eyebrow">Каждый помнит по-своему</p><h2>Взгляды участников</h2></div><div className="page-action-group"><button type="button" className="button button--secondary button--small" onClick={() => openForm(true)}><Mic size={17} aria-hidden="true" /> Голосом</button><button type="button" className="button button--primary button--small" onClick={() => openForm()}><Plus size={17} aria-hidden="true" /> Добавить взгляд</button></div></div>{perspectives.length ? <div className="perspective-list">{perspectives.map((item) => cardFor(item, { primary: item.id === primary?.id, onDelete: canDeletePerspective(item) ? () => removePerspective(item) : undefined }))}</div> : <p className="muted-copy">Здесь появятся рассказы и материалы участников.</p>}</section> : null}
-      {tab === 'materials' ? <section className="moment-section"><div className="section__heading"><div><p className="eyebrow">То, что осталось с тех пор</p><h2>Материалы момента</h2></div><button type="button" className="button button--primary button--small" onClick={() => openForm()}><Paperclip size={17} aria-hidden="true" /> Добавить материал</button></div>{linkedAssets.length ? <div className="asset-grid">{linkedAssets.map(({ perspective, asset }) => <Card className="asset-card" key={perspective.id}><AssetPreview asset={asset} /><div className="asset-card__body"><strong>{(asset.id === perspective.mediaAssetId ? perspective.caption || perspective.content : '') || asset.alt || perspective.caption || perspective.content}</strong><span>{getPerson(perspective.authorId ?? '')?.name ?? ANONYMOUS}</span><small>{asset.fileName}</small>{asset.durationSeconds ? <small>{formatDuration(asset.durationSeconds)}</small> : null}</div></Card>)}</div> : <EmptyState title="Материалов пока нет" description="Приложите к рассказу фотографию, голос или короткое видео." />}</section> : null}
+      {tab === 'materials' ? <section className="moment-section"><div className="section__heading"><div><p className="eyebrow">То, что осталось с тех пор</p><h2>Материалы момента</h2></div><button type="button" className="button button--primary button--small" onClick={() => openForm()}><Paperclip size={17} aria-hidden="true" /> Добавить материал</button></div>{linkedAssets.length ? <div className="asset-grid">{linkedAssets.map(({ perspective, asset }) => <Card className="asset-card" key={perspective.id}><AssetPreview asset={asset} /><div className="asset-card__body"><strong>{mediaCaption(asset, perspective.content) || (asset.id === perspective.mediaAssetId ? perspective.caption || perspective.content : '') || perspective.caption || perspective.content}</strong><span>{getPerson(perspective.authorId ?? '')?.name ?? ANONYMOUS}</span><small>{asset.fileName}</small>{asset.durationSeconds ? <small>{formatDuration(asset.durationSeconds)}</small> : null}</div></Card>)}</div> : <EmptyState title="Материалов пока нет" description="Приложите к рассказу фотографию, голос или короткое видео." />}</section> : null}
     </div>
 
     <section className="reflections-section"><div className="section__heading"><div><p className="eyebrow">Рядом с рассказом</p><h2>Отклики</h2></div><button type="button" className="text-button" aria-expanded={showReflection} aria-controls="reflection-form" onClick={() => { if (showReflection) closeReflection(); else setShowReflection(true); setReflectionError(''); }}><MessageCircle size={18} aria-hidden="true" /> Оставить отклик</button></div>
@@ -345,9 +346,10 @@ function PerspectiveCard({ perspective, author, assets, compact = false, primary
       {perspective.type === 'audio' && !assets.length ? <p className="demo-media-note">Демонстрационный рассказ: аудиофайл не прикреплён.</p> : null}
       {voices.map((asset) => asset.url.startsWith('/demo/')
         ? <p key={asset.id} className="demo-media-note"><FileAudio size={21} aria-hidden="true" /><span>Демонстрационный материал. Настоящая аудиозапись не прикреплена.</span></p>
-        : <VoiceNote key={asset.id} asset={asset} label={author ? 'Голос: ' + author.name : 'Послушать'} />)}
-      {shown.length ? <div className={'perspective-card__media' + (shown.length > 1 ? ' perspective-card__media--grid' : '')}>{shown.map((asset) => <AssetPreview key={asset.id} asset={asset} />)}</div> : null}
-      {perspective.caption && perspective.caption !== perspective.content ? <p className="asset-caption">{perspective.caption}</p> : null}
+        : <VoiceNote key={asset.id} asset={asset} label={mediaCaption(asset, perspective.content) || (author ? 'Голос: ' + author.name : 'Послушать')} />)}
+      {shown.length ? <div className={'perspective-card__media' + (shown.length > 1 ? ' perspective-card__media--grid' : '')}>{shown.map((asset) => <CaptionedAsset key={asset.id} asset={asset} story={perspective.content} />)}</div> : null}
+      {perspective.caption && perspective.caption !== perspective.content && !assets.some((asset) => mediaCaption(asset, perspective.content) === perspective.caption)
+        ? <p className="asset-caption">{perspective.caption}</p> : null}
     </>}
   </Card>;
 }
@@ -376,7 +378,7 @@ interface PerspectiveEditorProps {
   myName?: string;
   signAs: (anonymous: boolean, name: string) => Promise<string | undefined>;
   /** May throw: the message is shown in the form. */
-  onSave: (patch: { content: string; authorId?: string }, keep: string[], files: MediaUploadWithBlob[]) => Promise<void>;
+  onSave: (patch: { content: string; authorId?: string }, keep: string[], files: MediaUploadWithBlob[], captions: Record<string, string>) => Promise<void>;
   onCancel: () => void;
   preview: Omit<StoryPreviewProps, 'content' | 'files'>;
 }
@@ -390,11 +392,11 @@ function PerspectiveEditor({ perspective, assets, momentTitle, shared, me, myNam
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const submit = async ({ content, keep, files }: StoryDraft) => {
+  const submit = async ({ content, keep, files, captions }: StoryDraft) => {
     setSaving(true);
     try {
       const authorId = signable ? await signAs(anonymous, newName) : perspective.authorId;
-      await onSave({ content, authorId }, keep, files);
+      await onSave({ content, authorId }, keep, files, captions);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Не удалось сохранить изменения.');
       setSaving(false);
@@ -432,6 +434,13 @@ function ReflectionEditor({ reflection, me, myName, signAs, onSave, onCancel }: 
     {error ? <p className="field-message field-message--error" role="alert">{error}</p> : null}
     <div className="form-actions"><button type="submit" className="button button--primary" disabled={saving || (!text.trim() && !reflection.mediaAssetId)}>Сохранить</button><button type="button" className="button button--ghost" onClick={onCancel} disabled={saving}>Отмена</button></div>
   </form>;
+}
+
+/** A photo or video with the words written under it. */
+function CaptionedAsset({ asset, story }: { asset: MediaAsset; story: string }) {
+  const caption = mediaCaption(asset, story);
+  if (!caption) return <AssetPreview asset={asset} />;
+  return <figure className="captioned-asset"><AssetPreview asset={asset} /><figcaption>{caption}</figcaption></figure>;
 }
 
 function AssetPreview({ asset }: { asset: MediaAsset }) {

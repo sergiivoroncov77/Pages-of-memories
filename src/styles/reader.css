@@ -730,11 +730,6 @@
   overflow-wrap: break-word;
 }
 
-/* A narrow page: short lines justified would open gaps between words. */
-.reader-book--narrow .reader-story__text p {
-  text-align: start;
-}
-
 .reader-story__text p.story-line--end {
   margin-bottom: 0.7em;
 }
