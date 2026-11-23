@@ -14,8 +14,7 @@ export function PersonCard({ person, group }: { person: Person; group?: PersonGr
   const answeredIds = new Set(memories.filter((memory) => ids.has(memory.personId)).map((memory) => memory.questionId));
   const answeredCount = personQuestions.filter((question) => answeredIds.has(question.id)).length;
   const contributedMomentIds = new Set(perspectives.filter((perspective) => perspective.authorId && ids.has(perspective.authorId)).map((perspective) => perspective.momentId));
-  const bookTitles = group && group.members.length > 1
-    ? books.filter((book) => group.bookIds.has(book.id)).map((book) => `«${book.title}»`) : [];
+  const bookTitles = group ? books.filter((book) => group.bookIds.has(book.id)).map((book) => `«${book.title}»`) : [];
   const momentCount = moments.filter((moment) => contributedMomentIds.has(moment.id)).length;
 
   return (
@@ -29,7 +28,7 @@ export function PersonCard({ person, group }: { person: Person; group?: PersonGr
               {person.relation}
               {person.birthYear ? ` · ${person.birthYear} г.` : ''}
             </p>
-            {bookTitles.length > 1 ? <p className="person-card__books">В книгах: {bookTitles.join(', ')}</p> : null}
+            {bookTitles.length ? <p className="person-card__books">{bookTitles.length > 1 ? 'В книгах: ' : 'В книге '}{bookTitles.join(', ')}</p> : null}
           </div>
           <ChevronRight size={22} aria-hidden="true" />
         </div>

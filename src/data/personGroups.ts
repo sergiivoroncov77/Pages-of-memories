@@ -13,24 +13,45 @@ export interface PersonGroup {
   /** Every record of this person, the main one first. */
   members: Person[];
   ids: Set<string>;
-  /** Books the person has stories in. */
+  /** Books the person takes part in: signs in, was added to, or tells stories in. */
   bookIds: Set<string>;
 }
 
 export const nameKey = (name: string) => name.replace(/\s+/g, ' ').trim().toLowerCase().replace(/ё/g, 'е');
 
-type Sources = Pick<AppSnapshot, 'moments' | 'perspectives'>;
+type Sources = Pick<AppSnapshot, 'moments' | 'perspectives'> & Partial<Pick<AppSnapshot, 'reflections'>> & {
+  /** Books a person belongs to apart from their stories: the people of a shared book, this phone's name in each book. */
+  members?: Map<string, Set<string>>;
+};
 
-/** The books each person has stories in. */
-export function booksOfPeople({ moments, perspectives }: Sources): Map<string, Set<string>> {
+/** The people of each shared book, and who this phone is in each of its books. */
+export function bookMembers(shared: Readonly<Record<string, { people: string[]; personId?: string }>>, mine: Readonly<Record<string, string | undefined>> = {}): Map<string, Set<string>> {
+  const members = new Map<string, Set<string>>();
+  const add = (personId: string | undefined, bookId: string) => {
+    if (!personId) return;
+    const set = members.get(personId) ?? new Set<string>();
+    set.add(bookId);
+    members.set(personId, set);
+  };
+  for (const [bookId, book] of Object.entries(shared)) {
+    book.people.forEach((personId) => add(personId, bookId));
+    add(book.personId, bookId);
+  }
+  for (const [bookId, personId] of Object.entries(mine)) add(personId, bookId);
+  return members;
+}
+
+/** The books each person takes part in. */
+export function booksOfPeople({ moments, perspectives, reflections = [], members }: Sources): Map<string, Set<string>> {
   const bookOf = new Map(moments.map((moment) => [moment.id, moment.bookId]));
   const books = new Map<string, Set<string>>();
-  for (const perspective of perspectives) {
-    const bookId = bookOf.get(perspective.momentId);
-    if (!perspective.authorId || !bookId) continue;
-    const set = books.get(perspective.authorId) ?? new Set<string>();
+  for (const [personId, bookIds] of members ?? []) books.set(personId, new Set(bookIds));
+  for (const item of [...perspectives, ...reflections]) {
+    const bookId = bookOf.get(item.momentId);
+    if (!item.authorId || !bookId) continue;
+    const set = books.get(item.authorId) ?? new Set<string>();
     set.add(bookId);
-    books.set(perspective.authorId, set);
+    books.set(item.authorId, set);
   }
   return books;
 }

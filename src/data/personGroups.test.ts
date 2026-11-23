@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Moment, Person, Perspective } from './types';
-import { groupPeople } from './personGroups';
+import { bookMembers, groupPeople } from './personGroups';
 
 const person = (id: string, name: string, relation = 'Участник книги') => ({ id, name, relation } as Person);
 const moment = (id: string, bookId: string) => ({ id, bookId } as Moment);
@@ -21,5 +21,11 @@ describe('groupPeople', () => {
     const people = [person('p1', 'Лена'), person('p2', 'Лена')];
     const groups = groupPeople(people, { moments, perspectives: [story('s1', 'm1', 'p1'), story('s2', 'm3', 'p2')] });
     expect(groups).toHaveLength(2);
+  });
+
+  it('counts the books a person belongs to, not only the ones they wrote in', () => {
+    const members = bookMembers({ b: { people: ['p1'] }, c: { people: [], personId: 'p2' } }, { a: 'p2' });
+    const [group] = groupPeople([person('p1', 'Оля'), person('p2', 'Оля')], { moments, perspectives: [], members });
+    expect([...group.bookIds].sort()).toEqual(['a', 'b', 'c']);
   });
 });

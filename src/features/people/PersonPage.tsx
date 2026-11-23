@@ -16,6 +16,7 @@ import { PersonForm } from './PersonForm';
 import { perspectiveMediaIds } from '../../data/mediaRefs';
 import { stripStoryMarkup } from '../../lib/storyMarkup';
 import { groupOf } from '../../data/personGroups';
+import { usePeopleSources } from './usePeopleSources';
 
 const statusCopy: Record<QuestionStatus, string> = {
   answered: 'Ответ сохранён',
@@ -28,6 +29,7 @@ export function PersonPage() {
   const { personId } = useParams();
   const { people, books, activeBook, getPerson, questionsForPerson, memoriesForPerson, moments, perspectives, chapters, mediaAssets, drafts, updatePerson, deletePerson } = useAppState();
   const cloud = useCloudSync();
+  const sources = usePeopleSources();
   const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const person = personId ? getPerson(personId) : undefined;
@@ -53,10 +55,10 @@ export function PersonPage() {
   const editBlocker = cloud.renameBlocker(person.id);
   const isMe = cloud.myPersonIds.has(person.id);
   // The same relative in other books: their stories and questions are shown together.
-  const group = groupOf(person.id, people.filter((item) => cloud.myPersonIds.has(item.id) === isMe), { moments, perspectives });
+  const group = groupOf(person.id, people.filter((item) => cloud.myPersonIds.has(item.id) === isMe), sources);
   const ids = group?.ids ?? new Set([person.id]);
   const records = group?.members ?? [person];
-  const groupBooks = records.length > 1 && group ? books.filter((book) => group.bookIds.has(book.id)) : [];
+  const groupBooks = group ? books.filter((book) => group.bookIds.has(book.id)) : [];
   const questions = records.flatMap((item) => questionsForPerson(item.id));
   const personMemories = records.flatMap((item) => memoriesForPerson(item.id));
   const answeredIds = new Set(personMemories.map((memory) => memory.questionId));
@@ -126,7 +128,7 @@ export function PersonPage() {
         <Avatar person={person} size="hero" />
         <div className="profile-card__copy">
           <p>{person.bio || 'История этого человека складывается из разговоров, фотографий и воспоминаний близких.'}</p>
-          {groupBooks.length > 1 ? <p className="profile-card__books">Есть в книгах: {groupBooks.map((book) => `«${book.title}»`).join(', ')}</p> : null}
+          {groupBooks.length ? <p className="profile-card__books">{groupBooks.length > 1 ? 'В книгах: ' : 'В книге '}{groupBooks.map((book) => `«${book.title}»`).join(', ')}</p> : null}
           <div className="profile-card__facts">
             <span>
               <BookOpen size={17} aria-hidden="true" />

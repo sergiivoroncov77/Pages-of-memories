@@ -9,6 +9,7 @@ import { PersonCard } from '../../components/PersonCard';
 import { useCloudSync } from '../../sync/CloudSync';
 import { PersonForm } from './PersonForm';
 import { groupPeople } from '../../data/personGroups';
+import { usePeopleSources } from './usePeopleSources';
 
 export function PeoplePage() {
   const { people: everyone, books, memories, moments, perspectives, activeBook, createPerson } = useAppState();
@@ -26,10 +27,11 @@ export function PeoplePage() {
     ...perspectives.filter((perspective) => momentIds.has(perspective.momentId)).map((perspective) => perspective.authorId)
   ]);
   // One card for a relative who has a record in several books.
-  const groups = groupPeople(people, { moments, perspectives });
+  const sources = usePeopleSources();
+  const groups = groupPeople(people, sources);
   const active = groups.filter((group) => group.members.some((person) => authors.has(person.id)));
   const waiting = groups.filter((group) => !group.members.some((person) => authors.has(person.id)));
-  const myGroups = groupPeople(me, { moments, perspectives });
+  const myGroups = groupPeople(me, sources);
   const invitePerson = waiting[0]?.person ?? people[0];
 
   return (
